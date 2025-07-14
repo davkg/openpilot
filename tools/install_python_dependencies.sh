@@ -10,8 +10,11 @@ cd "$ROOT"
 
 # updating uv on macOS results in 403 sometimes
 function update_uv() {
-  for i in $(seq 1 5);
-  do
+  if ! uv self update --help >/dev/null 2>&1; then
+    return 0
+  fi
+
+  for i in $(seq 1 5); do
     if uv self update; then
       return 0
     else
@@ -24,9 +27,8 @@ function update_uv() {
 if ! command -v "uv" > /dev/null 2>&1; then
   echo "installing uv..."
   curl -LsSf https://astral.sh/uv/install.sh | sh
-  UV_BIN="$HOME/.cargo/env"
-  ADD_PATH_CMD=". \"$UV_BIN\""
-  eval "$ADD_PATH_CMD"
+  UV_BIN="$HOME/.local/bin"
+  PATH="$UV_BIN:$PATH"
 fi
 
 echo "updating uv..."

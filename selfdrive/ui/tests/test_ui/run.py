@@ -9,7 +9,7 @@ import pyautogui
 import pickle
 import time
 
-from cereal import log
+from cereal import car, log
 from msgq.visionipc import VisionIpcServer, VisionStreamType
 from cereal.messaging import PubMaster, log_from_bytes, sub_sock
 from openpilot.common.basedir import BASEDIR
@@ -45,7 +45,16 @@ def setup_settings_toggles(click, pm: PubMaster):
   click(278, 650)
   time.sleep(UI_DELAY)
 
+def setup_settings_software(click, pm: PubMaster):
+  setup_settings_device(click, pm)
+  click(278, 800)
+  time.sleep(UI_DELAY)
+
 def setup_settings_developer(click, pm: PubMaster):
+  CP = car.CarParams()
+  CP.experimentalLongitudinalAvailable = True
+  Params().put("CarParamsPersistent", CP.to_bytes())
+
   setup_settings_device(click, pm)
   click(278, 960)
   time.sleep(UI_DELAY)
@@ -109,7 +118,7 @@ def setup_onroad_wide_sidebar(click, pm: PubMaster):
   setup_onroad_wide(click, pm)
 
 def setup_body(click, pm: PubMaster):
-  DATA['carParams'].carParams.carName = "BODY"
+  DATA['carParams'].carParams.brand = "body"
   DATA['carParams'].carParams.notCar = True
   DATA['carState'].carState.charging = True
   DATA['carState'].carState.fuelGauge = 50.0
@@ -117,11 +126,12 @@ def setup_body(click, pm: PubMaster):
 
 def setup_keyboard(click, pm: PubMaster):
   setup_settings_device(click, pm)
-  click(250, 575)
-  click(2020, 218)
-  click(1830, 80)
-  click(2035, 808)
-  click(90, 480)
+  click(250, 965)
+  click(1930, 420)
+
+def setup_keyboard_uppercase(click, pm: PubMaster):
+  setup_keyboard(click, pm)
+  click(200, 800)
 
 def setup_driver_camera(click, pm: PubMaster):
   setup_settings_device(click, pm)
@@ -180,6 +190,7 @@ CASES = {
   "pair_device": setup_pair_device,
   "settings_device": setup_settings_device,
   "settings_toggles": setup_settings_toggles,
+  "settings_software": setup_settings_software,
   "settings_developer": setup_settings_developer,
   "onroad": setup_onroad,
   "onroad_disengaged": setup_onroad_disengaged,
@@ -194,7 +205,8 @@ CASES = {
   "body": setup_body,
   "offroad_alert": setup_offroad_alert,
   "update_available": setup_update_available,
-  "keyboard": setup_keyboard
+  "keyboard": setup_keyboard,
+  "keyboard_uppercase": setup_keyboard_uppercase
 }
 
 TEST_DIR = pathlib.Path(__file__).parent
