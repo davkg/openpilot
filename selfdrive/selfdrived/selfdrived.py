@@ -86,7 +86,7 @@ class SelfdriveD:
     self.is_metric = self.params.get_bool("IsMetric")
     self.is_ldw_enabled = self.params.get_bool("IsLdwEnabled")
 
-    car_recognized = self.CP.brand != 'mock'
+    car_recognized = self.CP.carName != 'mock'
 
     # cleanup old params
     if not self.CP.experimentalLongitudinalAvailable:
