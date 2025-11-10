@@ -1,6 +1,7 @@
 [submodule "panda"]
   path = panda
-  url = ../../commaai/panda.git
+  url = https://github.com/davkg/panda
+  branch = master-davkg
 [submodule "msgq"]
   path = msgq_repo
   url = ../../commaai/msgq.git
