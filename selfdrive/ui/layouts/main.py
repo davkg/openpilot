@@ -59,7 +59,12 @@ class MainLayout(Widget):
     self._sidebar_rect = rl.Rectangle(self._rect.x, self._rect.y, SIDEBAR_WIDTH, self._rect.height)
 
     x_offset = SIDEBAR_WIDTH if self._sidebar.is_visible else 0
-    self._content_rect = rl.Rectangle(self._rect.y + x_offset, self._rect.y, self._rect.width - x_offset, self._rect.height)
+    # self._content_rect = rl.Rectangle(self._rect.y + x_offset, self._rect.y, self._rect.width - x_offset, self._rect.height)
+    shrink_amount = int(self._rect.height * 0.25)  # shrink by 25%
+    new_height = self._rect.height - shrink_amount
+    # Align to bottom: y = bottom - new_height
+    y_offset = self._rect.y + self._rect.height - new_height
+    self._content_rect = rl.Rectangle(self._rect.x + x_offset, y_offset, self._rect.width - x_offset, new_height)
 
   def _handle_onroad_transition(self):
     if ui_state.started != self._prev_onroad:
