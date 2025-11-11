@@ -199,6 +199,19 @@ class CameraView(Widget):
 
     dst_rect = rl.Rectangle(x_offset, y_offset, scale_x, scale_y)
 
+    # Clamp rendering to the target rectangle while preserving aspect ratio
+    # Aligns to the bottom-left corner
+    max_scale = min(rect.width / scale_x, rect.height / scale_y)
+    if max_scale < 1.0:
+      scale_x *= max_scale
+      scale_y *= max_scale
+      dst_rect = rl.Rectangle(
+        rect.x,
+        rect.y + rect.height - scale_y,
+        scale_x,
+        scale_y,
+      )
+
     # Render with appropriate method
     if TICI:
       self._render_egl(src_rect, dst_rect)

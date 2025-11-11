@@ -91,16 +91,4 @@ class MainLayout(Widget):
 
     content_rect = self._content_rect if self._sidebar.is_visible else self._rect
 
-    # Scale down onroad view and align to bottom left corner
-    if self._current_mode == MainState.ONROAD:
-      scaled_width = content_rect.width * 0.75
-      scaled_height = content_rect.height * 0.75
-      scaled_rect = rl.Rectangle(
-        content_rect.x,
-        content_rect.y + content_rect.height - scaled_height,
-        scaled_width,
-        scaled_height,
-      )
-      self._layouts[self._current_mode].render(scaled_rect)
-    else:
-      self._layouts[self._current_mode].render(content_rect)
+    self._layouts[self._current_mode].render(content_rect)
