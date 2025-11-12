@@ -15,7 +15,10 @@ def main():
 
   gui_app.init_window("UI")
   main_layout = MainLayout()
-  main_layout.set_rect(rl.Rectangle(0, 0, gui_app.width, gui_app.height))
+  scaled_width = gui_app.width * 0.75
+  scaled_height = gui_app.height * 0.75
+  y_offset = gui_app.height - scaled_height
+  main_layout.set_rect(rl.Rectangle(0, y_offset, scaled_width, scaled_height))
   for should_render in gui_app.render():
     ui_state.update()
     if should_render:
