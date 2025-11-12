@@ -88,10 +88,8 @@ class MouseEvent(NamedTuple):
 
 
 class MouseState:
-  def __init__(self, scale: float = 1.0, height: int = 0, scaled_height: int = 0):
+  def __init__(self, scale: float = 1.0):
     self._scale = scale
-    self._height = height
-    self._scaled_height = scaled_height
     self._events: deque[MouseEvent] = deque(maxlen=MOUSE_THREAD_RATE)  # bound event list
     self._prev_mouse_event: list[MouseEvent | None] = [None] * MAX_TOUCH_SLOTS
 
@@ -126,20 +124,14 @@ class MouseState:
   def _handle_mouse_event(self):
     for slot in range(MAX_TOUCH_SLOTS):
       mouse_pos = rl.get_touch_position(slot)
-      # y_offset = self._height - self._scaled_height
-      x = mouse_pos.x / self._scale
-      y = (mouse_pos.y - y_offset) / self._scale
-
-      is_down = rl.is_mouse_button_down(slot)
-      if mouse_pos.y < y_offset or mouse_pos.x > self._scaled_width:
-        is_down = False # Finger is down, but outside the active area.
-
+      x = mouse_pos.x / self._scale if self._scale != 1.0 else mouse_pos.x
+      y = mouse_pos.y / self._scale if self._scale != 1.0 else mouse_pos.y
       ev = MouseEvent(
         MousePos(x, y),
         slot,
         rl.is_mouse_button_pressed(slot),  # noqa: TID251
         rl.is_mouse_button_released(slot),  # noqa: TID251
-        is_down,
+        rl.is_mouse_button_down(slot),
         time.monotonic(),
       )
       # Only add changes
@@ -172,7 +164,7 @@ class GuiApplication:
     self._modal_overlay = ModalOverlay()
     self._modal_overlay_shown = False
 
-    self._mouse = MouseState(self._scale, self._height, self._scaled_height)
+    self._mouse = MouseState(self._scale)
     self._mouse_events: list[MouseEvent] = []
     self._last_mouse_event: MouseEvent = MouseEvent(MousePos(0, 0), 0, False, False, False, 0.0)
 
@@ -225,7 +217,8 @@ class GuiApplication:
       # rl.init_window(self._scaled_width, self._scaled_height, title)
       rl.init_window(self._width, self._height, title)
       if self._scale != 1.0:
-        # rl.set_mouse_scale(1 / self._scale, 1 / self._scale)
+        rl.set_mouse_offset(0, self._scaled_height - self._height)
+        rl.set_mouse_scale(1 / self._scale, 1 / self._scale)
         self._render_texture = rl.load_render_texture(self._width, self._height)
         rl.set_texture_filter(self._render_texture.texture, rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
       rl.set_target_fps(fps)
