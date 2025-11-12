@@ -63,12 +63,12 @@ class AugmentedRoadView(CameraView):
     # Update calibration before rendering
     self._update_calibration()
 
-    # Shrink on-road view to 75%
-    new_height = int(rect.height * 0.75)
-    new_width = int(rect.width * 0.75)
-    # Align to bottom left
+    # Shrink on-road view height by 25% and align to bottom
+    shrink_amount = int(rect.height * 0.25)
+    new_height = rect.height - shrink_amount
+    # Align to bottom: y = bottom - new_height
     y_offset = rect.y + rect.height - new_height
-    rect = rl.Rectangle(rect.x, y_offset, new_width, new_height)
+    rect = rl.Rectangle(rect.x, y_offset, rect.width, new_height)
 
     # Create inner content area with border padding
     self._content_rect = rl.Rectangle(
