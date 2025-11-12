@@ -25,8 +25,7 @@ ENABLE_VSYNC = os.getenv("ENABLE_VSYNC", "0") == "1"
 SHOW_FPS = os.getenv("SHOW_FPS") == "1"
 SHOW_TOUCHES = os.getenv("SHOW_TOUCHES") == "1"
 STRICT_MODE = os.getenv("STRICT_MODE") == "1"
-# SCALE = float(os.getenv("SCALE", "1.0"))
-SCALE = 0.75
+SCALE = float(os.getenv("SCALE", "1.0"))
 
 DEFAULT_TEXT_SIZE = 60
 DEFAULT_TEXT_COLOR = rl.WHITE
@@ -157,8 +156,7 @@ class GuiApplication:
       flags |= rl.ConfigFlags.FLAG_VSYNC_HINT
     rl.set_config_flags(flags)
 
-    # rl.init_window(self._scaled_width, self._scaled_height, title)
-    rl.init_window(self._width, self._height, title)
+    rl.init_window(self._scaled_width, self._scaled_height, title)
     if self._scale != 1.0:
       rl.set_mouse_scale(1 / self._scale, 1 / self._scale)
       self._render_texture = rl.load_render_texture(self._width, self._height)
@@ -281,8 +279,7 @@ class GuiApplication:
           rl.begin_drawing()
           rl.clear_background(rl.BLACK)
           src_rect = rl.Rectangle(0, 0, float(self._width), -float(self._height))
-          # dst_rect = rl.Rectangle(0, 0, float(self._scaled_width), float(self._scaled_height))
-          dst_rect = rl.Rectangle(0, float(self._height - self._scaled_height), float(self._scaled_width), float(self._scaled_height))
+          dst_rect = rl.Rectangle(0, 0, float(self._scaled_width), float(self._scaled_height))
           rl.draw_texture_pro(self._render_texture.texture, src_rect, dst_rect, rl.Vector2(0, 0), 0.0, rl.WHITE)
 
         if SHOW_FPS:
