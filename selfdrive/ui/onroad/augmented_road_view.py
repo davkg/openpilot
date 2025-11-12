@@ -60,6 +60,15 @@ class AugmentedRoadView(CameraView):
     if not ui_state.started:
       return
 
+    scaled_width = rect.width * 0.75
+    scaled_height = rect.height * 0.75
+    rect = rl.Rectangle(
+      rect.x,
+      rect.y + rect.height - scaled_height,
+      scaled_width,
+      scaled_height,
+    )
+
     self._switch_stream_if_needed(ui_state.sm)
 
     # Update calibration before rendering
