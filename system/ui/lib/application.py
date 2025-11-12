@@ -30,7 +30,8 @@ ENABLE_VSYNC = os.getenv("ENABLE_VSYNC", "0") == "1"
 SHOW_FPS = os.getenv("SHOW_FPS") == "1"
 SHOW_TOUCHES = os.getenv("SHOW_TOUCHES") == "1"
 STRICT_MODE = os.getenv("STRICT_MODE") == "1"
-SCALE = float(os.getenv("SCALE", "1.0"))
+# SCALE = float(os.getenv("SCALE", "1.0"))
+SCALE = 0.75
 PROFILE_RENDER = int(os.getenv("PROFILE_RENDER", "0"))
 
 DEFAULT_TEXT_SIZE = 60
@@ -214,6 +215,7 @@ class GuiApplication:
       rl.set_config_flags(flags)
 
       rl.init_window(self._scaled_width, self._scaled_height, title)
+      rl.set_window_position(0, self._height - self._scaled_height)
       if self._scale != 1.0:
         rl.set_mouse_scale(1 / self._scale, 1 / self._scale)
         self._render_texture = rl.load_render_texture(self._width, self._height)
