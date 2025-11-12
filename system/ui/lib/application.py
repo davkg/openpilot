@@ -26,6 +26,8 @@ SHOW_FPS = os.getenv("SHOW_FPS") == "1"
 SHOW_TOUCHES = os.getenv("SHOW_TOUCHES") == "1"
 STRICT_MODE = os.getenv("STRICT_MODE") == "1"
 SCALE = float(os.getenv("SCALE", "1.0"))
+SCALE_DOWN_TIMEOUT = 10.0  # Seconds of inactivity before scaling down
+SCALE_FACTOR = 0.75
 
 DEFAULT_TEXT_SIZE = 60
 DEFAULT_TEXT_COLOR = rl.WHITE
@@ -123,8 +125,12 @@ class GuiApplication:
     self._width = width
     self._height = height
     self._scale = SCALE
-    self._scaled_width = int(self._width * self._scale)
-    self._scaled_height = int(self._height * self._scale)
+    self._is_scaled_down = True
+    self._last_touch_time = 0.0
+    # self._scaled_width = int(self._width * self._scale)
+    # self._scaled_height = int(self._height * self._scale)
+    self._scaled_width = int(self._width * SCALE_FACTOR)
+    self._scaled_height = int(self._height * SCALE_FACTOR)
     self._render_texture: rl.RenderTexture | None = None
     self._textures: dict[str, rl.Texture] = {}
     self._target_fps: int = DEFAULT_FPS
@@ -156,11 +162,14 @@ class GuiApplication:
       flags |= rl.ConfigFlags.FLAG_VSYNC_HINT
     rl.set_config_flags(flags)
 
-    rl.init_window(self._scaled_width, self._scaled_height, title)
-    if self._scale != 1.0:
-      rl.set_mouse_scale(1 / self._scale, 1 / self._scale)
-      self._render_texture = rl.load_render_texture(self._width, self._height)
-      rl.set_texture_filter(self._render_texture.texture, rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
+    # rl.init_window(self._scaled_width, self._scaled_height, title)
+    # if self._scale != 1.0:
+    #   rl.set_mouse_scale(1 / self._scale, 1 / self._scale)
+    #   self._render_texture = rl.load_render_texture(self._width, self._height)
+    #   rl.set_texture_filter(self._render_texture.texture, rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
+    rl.init_window(self._width, self._height, title)
+    self._render_texture = rl.load_render_texture(self._width, self._height)
+    rl.set_texture_filter(self._render_texture.texture, rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
     rl.set_target_fps(fps)
 
     self._target_fps = fps
@@ -247,7 +256,23 @@ class GuiApplication:
           self._mouse._handle_mouse_event()
 
         # Store all mouse events for the current frame
-        self._mouse_events = self._mouse.get_events()
+        # self._mouse_events = self._mouse.get_events()
+
+        raw_mouse_events = self._mouse.get_events()
+
+        if len(raw_mouse_events) > 0:
+          # Any touch event resets the timer and scales up the UI
+          self._last_touch_time = time.monotonic()
+          if self._is_scaled_down:
+            self._is_scaled_down = False
+            self._mouse_events = []  # Consume the first touch
+          else:
+            self._mouse_events = raw_mouse_events  # Pass subsequent touches to UI
+        else:
+          # No touch events, check for timeout
+          self._mouse_events = []
+          if not self._is_scaled_down and (time.monotonic() - self._last_touch_time > SCALE_DOWN_TIMEOUT):
+            self._is_scaled_down = True
 
         if self._render_texture:
           rl.begin_texture_mode(self._render_texture)
@@ -279,7 +304,12 @@ class GuiApplication:
           rl.begin_drawing()
           rl.clear_background(rl.BLACK)
           src_rect = rl.Rectangle(0, 0, float(self._width), -float(self._height))
-          dst_rect = rl.Rectangle(0, 0, float(self._scaled_width), float(self._scaled_height))
+          # dst_rect = rl.Rectangle(0, 0, float(self._scaled_width), float(self._scaled_height))
+          if self._is_scaled_down:
+            y_offset = self._height - self._scaled_height
+            dst_rect = rl.Rectangle(0, float(y_offset), float(self._scaled_width), float(self._scaled_height))
+          else:
+            dst_rect = rl.Rectangle(0, 0, float(self._width), float(self._height))
           rl.draw_texture_pro(self._render_texture.texture, src_rect, dst_rect, rl.Vector2(0, 0), 0.0, rl.WHITE)
 
         if SHOW_FPS:
