@@ -22,10 +22,15 @@ protected:
   void paintEvent(QPaintEvent *event);
   OnroadAlerts *alerts;
   AnnotatedCameraWidget *nvg;
+  QWidget *split_wrapper = nullptr;
   QColor bg = bg_colors[STATUS_DISENGAGED];
   QHBoxLayout* split;
 
 protected slots:
   virtual void offroadTransition(bool offroad);
   virtual void updateState(const UIState &s);
+
+protected:
+  void resizeEvent(QResizeEvent *event) override;
+  void updateScaledLayout();
 };

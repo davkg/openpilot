@@ -1,6 +1,7 @@
 #include "selfdrive/ui/qt/onroad/onroad_home.h"
 
 #include <QPainter>
+#include <QResizeEvent>
 #include <QStackedLayout>
 
 #include "selfdrive/ui/qt/util.h"
@@ -14,7 +15,7 @@ OnroadWindow::OnroadWindow(QWidget *parent) : QWidget(parent) {
 
   nvg = new AnnotatedCameraWidget(VISION_STREAM_ROAD, this);
 
-  QWidget * split_wrapper = new QWidget;
+  split_wrapper = new QWidget;
   split = new QHBoxLayout(split_wrapper);
   split->setContentsMargins(0, 0, 0, 0);
   split->setSpacing(0);
@@ -26,13 +27,17 @@ OnroadWindow::OnroadWindow(QWidget *parent) : QWidget(parent) {
   }
 
   stacked_layout->addWidget(split_wrapper);
+  stacked_layout->setAlignment(split_wrapper, Qt::AlignLeft | Qt::AlignBottom);
 
   alerts = new OnroadAlerts(this);
   alerts->setAttribute(Qt::WA_TransparentForMouseEvents, true);
   stacked_layout->addWidget(alerts);
+  stacked_layout->setAlignment(alerts, Qt::AlignLeft | Qt::AlignBottom);
 
   // setup stacking order
   alerts->raise();
+
+  updateScaledLayout();
 
   setAttribute(Qt::WA_OpaquePaintEvent);
 
@@ -66,4 +71,25 @@ void OnroadWindow::offroadTransition(bool offroad) {
 void OnroadWindow::paintEvent(QPaintEvent *event) {
   QPainter p(this);
   p.fillRect(rect(), QColor(bg.red(), bg.green(), bg.blue(), 255));
+}
+
+void OnroadWindow::resizeEvent(QResizeEvent *event) {
+  QWidget::resizeEvent(event);
+  updateScaledLayout();
+}
+
+void OnroadWindow::updateScaledLayout() {
+  if (!split_wrapper || !alerts) return;
+
+  const int scaled_w = int(width() * 0.75);
+  const int scaled_h = int(height() * 0.75);
+  const QSize scaled_size(scaled_w, scaled_h);
+
+  split_wrapper->setFixedSize(scaled_size);
+  alerts->setFixedSize(scaled_size);
+
+  const int y_offset = height() - scaled_h;
+  split_wrapper->move(0, y_offset);
+  alerts->move(0, y_offset);
+  alerts->raise();
 }
