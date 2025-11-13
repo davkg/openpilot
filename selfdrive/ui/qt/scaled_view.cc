@@ -19,29 +19,36 @@ ScaledViewContainer::~ScaledViewContainer() {
 void ScaledViewContainer::resizeEvent(QResizeEvent* event) {
   QWidget::resizeEvent(event);
   if (scaled_widget) {
-    // Keep widget at full container size for rendering
     scaled_widget->resize(width(), height());
   }
 }
 
 void ScaledViewContainer::paintEvent(QPaintEvent* event) {
   QPainter painter(this);
+
+  painter.setRenderHint(QPainter::Antialiasing, true);
   painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
 
   // Fill background
   painter.fillRect(rect(), Qt::black);
 
   if (scaled_widget) {
-    // Grab the widget's rendered content
-    QPixmap pixmap = scaled_widget->grab();
+    // Save painter state
+    painter.save();
 
-    // Calculate scaled dimensions
-    int scaled_width = width() * SCALE_FACTOR;
+    // Position at bottom-left
     int scaled_height = height() * SCALE_FACTOR;
     int x = 0;
     int y = height() - scaled_height;
 
-    // Draw the scaled pixmap at bottom-left
-    painter.drawPixmap(x, y, scaled_width, scaled_height, pixmap);
+    // Translate to bottom-left position, then scale
+    painter.translate(x, y);
+    painter.scale(SCALE_FACTOR, SCALE_FACTOR);
+
+    // Render the widget
+    scaled_widget->render(&painter);
+
+    // Restore painter state
+    painter.restore();
   }
 }
