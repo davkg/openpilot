@@ -14,7 +14,6 @@ public:
 
 protected:
   void resizeEvent(QResizeEvent* event) override;
-  void paintEvent(QPaintEvent* event) override;
 
 private:
   QWidget* scaled_widget;

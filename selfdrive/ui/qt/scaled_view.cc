@@ -1,7 +1,6 @@
 #include "selfdrive/ui/qt/scaled_view.h"
 
 #include <QResizeEvent>
-#include <QPainter>
 
 ScaledViewContainer::ScaledViewContainer(QWidget* widget, QWidget* parent)
     : QWidget(parent), scaled_widget(widget) {
@@ -18,34 +17,16 @@ ScaledViewContainer::~ScaledViewContainer() {
 
 void ScaledViewContainer::resizeEvent(QResizeEvent* event) {
   QWidget::resizeEvent(event);
-  if (scaled_widget) {
-    scaled_widget->resize(width(), height());
-  }
-}
-
-void ScaledViewContainer::paintEvent(QPaintEvent* event) {
-  QPainter painter(this);
-
-  // Fill background
-  painter.fillRect(rect(), Qt::black);
 
   if (scaled_widget) {
-    // Save painter state
-    painter.save();
-
-    // Position at bottom-left
+    // Calculate scaled dimensions
+    int scaled_width = width() * SCALE_FACTOR;
     int scaled_height = height() * SCALE_FACTOR;
+
+    // Position at bottom-left (flush against edges)
     int x = 0;
     int y = height() - scaled_height;
 
-    // Translate to bottom-left position, then scale
-    painter.translate(x, y);
-    painter.scale(SCALE_FACTOR, SCALE_FACTOR);
-
-    // Render the widget
-    scaled_widget->render(&painter);
-
-    // Restore painter state
-    painter.restore();
+    scaled_widget->setGeometry(x, y, scaled_width, scaled_height);
   }
 }
