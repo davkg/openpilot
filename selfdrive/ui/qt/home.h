@@ -12,6 +12,7 @@
 #include "selfdrive/ui/qt/body.h"
 #include "selfdrive/ui/qt/onroad/onroad_home.h"
 #include "selfdrive/ui/qt/sidebar.h"
+#include "selfdrive/ui/qt/scaled_view.h"
 #include "selfdrive/ui/qt/widgets/controls.h"
 #include "selfdrive/ui/qt/widgets/offroad_alerts.h"
 #include "selfdrive/ui/ui.h"
@@ -64,6 +65,7 @@ private:
   Sidebar *sidebar;
   OffroadHome *home;
   OnroadWindow *onroad;
+  ScaledViewContainer *scaled_onroad;
   BodyWindow *body;
   DriverViewWindow *driver_view;
   QStackedLayout *slayout;
