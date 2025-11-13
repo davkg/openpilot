@@ -26,9 +26,6 @@ void ScaledViewContainer::resizeEvent(QResizeEvent* event) {
 void ScaledViewContainer::paintEvent(QPaintEvent* event) {
   QPainter painter(this);
 
-  painter.setRenderHint(QPainter::Antialiasing, true);
-  painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-
   // Fill background
   painter.fillRect(rect(), Qt::black);
 
