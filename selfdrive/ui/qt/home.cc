@@ -24,7 +24,8 @@ HomeWindow::HomeWindow(QWidget* parent) : QWidget(parent) {
   slayout->addWidget(home);
 
   onroad = new OnroadWindow(this);
-  slayout->addWidget(onroad);
+  scaled_onroad = new ScaledViewContainer(onroad, this);
+  slayout->addWidget(scaled_onroad);
 
   body = new BodyWindow(this);
   slayout->addWidget(body);
@@ -48,7 +49,7 @@ void HomeWindow::updateState(const UIState &s) {
   const SubMaster &sm = *(s.sm);
 
   // switch to the generic robot UI
-  if (onroad->isVisible() && !body->isEnabled() && sm["carParams"].getCarParams().getNotCar()) {
+  if (scaled_onroad->isVisible() && !body->isEnabled() && sm["carParams"].getCarParams().getNotCar()) {
     body->setEnabled(true);
     slayout->setCurrentWidget(body);
   }
@@ -60,7 +61,7 @@ void HomeWindow::offroadTransition(bool offroad) {
   if (offroad) {
     slayout->setCurrentWidget(home);
   } else {
-    slayout->setCurrentWidget(onroad);
+    slayout->setCurrentWidget(scaled_onroad);
   }
 }
 
@@ -76,7 +77,7 @@ void HomeWindow::showDriverView(bool show) {
 
 void HomeWindow::mousePressEvent(QMouseEvent* e) {
   // Handle sidebar collapsing
-  if ((onroad->isVisible() || body->isVisible()) && (!sidebar->isVisible() || e->x() > sidebar->width())) {
+  if ((scaled_onroad->isVisible() || body->isVisible()) && (!sidebar->isVisible() || e->x() > sidebar->width())) {
     sidebar->setVisible(!sidebar->isVisible());
   }
 }
@@ -85,10 +86,10 @@ void HomeWindow::mouseDoubleClickEvent(QMouseEvent* e) {
   HomeWindow::mousePressEvent(e);
   const SubMaster &sm = *(uiState()->sm);
   if (sm["carParams"].getCarParams().getNotCar()) {
-    if (onroad->isVisible()) {
+    if (scaled_onroad->isVisible()) {
       slayout->setCurrentWidget(body);
     } else if (body->isVisible()) {
-      slayout->setCurrentWidget(onroad);
+      slayout->setCurrentWidget(scaled_onroad);
     }
     showSidebar(false);
   }

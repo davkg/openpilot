@@ -28,6 +28,7 @@
 #endif
 
 #include "selfdrive/ui/qt/offroad/offroad_home.h"
+#include "selfdrive/ui/qt/scaled_view.h"
 
 class HomeWindow : public QWidget {
   Q_OBJECT
@@ -51,6 +52,7 @@ protected:
   Sidebar *sidebar;
   OffroadHome *home;
   OnroadWindow *onroad;
+  ScaledViewContainer *scaled_onroad;
   BodyWindow *body;
   DriverViewWindow *driver_view;
   QStackedLayout *slayout;
