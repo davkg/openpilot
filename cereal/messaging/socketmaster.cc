@@ -47,6 +47,7 @@ SubMaster::SubMaster(const std::vector<const char *> &service_list, const std::v
                      const char *address, const std::vector<const char *> &ignore_alive) {
   poller_ = Poller::create();
   for (auto name : service_list) {
+    if (strcmp(name, "bookmarkButton") == 0) continue;
     assert(services.count(std::string(name)) > 0);
 
     service serv = services.at(std::string(name));
@@ -186,6 +187,7 @@ SubMaster::~SubMaster() {
 
 PubMaster::PubMaster(const std::vector<const char *> &service_list) {
   for (auto name : service_list) {
+    if (strcmp(name, "bookmarkButton") == 0) continue;
     assert(services.count(name) > 0);
     PubSocket *socket = PubSocket::create(message_context.context(), name);
     assert(socket);

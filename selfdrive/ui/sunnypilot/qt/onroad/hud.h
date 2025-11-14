@@ -32,7 +32,7 @@ private:
   bool pulseElement(int frame);
   void drawSmartCruiseControlOnroadIcon(QPainter &p, const QRect &surface_rect, int x_offset, int y_offset, std::string name);
   void drawSpeedLimitSigns(QPainter &p, QRect &sign_rect);
-  void drawUpcomingSpeedLimit(QPainter &p);
+  void drawUpcomingSpeedLimit(QPainter &p, const QRect &surface_rect);
   void drawRoadName(QPainter &p, const QRect &surface_rect);
   void drawSpeedLimitPreActiveArrow(QPainter &p, QRect &sign_rect);
   void drawSetSpeedSP(QPainter &p, const QRect &surface_rect);
