@@ -22,6 +22,8 @@ protected:
   void paintEvent(QPaintEvent *event);
   OnroadAlerts *alerts;
   AnnotatedCameraWidget *nvg;
+  QWidget *split_surface = nullptr;
+  QWidget *alerts_container = nullptr;
   QWidget *split_wrapper = nullptr;
   QColor bg = bg_colors[STATUS_DISENGAGED];
   QHBoxLayout* split;

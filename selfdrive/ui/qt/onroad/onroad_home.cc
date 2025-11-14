@@ -2,7 +2,9 @@
 
 #include <QPainter>
 #include <QResizeEvent>
+#include <QSizePolicy>
 #include <QStackedLayout>
+#include <QVBoxLayout>
 
 #include "selfdrive/ui/qt/util.h"
 
@@ -16,10 +18,19 @@ OnroadWindow::OnroadWindow(QWidget *parent) : QWidget(parent) {
   nvg = new AnnotatedCameraWidget(VISION_STREAM_ROAD, this);
 
   split_wrapper = new QWidget;
-  split = new QHBoxLayout(split_wrapper);
+  QVBoxLayout *split_wrapper_layout = new QVBoxLayout(split_wrapper);
+  split_wrapper_layout->setContentsMargins(0, 0, 0, 0);
+  split_wrapper_layout->setSpacing(0);
+  split_wrapper_layout->addStretch(1);
+
+  split_surface = new QWidget(split_wrapper);
+  split_surface->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+  split = new QHBoxLayout(split_surface);
   split->setContentsMargins(0, 0, 0, 0);
   split->setSpacing(0);
   split->addWidget(nvg);
+
+  split_wrapper_layout->addWidget(split_surface, 0, Qt::AlignLeft | Qt::AlignBottom);
 
   if (getenv("DUAL_CAMERA_VIEW")) {
     CameraWidget *arCam = new CameraWidget("camerad", VISION_STREAM_ROAD, this);
@@ -27,12 +38,18 @@ OnroadWindow::OnroadWindow(QWidget *parent) : QWidget(parent) {
   }
 
   stacked_layout->addWidget(split_wrapper);
-  stacked_layout->setAlignment(split_wrapper, Qt::AlignLeft | Qt::AlignBottom);
 
-  alerts = new OnroadAlerts(this);
+  alerts_container = new QWidget;
+  QVBoxLayout *alerts_layout = new QVBoxLayout(alerts_container);
+  alerts_layout->setContentsMargins(0, 0, 0, 0);
+  alerts_layout->setSpacing(0);
+  alerts_layout->addStretch(1);
+
+  alerts = new OnroadAlerts(alerts_container);
   alerts->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-  stacked_layout->addWidget(alerts);
-  stacked_layout->setAlignment(alerts, Qt::AlignLeft | Qt::AlignBottom);
+  alerts_layout->addWidget(alerts, 0, Qt::AlignLeft | Qt::AlignBottom);
+
+  stacked_layout->addWidget(alerts_container);
 
   // setup stacking order
   alerts->raise();
@@ -79,17 +96,12 @@ void OnroadWindow::resizeEvent(QResizeEvent *event) {
 }
 
 void OnroadWindow::updateScaledLayout() {
-  if (!split_wrapper || !alerts) return;
+  if (!split_surface || !alerts) return;
 
   const int scaled_w = int(width() * 0.75);
   const int scaled_h = int(height() * 0.75);
   const QSize scaled_size(scaled_w, scaled_h);
 
-  split_wrapper->setFixedSize(scaled_size);
+  split_surface->setFixedSize(scaled_size);
   alerts->setFixedSize(scaled_size);
-
-  const int y_offset = height() - scaled_h;
-  split_wrapper->move(0, y_offset);
-  alerts->move(0, y_offset);
-  alerts->raise();
 }
