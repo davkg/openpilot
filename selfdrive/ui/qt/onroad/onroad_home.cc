@@ -10,7 +10,7 @@
 
 OnroadWindow::OnroadWindow(QWidget *parent) : QWidget(parent) {
   QVBoxLayout *main_layout  = new QVBoxLayout(this);
-  main_layout->setMargin(UI_BORDER_SIZE);
+  // main_layout->setMargin(UI_BORDER_SIZE);
   QStackedLayout *stacked_layout = new QStackedLayout;
   stacked_layout->setStackingMode(QStackedLayout::StackAll);
   main_layout->addLayout(stacked_layout);
@@ -19,7 +19,7 @@ OnroadWindow::OnroadWindow(QWidget *parent) : QWidget(parent) {
 
   split_wrapper = new QWidget;
   QVBoxLayout *split_wrapper_layout = new QVBoxLayout(split_wrapper);
-  split_wrapper_layout->setContentsMargins(0, 0, 0, 0);
+  split_wrapper_layout->setContentsMargins(50, 0, 0, 0);  // Left border
   split_wrapper_layout->setSpacing(0);
   split_wrapper_layout->addStretch(1);
 
