@@ -18,7 +18,7 @@ AnnotatedCameraWidget::AnnotatedCameraWidget(VisionStreamType type, QWidget *par
   main_layout->setSpacing(0);
 
   experimental_btn = new ExperimentalButton(this);
-  main_layout->addWidget(experimental_btn, 0, Qt::AlignTop | Qt::AlignRight);
+  main_layout->addWidget(experimental_btn, 0, Qt::AlignBottom | Qt::AlignRight);
 }
 
 void AnnotatedCameraWidget::updateState(const UIState &s) {
@@ -131,8 +131,8 @@ void AnnotatedCameraWidget::paintGL() {
 
   model.draw(painter, rect());
   dmon.draw(painter, rect());
-  hud.updateState(*s);
-  hud.draw(painter, rect());
+  // hud.updateState(*s);
+  // hud.draw(painter, rect());
 
   double cur_draw_t = millis_since_boot();
   double dt = cur_draw_t - prev_draw_t;

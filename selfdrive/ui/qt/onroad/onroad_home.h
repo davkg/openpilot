@@ -5,12 +5,15 @@
 #ifdef SUNNYPILOT
 #include "selfdrive/ui/sunnypilot/qt/onroad/annotated_camera.h"
 #include "selfdrive/ui/sunnypilot/qt/onroad/alerts.h"
+#include "selfdrive/ui/sunnypilot/qt/onroad/hud_panel.h"
 #define UIState UIStateSP
 #define AnnotatedCameraWidget AnnotatedCameraWidgetSP
 #define OnroadAlerts OnroadAlertsSP
 #else
 #include "selfdrive/ui/qt/onroad/annotated_camera.h"
 #endif
+
+inline constexpr int BORDER_SIZE = 50;
 
 class OnroadWindow : public QWidget {
   Q_OBJECT
@@ -22,6 +25,7 @@ protected:
   void paintEvent(QPaintEvent *event);
   OnroadAlerts *alerts;
   AnnotatedCameraWidget *nvg;
+  HudPanel *hud_panel = nullptr;
   QWidget *split_surface = nullptr;
   QWidget *alerts_container = nullptr;
   QWidget *split_wrapper = nullptr;

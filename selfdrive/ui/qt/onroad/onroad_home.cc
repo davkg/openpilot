@@ -19,7 +19,7 @@ OnroadWindow::OnroadWindow(QWidget *parent) : QWidget(parent) {
 
   split_wrapper = new QWidget;
   QVBoxLayout *split_wrapper_layout = new QVBoxLayout(split_wrapper);
-  split_wrapper_layout->setContentsMargins(30, 0, 0, 0);  // Left border
+  split_wrapper_layout->setContentsMargins(BORDER_SIZE, 0, 0, 0);  // Left border
   split_wrapper_layout->setSpacing(0);
   split_wrapper_layout->addStretch(1);
 
@@ -39,9 +39,14 @@ OnroadWindow::OnroadWindow(QWidget *parent) : QWidget(parent) {
 
   stacked_layout->addWidget(split_wrapper);
 
+  // HUD panel overlay
+  hud_panel = new HudPanel(this);
+  stacked_layout->addWidget(hud_panel);
+  hud_panel->raise();
+
   alerts_container = new QWidget;
   QVBoxLayout *alerts_layout = new QVBoxLayout(alerts_container);
-  alerts_layout->setContentsMargins(0, 0, 0, 0);
+  alerts_layout->setContentsMargins(BORDER_SIZE, 0, 0, 0);
   alerts_layout->setSpacing(0);
   alerts_layout->addStretch(1);
 
@@ -53,6 +58,7 @@ OnroadWindow::OnroadWindow(QWidget *parent) : QWidget(parent) {
 
   // setup stacking order
   alerts->raise();
+  alerts_container->raise();
 
   updateScaledLayout();
 
@@ -72,6 +78,7 @@ void OnroadWindow::updateState(const UIState &s) {
 
   alerts->updateState(s);
   nvg->updateState(s);
+  hud_panel->updateState(s);
 
   QColor bgColor = bg_colors[s.status];
   if (bg != bgColor) {
@@ -87,7 +94,7 @@ void OnroadWindow::offroadTransition(bool offroad) {
 
 void OnroadWindow::paintEvent(QPaintEvent *event) {
   QPainter p(this);
-  p.fillRect(rect(), QColor(bg.red(), bg.green(), bg.blue(), 255));
+  p.fillRect(0, height() * 0.25, width() * 0.75 + BORDER_SIZE * 2, height() * 0.75, QColor(bg.red(), bg.green(), bg.blue(), 255));
 }
 
 void OnroadWindow::resizeEvent(QResizeEvent *event) {
@@ -104,4 +111,5 @@ void OnroadWindow::updateScaledLayout() {
 
   split_surface->setFixedSize(scaled_size);
   alerts->setFixedSize(scaled_size);
+  hud_panel->setFixedSize(width(), height());
 }
