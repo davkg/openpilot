@@ -1,6 +1,7 @@
 [submodule "panda"]
   path = panda
-  url = https://github.com/sunnyhaibin/panda.git
+  url = https://github.com/davkg/panda.git
+  branch = sp-honda-202510-davkg
 [submodule "msgq"]
   path = msgq_repo
   url = https://github.com/sunnypilot/msgq.git
@@ -18,5 +19,5 @@
   url = https://github.com/sunnypilot/neural-network-data.git
 [submodule "opendbc_repo"]
 	path = opendbc_repo
-	url = https://github.com/mvl-boston/opendbc
-	branch = sp-honda-new
+	url = https://github.com/davkg/opendbc.git
+	branch = sp-honda-202510-davkg
