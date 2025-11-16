@@ -173,9 +173,9 @@ void HudRendererSP::draw(QPainter &p, const QRect &surface_rect) {
 
   if (!reversing) {
     // Smart Cruise Control
-    int x_offset = -260;
-    int y1_offset = -80;
-    int y2_offset = -140;
+    int x_offset = 500;
+    int y1_offset = -80 + 600;
+    int y2_offset = -140 + 600;
 
     int y_scc_v = 0, y_scc_m = 0;
     const int orders[2] = {y1_offset, y2_offset};
@@ -220,7 +220,7 @@ void HudRendererSP::draw(QPainter &p, const QRect &surface_rect) {
     // Position speed limit sign at bottom right with no margins
     const int sign_width = is_metric ? 200 : 172;
     const int sign_height = 204;
-    const int sign_x = surface_rect.right() - sign_width;
+    const int sign_x = surface_rect.right() - sign_width - 91;
     const int sign_y = surface_rect.bottom() - sign_height;
     QRect sign_rect(sign_x, sign_y, sign_width, sign_height);
 
@@ -606,7 +606,7 @@ void HudRendererSP::drawUpcomingSpeedLimit(QPainter &p, const QRect &surface_rec
 
   const int ahead_width = 170;
   const int ahead_height = 160;
-  const int ahead_x = surface_rect.right() - sign_width + (sign_width - ahead_width) / 2;
+  const int ahead_x = surface_rect.right() - sign_width + (sign_width - ahead_width) / 2 - 91;
   const int ahead_y = surface_rect.bottom() - sign_height - ahead_height - 10;
 
   QRect ahead_rect(ahead_x, ahead_y, ahead_width, ahead_height);
@@ -687,7 +687,7 @@ void HudRendererSP::drawSetSpeedSP(QPainter &p, const QRect &surface_rect) {
   QSize set_speed_size = is_metric ? QSize(200, 204) : default_size;
   const int sign_width = is_metric ? 200 : 172;
   // Position to the left of speed limit sign at bottom right
-  QRect set_speed_rect(QPoint(surface_rect.right() - sign_width - set_speed_size.width(), surface_rect.bottom() - 204), set_speed_size);
+  QRect set_speed_rect(QPoint(surface_rect.right() - sign_width - set_speed_size.width() - 91, surface_rect.bottom() - 204), set_speed_size);
 
   // Draw set speed box
   p.setPen(QPen(QColor(255, 255, 255, 75), 6));
@@ -803,8 +803,8 @@ void HudRendererSP::drawCurrentSpeedSP(QPainter &p, const QRect &surface_rect) {
   // Draw rounded rect background
   int rect_width = 172;
   int rect_height = 204;
-  int rect_x = surface_rect.right() - (172 + 172/2) - rect_width / 2;
-  int rect_y = surface_rect.bottom() - rect_height - rect_height;
+  int rect_x = surface_rect.right() - (172 + 172/2) - rect_width / 2 - 91;
+  int rect_y = surface_rect.bottom() - rect_height - rect_height - 6;
   QRect speed_rect(rect_x, rect_y, rect_width, rect_height);
 
   p.setPen(QPen(QColor(255, 255, 255, 75), 6));
