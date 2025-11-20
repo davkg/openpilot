@@ -140,7 +140,7 @@ void HudRendererSP::updateState(const UIState &s) {
   steeringTorqueEps = car_state.getSteeringTorqueEps();
 
   // track rolling lateral acceleration for the last 5 seconds
-  if (latActive && !steerOverride) {
+  if (devUiInfo != 0 && latActive && !steerOverride) {
     float curr_lateral_accel = (curvature * powf(vEgo, 2)) - (roll * 9.81f);
     lateral_accel_history.push_back(curr_lateral_accel);
 
