@@ -10,6 +10,7 @@
 #include "selfdrive/ui/qt/onroad/hud.h"
 #include "selfdrive/ui/sunnypilot/qt/offroad/settings/longitudinal/speed_limit/helpers.h"
 #include "selfdrive/ui/sunnypilot/qt/onroad/developer_ui/developer_ui.h"
+#include <deque>
 
 constexpr int SPEED_LIMIT_AHEAD_VALID_FRAME_THRESHOLD = 5;
 
@@ -120,4 +121,6 @@ private:
   float speedCluster = 0;
   int icbm_active_counter = 0;
   bool pcmCruiseSpeed = true;
+  std::deque<float> lateral_accel_history;
+  float max_lateral_accel_5s = 0.0f;
 };

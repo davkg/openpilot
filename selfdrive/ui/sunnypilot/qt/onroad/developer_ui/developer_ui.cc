@@ -75,6 +75,15 @@ UiElement DeveloperUi::getActualLateralAccel(float curvature, float v_ego, float
   return UiElement(value, "ACTUAL L.A.", "m/s²", color);
 }
 
+// Max lateral acceleration over past 5 seconds
+// Unit: m/s^2
+UiElement DeveloperUi::getMaxLateralAccel(float max_lateral_accel, bool lat_active, bool steer_override) {
+  QString value = QString::number(max_lateral_accel, 'f', 2);
+  QColor color = lat_active ? (steer_override ? QColor(0x91, 0x9b, 0x95, 0xff) : QColor(0, 255, 0, 255)) : QColor(255, 255, 255, 255);
+
+  return UiElement(value, "MAX L.A. (5s)", "m/s²", color);
+}
+
 // Add Desired Steering Angle when using PID
 // Unit: Degrees
 UiElement DeveloperUi::getSteeringAngleDesiredDeg(bool lat_active, float steer_angle_desired, float angle_steers) {

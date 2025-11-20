@@ -5,6 +5,8 @@
  * See the LICENSE.md file in the root directory for more details.
  */
 #include <QPainterPath>
+#include <cmath>
+#include <algorithm>
 
 #include "selfdrive/ui/sunnypilot/qt/onroad/hud.h"
 
@@ -137,6 +139,25 @@ void HudRendererSP::updateState(const UIState &s) {
   aEgo = car_state.getAEgo();
   steeringTorqueEps = car_state.getSteeringTorqueEps();
 
+  // track rolling lateral acceleration for the last 5 seconds
+  if (latActive && !steerOverride) {
+    float curr_lateral_accel = (curvature * powf(vEgo, 2)) - (roll * 9.81f);
+    lateral_accel_history.push_back(curr_lateral_accel);
+
+    // 5s of history
+    while (lateral_accel_history.size() > static_cast<size_t>(5 * UI_FREQ)) {
+      lateral_accel_history.pop_front();
+    }
+
+    float max_lat = 0.0f;
+    for (const auto &val : lateral_accel_history) {
+      if (std::fabs(val) > std::fabs(max_lat)) {
+        max_lat = val;
+      }
+    }
+    max_lateral_accel_5s = max_lat;
+  }
+
   isStandstill = car_state.getStandstill();
   if (!s.scene.started) standstillElapsedTime = 0.0;
 
@@ -209,7 +230,7 @@ void HudRendererSP::draw(QPainter &p, const QRect &surface_rect) {
 
     // Right Dev UI
     if (devUiInfo != 0) {
-      QRect rect_right(surface_rect.right() - (UI_BORDER_SIZE * 2), UI_BORDER_SIZE * 1.5, 184, 170);
+      QRect rect_right(surface_rect.right() - (UI_BORDER_SIZE * 2), UI_BORDER_SIZE * 1.5, 184, 0);
       drawRightDevUI(p, surface_rect.right() - 184 - UI_BORDER_SIZE * 2, UI_BORDER_SIZE * 2 + rect_right.height());
     }
 
@@ -387,6 +408,11 @@ void HudRendererSP::drawRightDevUI(QPainter &p, int x, int y) {
 
   UiElement actualLateralAccelElement = DeveloperUi::getActualLateralAccel(curvature, vEgo, roll, latActive, steerOverride);
   rh += drawRightDevUIElement(p, x, ry, actualLateralAccelElement.value, actualLateralAccelElement.label, actualLateralAccelElement.units, actualLateralAccelElement.color);
+  ry = y + rh;
+
+  UiElement maxLatAccelElement = DeveloperUi::getMaxLateralAccel(max_lateral_accel_5s, latActive, steerOverride);
+  rh += drawRightDevUIElement(p, x, ry, maxLatAccelElement.value, maxLatAccelElement.label, maxLatAccelElement.units, maxLatAccelElement.color);
+  ry = y + rh;
 }
 
 int HudRendererSP::drawBottomDevUIElement(QPainter &p, int x, int y, const QString &value, const QString &label, const QString &units, QColor &color) {
