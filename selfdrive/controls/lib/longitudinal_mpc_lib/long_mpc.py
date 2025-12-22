@@ -85,7 +85,7 @@ def get_STOP_DISTANCE(personality=log.LongitudinalPersonality.standard):
   elif personality==log.LongitudinalPersonality.standard:
     return 6.0
   elif personality==log.LongitudinalPersonality.aggressive:
-    return 4.0
+    return 4.5
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
