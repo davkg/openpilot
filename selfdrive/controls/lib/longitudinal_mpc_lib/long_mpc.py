@@ -62,9 +62,9 @@ def get_jerk_factor(personality=log.LongitudinalPersonality.standard):
   if personality==log.LongitudinalPersonality.relaxed:
     return 1.0
   elif personality==log.LongitudinalPersonality.standard:
-    return 0.5
+    return 0.7
   elif personality==log.LongitudinalPersonality.aggressive:
-    return 0.4
+    return 0.5
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
@@ -83,9 +83,9 @@ def get_STOP_DISTANCE(personality=log.LongitudinalPersonality.standard):
   if personality==log.LongitudinalPersonality.relaxed:
     return 6.0
   elif personality==log.LongitudinalPersonality.standard:
-    return 5.5
+    return 6.0
   elif personality==log.LongitudinalPersonality.aggressive:
-    return 4.5
+    return 5.0
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
