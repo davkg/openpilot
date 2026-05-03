@@ -18,6 +18,7 @@ from openpilot.selfdrive.ui.sunnypilot.onroad.circular_alerts import CircularAle
 from openpilot.selfdrive.ui.sunnypilot.onroad.speed_renderer import SpeedRenderer
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
 from openpilot.selfdrive.ui.onroad.hud_renderer import HudRenderer, UI_CONFIG, FONT_SIZES, COLORS, CRUISE_DISABLED_CHAR
+from openpilot.selfdrive.ui.onroad.constants import ONROAD_SCALE
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.lib.text_measure import measure_text_cached
@@ -78,8 +79,10 @@ class HudRendererSP(HudRenderer):
     self._get_icbm_status()
 
     set_speed_width = UI_CONFIG.set_speed_width_metric if ui_state.is_metric else UI_CONFIG.set_speed_width_imperial
-    x = rect.x + 60 + (UI_CONFIG.set_speed_width_imperial - set_speed_width) // 2
-    y = rect.y + 45
+    # Bottom-right layout: set_speed on left, speed_limit sign on right.
+    # sign right edge = rect.right - 30.  ahead_info (170px below sign bottom) + 30px margin -> sign_bottom = rect.bottom - 200.
+    x = rect.x + rect.width - 30 - 2 * set_speed_width - 24
+    y = rect.y + rect.height - 410  # sign_top + 6 = (rect.bottom - 200 - 216) + 6
 
     set_speed_rect = rl.Rectangle(x, y, set_speed_width, UI_CONFIG.set_speed_height)
     rl.draw_rectangle_rounded(set_speed_rect, 0.35, 10, COLORS.BLACK_TRANSLUCENT)
@@ -132,14 +135,24 @@ class HudRendererSP(HudRenderer):
     super()._render(rect)
 
     if ui_state.torque_bar:
-      torque_rect = rect
+      torque_rect = rl.Rectangle(rect.x, rect.y, rect.width * ONROAD_SCALE, rect.height)
       if ui_state.developer_ui in (DeveloperUiState.BOTTOM, DeveloperUiState.BOTH):
-        torque_rect = rl.Rectangle(rect.x, rect.y, rect.width, rect.height - get_bottom_dev_ui_offset())
+        torque_rect = rl.Rectangle(rect.x, rect.y, rect.width * ONROAD_SCALE, rect.height - get_bottom_dev_ui_offset())
       self._torque_bar.render(torque_rect)
 
     self.developer_ui.render(rect)
     self.road_name_renderer.render(rect)
-    self.speed_limit_renderer.render(rect)
+    # Speed limit sign goes to the right of set_speed at bottom right.
+    # SpeedLimitRenderer uses rect.x + 60 + width + 24 for sign left, rect.y + 39 for sign top.
+    # Solve so sign right = rect.right - 30, sign top = rect.bottom - 416.
+    set_speed_width = UI_CONFIG.set_speed_width_metric if ui_state.is_metric else UI_CONFIG.set_speed_width_imperial
+    sl_rect = rl.Rectangle(
+      rect.x + rect.width - 114 - 2 * set_speed_width,
+      rect.y + rect.height - 455,
+      rect.width,
+      rect.height,
+    )
+    self.speed_limit_renderer.render(sl_rect)
     self.smart_cruise_control_renderer.render(rect)
     self.turn_signal_controller.render(rect)
     self.circular_alerts_renderer.render(rect)

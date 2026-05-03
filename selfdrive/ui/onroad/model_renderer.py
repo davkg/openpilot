@@ -254,8 +254,8 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
 
     # Calculate size and position
     sz = np.clip((25 * 30) / (d_rel / 3 + 30), 15.0, 30.0) * 2.35
-    x = np.clip(point[0], 0.0, rect.width - sz / 2)
-    y = min(point[1], rect.height - sz * 0.6)
+    x = np.clip(point[0], rect.x, rect.x + rect.width - sz / 2)
+    y = min(point[1], rect.y + rect.height - sz * 0.6)
 
     g_xo = sz / 5
     g_yo = sz / 10

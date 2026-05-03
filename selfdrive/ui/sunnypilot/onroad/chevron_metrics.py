@@ -97,10 +97,10 @@ class ChevronMetrics:
     total_height = len(text_lines) * line_height
 
     # Adjust Y position if text would go off screen
-    if text_y + total_height > rect.height - margin:
-      y_max = min(chevron_y, rect.height - margin)
+    if text_y + total_height > rect.y + rect.height - margin:
+      y_max = min(chevron_y, rect.y + rect.height - margin)
       text_y = y_max - 15 - total_height
-      text_y = max(margin, text_y)
+      text_y = max(rect.y + margin, text_y)
 
     alpha = int(255 * self._lead_status_alpha)
     text_color = rl.Color(255, 255, 255, alpha)
@@ -108,7 +108,7 @@ class ChevronMetrics:
 
     for i, line in enumerate(text_lines):
       y = int(text_y + (i * line_height))
-      if y + line_height > rect.height - margin:
+      if y + line_height > rect.y + rect.height - margin:
         break
 
       # Measure actual text width for proper centering
@@ -117,7 +117,7 @@ class ChevronMetrics:
 
       # Center the text horizontally on the chevron
       x = int(chevron_x - text_width / 2)
-      x = int(np.clip(x, margin, rect.width - text_width - margin))
+      x = int(np.clip(x, rect.x + margin, rect.x + rect.width - text_width - margin))
 
       # Draw shadow
       rl.draw_text_ex(self._font, line, rl.Vector2(x + 2, y + 2), font_size, 0, shadow_color)
