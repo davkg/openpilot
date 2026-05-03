@@ -18,6 +18,7 @@ from openpilot.selfdrive.ui.sunnypilot.onroad.circular_alerts import CircularAle
 from openpilot.selfdrive.ui.sunnypilot.onroad.speed_renderer import SpeedRenderer
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
 from openpilot.selfdrive.ui.onroad.hud_renderer import HudRenderer, UI_CONFIG, FONT_SIZES, COLORS, CRUISE_DISABLED_CHAR
+from openpilot.selfdrive.ui.onroad.constants import ONROAD_SCALE
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.lib.text_measure import measure_text_cached
@@ -132,9 +133,9 @@ class HudRendererSP(HudRenderer):
     super()._render(rect)
 
     if ui_state.torque_bar:
-      torque_rect = rect
+      torque_rect = rl.Rectangle(rect.x, rect.y, (rect.x + rect.width) * ONROAD_SCALE, rect.height)
       if ui_state.developer_ui in (DeveloperUiState.BOTTOM, DeveloperUiState.BOTH):
-        torque_rect = rl.Rectangle(rect.x, rect.y, rect.width, rect.height - get_bottom_dev_ui_offset())
+        torque_rect = rl.Rectangle(rect.x, rect.y, (rect.x + rect.width) * ONROAD_SCALE, rect.height - get_bottom_dev_ui_offset())
       self._torque_bar.render(torque_rect)
 
     self.developer_ui.render(rect)

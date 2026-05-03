@@ -9,12 +9,10 @@ from openpilot.selfdrive.ui.onroad.augmented_road_view import AugmentedRoadView
 from openpilot.selfdrive.ui.ui_state import device, ui_state
 from openpilot.system.ui.widgets import Widget
 from openpilot.selfdrive.ui.layouts.onboarding import OnboardingWindow
+from openpilot.selfdrive.ui.onroad.constants import ONROAD_SCALE
 
 if gui_app.sunnypilot_ui():
   from openpilot.selfdrive.ui.sunnypilot.layouts.settings.settings import SettingsLayoutSP as SettingsLayout
-
-
-ONROAD_SCALE = 0.7
 
 
 class MainState(IntEnum):
@@ -121,9 +119,10 @@ class MainLayout(Widget):
       scaled_h = self._rect.height * ONROAD_SCALE
       onroad_rect = rl.Rectangle(x_offset, self._rect.height - scaled_h, scaled_w, scaled_h)
       self._layouts[MainState.ONROAD].render(onroad_rect)
-      # Render HUD and alerts in the full screen rect so they draw outside the scaled video
-      self._layouts[MainState.ONROAD]._hud_renderer.render(self._rect)
-      self._layouts[MainState.ONROAD].alert_renderer.render(self._rect)
+      # Render HUD and alerts outside the scaled video
+      hud_rect = self._content_rect if self._sidebar.is_visible else self._rect
+      self._layouts[MainState.ONROAD]._hud_renderer.render(hud_rect)
+      self._layouts[MainState.ONROAD].alert_renderer.render(hud_rect)
     else:
       content_rect = self._content_rect if self._sidebar.is_visible else self._rect
       self._layouts[self._current_mode].render(content_rect)
