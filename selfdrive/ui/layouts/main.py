@@ -14,6 +14,9 @@ if gui_app.sunnypilot_ui():
   from openpilot.selfdrive.ui.sunnypilot.layouts.settings.settings import SettingsLayoutSP as SettingsLayout
 
 
+ONROAD_SCALE = 0.7
+
+
 class MainState(IntEnum):
   HOME = 0
   SETTINGS = 1
@@ -109,5 +112,17 @@ class MainLayout(Widget):
     if self._sidebar.is_visible:
       self._sidebar.render(self._sidebar_rect)
 
-    content_rect = self._content_rect if self._sidebar.is_visible else self._rect
-    self._layouts[self._current_mode].render(content_rect)
+    # content_rect = self._content_rect if self._sidebar.is_visible else self._rect
+    # self._layouts[self._current_mode].render(content_rect)
+
+    if self._current_mode == MainState.ONROAD:
+      x_offset = SIDEBAR_WIDTH if self._sidebar.is_visible else 0
+      scaled_w = self._rect.width * ONROAD_SCALE
+      scaled_h = self._rect.height * ONROAD_SCALE
+      onroad_rect = rl.Rectangle(x_offset, self._rect.height - scaled_h, scaled_w, scaled_h)
+      self._layouts[MainState.ONROAD].render(onroad_rect)
+      # Render HUD in the full screen rect
+      self._layouts[MainState.ONROAD]._hud_renderer.render(self._rect)
+    else:
+      content_rect = self._content_rect if self._sidebar.is_visible else self._rect
+      self._layouts[self._current_mode].render(content_rect)

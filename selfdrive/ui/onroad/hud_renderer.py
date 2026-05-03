@@ -117,8 +117,8 @@ class HudRenderer(Widget):
 
     self._draw_current_speed(rect)
 
-    button_x = rect.x + rect.width - UI_CONFIG.border_size - UI_CONFIG.button_size
-    button_y = rect.y + UI_CONFIG.border_size
+    button_x = rect.x + 0.7 * rect.width - UI_CONFIG.border_size * 2 - UI_CONFIG.button_size
+    button_y = rect.y + rect.height - UI_CONFIG.border_size * 2 - UI_CONFIG.button_size
     self._exp_button.render(rl.Rectangle(button_x, button_y, UI_CONFIG.button_size, UI_CONFIG.button_size))
 
   def user_interacting(self) -> bool:
