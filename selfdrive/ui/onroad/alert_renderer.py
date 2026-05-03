@@ -164,13 +164,15 @@ class AlertRenderer(Widget):
       is_long = len(alert.text1) > 15
       font_size1 = 132 if is_long else 177
 
-      top_offset = 200 if is_long or '\n' in alert.text1 else 270
+      # 200, 270 (70 diff)
+      top_offset = 500 if is_long or '\n' in alert.text1 else 570
       title_rect = rl.Rectangle(rect.x, rect.y + top_offset, rect.width, 600)
       self._full_text1_label.set_font_size(font_size1)
       self._full_text1_label.set_text(alert.text1)
       self._full_text1_label.render(title_rect)
 
-      bottom_offset = 361 if is_long else 420
+      # 361, 420 (59 diff)
+      bottom_offset = 130 if is_long else 70
       subtitle_rect = rl.Rectangle(rect.x, rect.y + rect.height - bottom_offset, rect.width, 300)
       self._full_text2_label.set_text(alert.text2)
       self._full_text2_label.render(subtitle_rect)

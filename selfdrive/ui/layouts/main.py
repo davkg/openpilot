@@ -121,8 +121,9 @@ class MainLayout(Widget):
       scaled_h = self._rect.height * ONROAD_SCALE
       onroad_rect = rl.Rectangle(x_offset, self._rect.height - scaled_h, scaled_w, scaled_h)
       self._layouts[MainState.ONROAD].render(onroad_rect)
-      # Render HUD in the full screen rect
+      # Render HUD and alerts in the full screen rect so they draw outside the scaled video
       self._layouts[MainState.ONROAD]._hud_renderer.render(self._rect)
+      self._layouts[MainState.ONROAD].alert_renderer.render(self._rect)
     else:
       content_rect = self._content_rect if self._sidebar.is_visible else self._rect
       self._layouts[self._current_mode].render(content_rect)
