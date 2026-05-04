@@ -11,6 +11,7 @@ from openpilot.selfdrive.ui.onroad.hud_renderer import HudRenderer
 from openpilot.selfdrive.ui.onroad.model_renderer import ModelRenderer
 from openpilot.selfdrive.ui.onroad.cameraview import CameraView
 from openpilot.system.ui.lib.application import gui_app
+from openpilot.selfdrive.ui.onroad.constants import ONROAD_SCALE
 from openpilot.common.transformations.camera import DEVICE_CAMERAS, DeviceCameraConfig, view_frame_from_device_frame
 from openpilot.common.transformations.orientation import rot_from_euler
 
@@ -72,12 +73,17 @@ class AugmentedRoadView(CameraView, AugmentedRoadViewSP):
     # Update calibration before rendering
     self._update_calibration()
 
+    # Scale the camera area to bottom-left portion of rect; HUD/alerts use the full rect
+    scaled_w = rect.width * ONROAD_SCALE
+    scaled_h = rect.height * ONROAD_SCALE
+    scaled_rect = rl.Rectangle(rect.x, rect.y + rect.height - scaled_h, scaled_w, scaled_h)
+
     # Create inner content area with border padding
     self._content_rect = rl.Rectangle(
-      rect.x + UI_BORDER_SIZE,
-      rect.y + UI_BORDER_SIZE,
-      rect.width - 2 * UI_BORDER_SIZE,
-      rect.height - 2 * UI_BORDER_SIZE,
+      scaled_rect.x + UI_BORDER_SIZE,
+      scaled_rect.y + UI_BORDER_SIZE,
+      scaled_rect.width - 2 * UI_BORDER_SIZE,
+      scaled_rect.height - 2 * UI_BORDER_SIZE,
     )
 
     # Enable scissor mode to clip all rendering within content rectangle boundaries
@@ -90,7 +96,7 @@ class AugmentedRoadView(CameraView, AugmentedRoadViewSP):
     )
 
     # Render the base camera view
-    super()._render(rect)
+    super()._render(scaled_rect)
 
     # Draw all UI overlays
     self.model_renderer.render(self._content_rect)
@@ -106,7 +112,11 @@ class AugmentedRoadView(CameraView, AugmentedRoadViewSP):
     rl.end_scissor_mode()
 
     # Draw colored border based on driving state
-    self._draw_border(rect)
+    self._draw_border(scaled_rect)
+
+    # HUD rendered outside scissor with full rect
+    self._hud_renderer.render(rect)
+    self.alert_renderer.render(rect)
 
     # publish uiDebug
     msg = messaging.new_message('uiDebug')

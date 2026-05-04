@@ -118,7 +118,7 @@ class HudRenderer(Widget):
 
     self._draw_current_speed(rect)
 
-    button_x = rect.x + (rect.x + rect.width) * ONROAD_SCALE - UI_CONFIG.border_size * 2 - UI_CONFIG.button_size
+    button_x = rect.x + rect.width * ONROAD_SCALE - UI_CONFIG.border_size * 2 - UI_CONFIG.button_size
     button_y = rect.y + rect.height - UI_CONFIG.border_size * 2 - UI_CONFIG.button_size
     self._exp_button.render(rl.Rectangle(button_x, button_y, UI_CONFIG.button_size, UI_CONFIG.button_size))
 
