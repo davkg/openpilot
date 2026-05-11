@@ -28,8 +28,8 @@ class UIConfig:
 
 @dataclass(frozen=True)
 class FontSizes:
-  current_speed: int = 120
-  speed_unit: int = 40
+  current_speed: int = 90
+  speed_unit: int = 30
   max_speed: int = 40
   set_speed: int = 90
 

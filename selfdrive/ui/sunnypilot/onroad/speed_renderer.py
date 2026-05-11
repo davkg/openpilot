@@ -11,7 +11,7 @@ from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.lib.text_measure import measure_text_cached
-from openpilot.selfdrive.ui.onroad.hud_renderer import FONT_SIZES, COLORS
+from openpilot.selfdrive.ui.onroad.hud_renderer import UI_CONFIG, FONT_SIZES, COLORS
 
 
 class SpeedRenderer:
@@ -34,12 +34,30 @@ class SpeedRenderer:
     if ui_state.hide_v_ego_ui:
       return
 
+    set_speed_width = UI_CONFIG.set_speed_width_metric if ui_state.is_metric else UI_CONFIG.set_speed_width_imperial
+    set_speed_x = rect.x + rect.width - 30 - 2 * set_speed_width - 24
+    center_x = set_speed_x + set_speed_width / 2
+    set_speed_bottom = rect.y + rect.height - 410 + UI_CONFIG.set_speed_height
+
     speed_text = str(round(self.speed))
     speed_text_size = measure_text_cached(self._font_bold, speed_text, FONT_SIZES.current_speed)
-    speed_pos = rl.Vector2(rect.x + rect.width - 215 - speed_text_size.x / 2, rect.y + 500 - speed_text_size.y / 2)
-    rl.draw_text_ex(self._font_bold, speed_text, speed_pos, FONT_SIZES.current_speed, 0, COLORS.WHITE)
+    speed_y = set_speed_bottom + 20
+    rl.draw_text_ex(
+      self._font_bold,
+      speed_text,
+      rl.Vector2(center_x - speed_text_size.x / 2, speed_y),
+      FONT_SIZES.current_speed,
+      0,
+      COLORS.WHITE,
+    )
 
     unit_text = tr("km/h") if ui_state.is_metric else tr("mph")
     unit_text_size = measure_text_cached(self._font_medium, unit_text, FONT_SIZES.speed_unit)
-    unit_pos = rl.Vector2(rect.x + rect.width - 215 - unit_text_size.x / 2, rect.y + 580 - unit_text_size.y / 2)
-    rl.draw_text_ex(self._font_medium, unit_text, unit_pos, FONT_SIZES.speed_unit, 0, COLORS.WHITE_TRANSLUCENT)
+    rl.draw_text_ex(
+      self._font_medium,
+      unit_text,
+      rl.Vector2(center_x - unit_text_size.x / 2, speed_y + speed_text_size.y - 10),
+      FONT_SIZES.speed_unit,
+      0,
+      COLORS.WHITE_TRANSLUCENT,
+    )
