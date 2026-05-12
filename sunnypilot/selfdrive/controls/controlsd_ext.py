@@ -97,6 +97,7 @@ class ControlsExt(ModelStateBase):
     CC_SP.mads = sm['selfdriveStateSP'].mads
 
     CC_SP.intelligentCruiseButtonManagement = sm['selfdriveStateSP'].intelligentCruiseButtonManagement
+    CC_SP.speedLimit = sm['selfdriveStateSP'].speedLimit
 
     return CC_SP
 

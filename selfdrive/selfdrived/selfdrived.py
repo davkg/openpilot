@@ -569,6 +569,8 @@ class SelfdriveD(CruiseHelper):
     icbm.sendButton = self.icbm.cruise_button
     icbm.vTarget = self.icbm.v_target
 
+    ss_sp.speedLimit = self.sm['longitudinalPlanSP'].speedLimit.resolver.speedLimit
+
     self.pm.send('selfdriveStateSP', ss_sp_msg)
 
     # onroadEventsSP - logged every second or on change
