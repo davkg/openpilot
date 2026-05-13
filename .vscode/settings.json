@@ -6,12 +6,14 @@
   "search.exclude": {
     "**/.git": true,
     "**/.venv": true,
-    "**/__pycache__": true
+    "**/__pycache__": true,
+    "opendbc/**": true,
   },
   "files.exclude": {
     "**/.git": true,
     "**/.venv": true,
-    "**/__pycache__": true
+    "**/__pycache__": true,
+    "opendbc/**": true,
   },
   "python.analysis.exclude": [
     "**/.git",
@@ -23,5 +25,6 @@
     "system/**",
     "third_party/**",
     "tools/**",
+    "opendbc/**",
   ]
 }
