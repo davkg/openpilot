@@ -64,3 +64,64 @@ class TestCruiseHelper:
         # mode should not be toggled
         assert self.cruise_helper._experimental_mode == experimental_mode
         assert self.cruise_helper.experimental_mode_switched is False
+
+  def test_lkas_long_press_toggle_mode(self) -> None:
+    for pressed in (True, False):
+      for experimental_mode in (True, False):
+        self.reset()
+        self.cruise_helper._experimental_mode = experimental_mode
+        toggled_mode = not experimental_mode if pressed else experimental_mode
+
+        for i in range(DISTANCE_LONG_PRESS):
+          CS = car.CarState(cruiseState={"available": True})
+          CS.buttonEvents = [ButtonEvent(type=ButtonType.lkas, pressed=pressed)] if i == 0 else []
+          self.cruise_helper.update(CS, self.events, experimental_mode)
+
+        assert self.cruise_helper._experimental_mode == toggled_mode
+        assert self.cruise_helper.experimental_mode_switched is pressed
+
+        # keep holding button after switching mode — should not toggle again
+        for _ in range(DISTANCE_LONG_PRESS):
+          CS = car.CarState(cruiseState={"available": True})
+          CS.buttonEvents = [ButtonEvent(type=ButtonType.lkas, pressed=pressed)]
+          self.cruise_helper.update(CS, self.events, toggled_mode)
+
+        assert self.cruise_helper._experimental_mode == toggled_mode
+        assert self.cruise_helper.experimental_mode_switched is pressed
+
+  def test_lkas_short_press_no_toggle(self) -> None:
+    for pressed in (True, False):
+      for experimental_mode in (True, False):
+        self.reset()
+        self.cruise_helper._experimental_mode = experimental_mode
+
+        for i in range(DISTANCE_LONG_PRESS - 1):
+          CS = car.CarState(cruiseState={"available": True})
+          CS.buttonEvents = [ButtonEvent(type=ButtonType.lkas, pressed=pressed)] if i == 0 else []
+          self.cruise_helper.update(CS, self.events, experimental_mode)
+
+        assert self.cruise_helper._experimental_mode == experimental_mode
+        assert self.cruise_helper.experimental_mode_switched is False
+
+  def test_lkas_release_allows_retoggle(self) -> None:
+    self.reset()
+    self.cruise_helper._experimental_mode = False
+
+    for i in range(DISTANCE_LONG_PRESS):
+      CS = car.CarState(cruiseState={"available": True})
+      CS.buttonEvents = [ButtonEvent(type=ButtonType.lkas, pressed=True)] if i == 0 else []
+      self.cruise_helper.update(CS, self.events, False)
+    assert self.cruise_helper._experimental_mode is True
+    assert self.cruise_helper.experimental_mode_switched is True
+
+    CS = car.CarState(cruiseState={"available": True})
+    CS.buttonEvents = [ButtonEvent(type=ButtonType.lkas, pressed=False)]
+    self.cruise_helper.update(CS, self.events, True)
+    assert self.cruise_helper.experimental_mode_switched is False
+
+    for i in range(DISTANCE_LONG_PRESS):
+      CS = car.CarState(cruiseState={"available": True})
+      CS.buttonEvents = [ButtonEvent(type=ButtonType.lkas, pressed=True)] if i == 0 else []
+      self.cruise_helper.update(CS, self.events, True)
+    assert self.cruise_helper._experimental_mode is False
+    assert self.cruise_helper.experimental_mode_switched is True
