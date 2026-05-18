@@ -63,7 +63,7 @@ MIN_X_LEAD_FACTOR = 0.5
 # at the lead's speed plus this margin (but never below the current speed, so
 # it only suppresses needless acceleration -- slowing down is left to the lead
 # obstacle).
-LEAD_ANTICIPATION_MARGIN = 2.2  # m/s (~5 mph) above a slower lead's speed
+LEAD_ANTICIPATION_MARGIN = 3.4  # m/s (~7.5 mph) above a slower lead's speed
 
 def get_jerk_factor(personality=log.LongitudinalPersonality.standard, v_ego=0.0):
   # 5 m/s = 11 mph, 20 m/s = 45 mph
