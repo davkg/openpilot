@@ -21,3 +21,9 @@ third_party/acados/*/t_renderer filter=lfs diff=lfs merge=lfs -text
 third_party/qt5/larch64/bin/lrelease filter=lfs diff=lfs merge=lfs -text
 third_party/qt5/larch64/bin/lupdate filter=lfs diff=lfs merge=lfs -text
 third_party/catch2/include/catch2/catch.hpp filter=lfs diff=lfs merge=lfs -text
+
+# Cruise-step click sounds: kept as plain git blobs, NOT LFS.
+# This fork has no write access to the sunnypilot LFS server (.lfsconfig),
+# so these small files are stored directly in the repo instead.
+selfdrive/assets/sounds/cruise_step_down.wav -filter -diff -merge -text
+selfdrive/assets/sounds/cruise_step_up.wav -filter -diff -merge -text

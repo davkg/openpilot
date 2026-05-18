@@ -111,6 +111,9 @@ struct SelfdriveStateSP @0x81c2f05a394cf4af {
 
     promptSingleLow @31;
     promptSingleHigh @32;
+
+    cruiseStepUp @33;
+    cruiseStepDown @34;
   }
 }
 
@@ -343,6 +346,8 @@ struct OnroadEventSP @0xda96579883444c35 {
     speedLimitChanged @21;
     speedLimitPending @22;
     e2eChime @23;
+    cruiseStepUp @24;
+    cruiseStepDown @25;
   }
 }
 

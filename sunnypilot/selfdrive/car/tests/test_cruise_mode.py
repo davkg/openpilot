@@ -1,10 +1,12 @@
-from cereal import car
+from cereal import car, custom
 from openpilot.common.parameterized import parameterized_class
 from openpilot.selfdrive.selfdrived.events import Events
-from openpilot.sunnypilot.selfdrive.car.cruise_helpers import CruiseHelper, DISTANCE_LONG_PRESS
+from openpilot.sunnypilot.selfdrive.car.cruise_helpers import CruiseHelper, DISTANCE_LONG_PRESS, CRUISE_LONG_PRESS
+from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 
 ButtonEvent = car.CarState.ButtonEvent
 ButtonType = car.CarState.ButtonEvent.Type
+EventNameSP = custom.OnroadEventSP.EventName
 
 
 @parameterized_class(('openpilot_longitudinal',), [(True,)])
@@ -125,3 +127,36 @@ class TestCruiseHelper:
       self.cruise_helper.update(CS, self.events, True)
     assert self.cruise_helper._experimental_mode is False
     assert self.cruise_helper.experimental_mode_switched is True
+
+  def test_cruise_hold_chimes_on_each_step(self) -> None:
+    """Holding inc/dec raises a directional chime event on every long-press step."""
+    for button, event, other in ((ButtonType.accelCruise, EventNameSP.cruiseStepUp, EventNameSP.cruiseStepDown),
+                                 (ButtonType.decelCruise, EventNameSP.cruiseStepDown, EventNameSP.cruiseStepUp)):
+      self.setup_method()
+      events_sp = EventsSP()
+      for i in range(3 * CRUISE_LONG_PRESS):
+        events_sp.clear()
+        CS = car.CarState(cruiseState={"available": True})
+        CS.buttonEvents = [ButtonEvent(type=button, pressed=True)] if i == 0 else []
+        self.cruise_helper.update(CS, events_sp, False)
+
+        on_step = (i + 1) % CRUISE_LONG_PRESS == 0
+        assert events_sp.has(event) == on_step
+        assert events_sp.has(other) is False
+
+  def test_cruise_short_tap_no_chime(self) -> None:
+    """A short inc/dec tap (released before the long-press threshold) is silent."""
+    for button in (ButtonType.accelCruise, ButtonType.decelCruise):
+      self.setup_method()
+      events_sp = EventsSP()
+      for i in range(CRUISE_LONG_PRESS - 1):
+        events_sp.clear()
+        CS = car.CarState(cruiseState={"available": True})
+        if i == 0:
+          CS.buttonEvents = [ButtonEvent(type=button, pressed=True)]
+        elif i == 5:
+          CS.buttonEvents = [ButtonEvent(type=button, pressed=False)]
+        else:
+          CS.buttonEvents = []
+        self.cruise_helper.update(CS, events_sp, False)
+        assert len(events_sp) == 0

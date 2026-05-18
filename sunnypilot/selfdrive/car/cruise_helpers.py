@@ -13,6 +13,13 @@ ButtonType = car.CarState.ButtonEvent.Type
 EventNameSP = custom.OnroadEventSP.EventName
 
 DISTANCE_LONG_PRESS = 50
+CRUISE_LONG_PRESS = 50  # frames; must match CRUISE_LONG_PRESS in selfdrive/car/cruise.py
+
+# holding inc/dec -> directional chime raised on each set-speed step
+CRUISE_STEP_EVENTS = {
+  ButtonType.accelCruise: EventNameSP.cruiseStepUp,
+  ButtonType.decelCruise: EventNameSP.cruiseStepDown,
+}
 
 
 class CruiseHelper:
@@ -20,7 +27,8 @@ class CruiseHelper:
     self.CP = CP
     self.params = Params()
 
-    self.button_frame_counts = {ButtonType.gapAdjustCruise: 0, ButtonType.lkas: 0}
+    self.button_frame_counts = {ButtonType.gapAdjustCruise: 0, ButtonType.lkas: 0,
+                                ButtonType.accelCruise: 0, ButtonType.decelCruise: 0}
     self._experimental_mode = False
     self.experimental_mode_switched = False
 
@@ -31,6 +39,9 @@ class CruiseHelper:
 
         # toggle experimental mode once on distance button hold or on LKAS press
         self.update_experimental_mode(CS, events, experimental_mode)
+
+        # audible feedback on each set-speed step while holding inc/dec
+        self.update_cruise_step_chime(events)
 
   def update_button_frame_counts(self, CS) -> None:
     for button in self.button_frame_counts:
@@ -56,3 +67,13 @@ class CruiseHelper:
       self.experimental_mode_switched = False
     if any(be.type == ButtonType.gapAdjustCruise and not be.pressed for be in CS.buttonEvents):
       self.experimental_mode_switched = False
+
+  def update_cruise_step_chime(self, events) -> None:
+    # holding inc/dec steps the set speed every CRUISE_LONG_PRESS frames (see
+    # VCruiseHelper._update_v_cruise_non_pcm); chime on each step so the hold can
+    # be counted by ear instead of watched. ET.WARNING gates this to when openpilot
+    # is engaged, which is the only time the set speed actually moves.
+    for button, event in CRUISE_STEP_EVENTS.items():
+      count = self.button_frame_counts[button]
+      if count > 0 and count % CRUISE_LONG_PRESS == 0:
+        events.add(event)

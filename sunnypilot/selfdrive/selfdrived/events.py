@@ -246,4 +246,19 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
       AlertStatus.normal, AlertSize.none,
       Priority.MID, VisualAlert.none, AudibleAlert.prompt, 3.),
   },
+
+  # short directional click on every set-speed step while holding inc/dec
+  EventNameSP.cruiseStepUp: {
+    ET.WARNING: Alert(
+      "", "",
+      AlertStatus.normal, AlertSize.none,
+      Priority.LOW, VisualAlert.none, AudibleAlertSP.cruiseStepUp, .1),
+  },
+
+  EventNameSP.cruiseStepDown: {
+    ET.WARNING: Alert(
+      "", "",
+      AlertStatus.normal, AlertSize.none,
+      Priority.LOW, VisualAlert.none, AudibleAlertSP.cruiseStepDown, .1),
+  },
 }
