@@ -8,12 +8,14 @@
     "**/.venv": true,
     "**/__pycache__": true,
     "opendbc/**": true,
+    "openpilot/**": true,
   },
   "files.exclude": {
     "**/.git": true,
     "**/.venv": true,
     "**/__pycache__": true,
-    "opendbc/**": true,
+    "opendbc": true,
+    "openpilot": true,
   },
   "python.analysis.exclude": [
     "**/.git",
