@@ -79,7 +79,6 @@ class VCruiseHelper(VCruiseHelperSP):
       return
 
     long_press = False
-    first_long_press = False
     button_type = None
 
     v_cruise_delta = 1. if is_metric else IMPERIAL_INCREMENT
@@ -95,7 +94,6 @@ class VCruiseHelper(VCruiseHelperSP):
         if timer and timer % CRUISE_LONG_PRESS == 0:
           button_type = k
           long_press = True
-          first_long_press = timer == CRUISE_LONG_PRESS
           break
 
     if button_type is None:
@@ -119,8 +117,8 @@ class VCruiseHelper(VCruiseHelperSP):
     long_press, v_cruise_delta = VCruiseHelperSP.update_v_cruise_delta(self, long_press, v_cruise_delta)
 
     decel_jump = None
-    if first_long_press and button_type == ButtonType.decelCruise:
-      decel_jump = VCruiseHelperSP.get_decel_long_press_target(self, CS.vEgo, is_metric)
+    if not long_press and button_type == ButtonType.decelCruise:
+      decel_jump = VCruiseHelperSP.get_decel_jump_target(self, CS.vEgo, is_metric)
 
     if decel_jump is not None:
       self.v_cruise_kph = decel_jump

@@ -108,7 +108,12 @@ class TestCustomAccIncrements(TestVCruiseHelper):
     self.enable(50 * CV.KPH_TO_MS, False, False)
 
     initial_speed = self.v_cruise_helper.v_cruise_kph
-    self.press_button_short(button_type)
+    # vEgo matches set speed so the decel-jump target (ego+10) is above set speed and won't fire
+    CS = car.CarState(vEgo=50 * CV.KPH_TO_MS, cruiseState={"available": True})
+    CS.buttonEvents = [ButtonEvent(type=button_type, pressed=True)]
+    self.v_cruise_helper.update_v_cruise(CS, enabled=True, is_metric=True)
+    CS.buttonEvents = [ButtonEvent(type=button_type, pressed=False)]
+    self.v_cruise_helper.update_v_cruise(CS, enabled=True, is_metric=True)
 
     expected_change = 3 if button_type == ButtonType.accelCruise else -3
     assert self.v_cruise_helper.v_cruise_kph == initial_speed + expected_change
@@ -151,10 +156,10 @@ class TestCustomAccIncrements(TestVCruiseHelper):
 
 
 @parameterized_class(('pcm_cruise', 'pcm_cruise_speed'), [(False, True)])
-class TestDecelLongPressJump(TestVCruiseHelper):
-  """Holding the decel button: the first long-press jumps the set speed to
-  (current speed + 10) rounded to the nearest 5 (display units), then keeps
-  stepping down by 5. Short taps and long-press timing are unchanged."""
+class TestDecelTapJump(TestVCruiseHelper):
+  """A decel tap jumps the set speed to (current speed + 10) rounded to the nearest 5
+  (display units), floored at DECEL_JUMP_MIN_SPEED, when the result would be lower than
+  the current set speed. Holds step by 5 per tick and never jump."""
 
   def setup_method(self):
     TestVCruiseHelper.setup_method(self)
@@ -169,28 +174,23 @@ class TestDecelLongPressJump(TestVCruiseHelper):
   def _to_ms(speed_disp: float, is_metric: bool) -> float:
     return speed_disp * (CV.KPH_TO_MS if is_metric else CV.MPH_TO_MS)
 
-  def _hold(self, button_type: car.CarState.ButtonEvent.Type, v_ego: float, is_metric: bool, n_ticks: int) -> list[float]:
-    """Press and hold a button through n_ticks long-press ticks (50 frames each); return the set speed after each tick."""
+  def _tap(self, button_type: car.CarState.ButtonEvent.Type, v_ego: float, is_metric: bool) -> float:
+    """Single press+release tap; return the resulting set speed."""
     CS = car.CarState(vEgo=v_ego, cruiseState={"available": True})
     CS.buttonEvents = [ButtonEvent(type=button_type, pressed=True)]
     self.v_cruise_helper.update_v_cruise(CS, enabled=True, is_metric=is_metric)
-
-    speeds = []
-    CS.buttonEvents = []
-    for _ in range(n_ticks):
-      for _ in range(50):
-        self.v_cruise_helper.update_v_cruise(CS, enabled=True, is_metric=is_metric)
-      speeds.append(self.v_cruise_helper.v_cruise_kph)
-    return speeds
+    CS.buttonEvents = [ButtonEvent(type=button_type, pressed=False)]
+    self.v_cruise_helper.update_v_cruise(CS, enabled=True, is_metric=is_metric)
+    return self.v_cruise_helper.v_cruise_kph
 
   @pytest.mark.parametrize("is_metric, expected_kph", [
-    (True, [40, 35, 30]),         # +10 kph, rounded to nearest 5 kph
-    (False, [64.0, 56.0, 48.0]),  # 40 / 35 / 30 mph on the imperial kph grid
+    (True, [40, 39, 38]),           # jumps to 40 kph, then steps -1 kph per tap
+    (False, [64.0, 62.4, 60.8]),    # jumps to 40 mph, then steps -1 mph per tap
   ])
-  def test_first_decel_hold_jumps_to_ego_plus_10(self, is_metric, expected_kph):
-    """ego ~31, set ~70: first decel hold jumps to 40, then steps down 35, 30."""
+  def test_first_decel_tap_jumps_to_ego_plus_10(self, is_metric, expected_kph):
+    """ego ~31, set ~70: first decel tap jumps to ego+10 rounded, then steps down by 1."""
     self.enable(self._to_ms(70, is_metric), False, False)
-    speeds = self._hold(ButtonType.decelCruise, self._to_ms(31, is_metric), is_metric, 3)
+    speeds = [self._tap(ButtonType.decelCruise, self._to_ms(31, is_metric), is_metric) for _ in range(3)]
     assert speeds == pytest.approx(expected_kph)
 
   @pytest.mark.parametrize("v_ego_mph, expected_kph", [
@@ -200,35 +200,36 @@ class TestDecelLongPressJump(TestVCruiseHelper):
     (20, 48.0),   # naive target 30 -> above the floor, unchanged
   ])
   def test_decel_jump_floored_at_25_mph(self, v_ego_mph, expected_kph):
-    """The first decel hold never jumps the set speed below 25 mph."""
+    """The decel tap jump never lowers the set speed below 25 mph."""
     self.enable(self._to_ms(50, False), False, False)
-    speeds = self._hold(ButtonType.decelCruise, self._to_ms(v_ego_mph, False), False, 1)
-    assert speeds[0] == pytest.approx(expected_kph)
+    result = self._tap(ButtonType.decelCruise, self._to_ms(v_ego_mph, False), False)
+    assert result == pytest.approx(expected_kph)
 
   @pytest.mark.parametrize("is_metric", [True, False])
-  def test_decel_hold_never_raises_set_speed(self, is_metric):
-    """When ego+10 isn't below the set speed, the first decel hold falls back to
-    the normal step instead of jumping the set speed up."""
+  def test_decel_tap_never_raises_set_speed(self, is_metric):
+    """When ego+10 isn't below the set speed, the decel tap falls back to the
+    normal step instead of jumping the set speed up."""
     self.enable(self._to_ms(40, is_metric), False, False)
     initial = self.v_cruise_helper.v_cruise_kph
-    speeds = self._hold(ButtonType.decelCruise, self._to_ms(60, is_metric), is_metric, 1)
-    assert speeds[0] < initial
+    result = self._tap(ButtonType.decelCruise, self._to_ms(60, is_metric), is_metric)
+    assert result < initial
 
   @pytest.mark.parametrize("is_metric", [True, False])
-  def test_accel_hold_unchanged(self, is_metric):
-    """Accel long-press is unaffected by the decel jump."""
+  def test_accel_tap_unchanged(self, is_metric):
+    """Accel tap is unaffected by the decel jump."""
     self.enable(self._to_ms(50, is_metric), False, False)
     initial = self.v_cruise_helper.v_cruise_kph
-    speeds = self._hold(ButtonType.accelCruise, self._to_ms(31, is_metric), is_metric, 1)
-    assert speeds[0] > initial
+    result = self._tap(ButtonType.accelCruise, self._to_ms(31, is_metric), is_metric)
+    assert result > initial
 
-  def test_short_decel_tap_unchanged(self):
-    """A short decel tap still steps down by the small increment, not the jump."""
-    self.enable(50 * CV.KPH_TO_MS, False, False)
+  def test_decel_hold_does_not_jump(self):
+    """A decel hold steps by 5 per long-press tick and never triggers the jump."""
+    self.enable(70 * CV.KPH_TO_MS, False, False)
     initial = self.v_cruise_helper.v_cruise_kph
-    CS = car.CarState(vEgo=10.0, cruiseState={"available": True})
+    CS = car.CarState(vEgo=31 * CV.KPH_TO_MS, cruiseState={"available": True})
     CS.buttonEvents = [ButtonEvent(type=ButtonType.decelCruise, pressed=True)]
     self.v_cruise_helper.update_v_cruise(CS, enabled=True, is_metric=True)
-    CS.buttonEvents = [ButtonEvent(type=ButtonType.decelCruise, pressed=False)]
-    self.v_cruise_helper.update_v_cruise(CS, enabled=True, is_metric=True)
-    assert self.v_cruise_helper.v_cruise_kph == initial - 1
+    CS.buttonEvents = []
+    for _ in range(50):  # one long-press tick
+      self.v_cruise_helper.update_v_cruise(CS, enabled=True, is_metric=True)
+    assert self.v_cruise_helper.v_cruise_kph == initial - 5
