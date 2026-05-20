@@ -42,10 +42,6 @@ def build_maneuvers():
   """The maneuvers to plot. Edit freely -- add, remove, or keep just one."""
   p = int(PERSONALITY)
   maneuvers = [
-    Maneuver('approach slower lead, 75 to 50mph', duration=35., initial_speed=75 * MPH,
-             lead_relevancy=True, initial_distance_lead=100.,
-             breakpoints=[0., 1.], speed_lead_values=[50 * MPH, 50 * MPH],
-             cruise_values=[75 * MPH, 75 * MPH], personality=p),
     Maneuver('below set speed with a distant lead', duration=40., initial_speed=15.,
              lead_relevancy=True, initial_distance_lead=100.,
              breakpoints=[0., 1.], speed_lead_values=[20., 20.],
@@ -74,6 +70,15 @@ def build_maneuvers():
                   cruise_values=[31., 31.], personality=p)
   swap.lead_swaps = [(15., 90.)]  # at t=15s lead A is replaced by a lead 90 m ahead
   maneuvers.append(swap)
+
+  popin = Maneuver('lead pops in at 100m, 70mph ego vs 55mph lead', duration=40.,
+                   initial_speed=70 * MPH, lead_relevancy=True, initial_distance_lead=400.,
+                   breakpoints=[0., 4.99, 5., 30.],
+                   speed_lead_values=[55 * MPH] * 4,
+                   prob_lead_values=[0., 0., 1., 1.],
+                   cruise_values=[70 * MPH] * 4, personality=p)
+  popin.lead_swaps = [(5., 100.)]  # at t=5s lead becomes visible exactly 100 m ahead
+  maneuvers.append(popin)
   return maneuvers
 
 
