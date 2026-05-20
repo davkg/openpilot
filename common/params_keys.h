@@ -228,6 +228,10 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
 
     {"DynamicExperimentalControl", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"BlindSpot", {PERSISTENT | BACKUP, BOOL, "0"}},
+    {"AdjacentVehicleMarkers", {PERSISTENT | BACKUP, BOOL, "0"}},
+    {"AdjacentVehicleMarkersDebug", {PERSISTENT, BOOL, "0"}},
+    {"CheckerboardStaggeringEnabled", {PERSISTENT | BACKUP, BOOL, "0"}},
+    {"CheckerboardStaggeringAggression", {PERSISTENT | BACKUP, INT, "1"}},
 
     // sunnypilot model params
     {"CameraOffset", {PERSISTENT | BACKUP, FLOAT, "0.0"}},

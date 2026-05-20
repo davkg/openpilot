@@ -244,6 +244,7 @@ class LongitudinalMpc:
     self.solver = AcadosOcpSolverCython(MODEL_NAME, ACADOS_SOLVER_TYPE, N)
     self.reset()
     self.source = LongitudinalPlanSource.cruise
+    self.t_follow_delta = 0.0  # additive bias from checkerboard staggering controller
 
   def reset(self):
     self.solver.reset()
@@ -341,6 +342,7 @@ class LongitudinalMpc:
   def update(self, radarstate, v_cruise, personality=log.LongitudinalPersonality.standard):
     v_ego = self.x0[1]
     t_follow = get_T_FOLLOW(personality, v_ego)
+    t_follow += self.t_follow_delta  # additive bias from checkerboard staggering
     stop_distance = get_STOP_DISTANCE(personality)
     self.status = radarstate.leadOne.status or radarstate.leadTwo.status
 

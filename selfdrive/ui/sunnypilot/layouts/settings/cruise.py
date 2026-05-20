@@ -9,7 +9,7 @@ from enum import IntEnum
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise_sub_layouts.speed_limit_settings import SpeedLimitSettingsLayout
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.multilang import tr, tr_noop
-from openpilot.system.ui.sunnypilot.widgets.list_view import toggle_item_sp, option_item_sp, simple_button_item_sp
+from openpilot.system.ui.sunnypilot.widgets.list_view import toggle_item_sp, option_item_sp, simple_button_item_sp, multiple_button_item_sp
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.scroller_tici import Scroller
 
@@ -57,6 +57,20 @@ class CruiseLayout(Widget):
       description=tr("Use map data to estimate the appropriate speed to drive through turns ahead."),
       param="SmartCruiseControlMap")
 
+    self.checkerboard_toggle = toggle_item_sp(
+      title=tr("Checkerboard Staggering (Beta)"),
+      description=tr("Apply a small slow-only speed bias to avoid lingering door-to-door with adjacent-lane traffic on the highway. " +
+                     "Requires Adjacent Vehicle Markers data (currently Honda Bosch radarless)."),
+      param="CheckerboardStaggeringEnabled",
+      callback=self._on_checkerboard_toggle)
+
+    self.checkerboard_aggression = multiple_button_item_sp(
+      title=lambda: tr("Checkerboard Staggering — Aggression"),
+      description=lambda: tr("Maximum speed reduction when actively de-syncing from an adjacent-lane car."),
+      buttons=[lambda: tr("1 mph"), lambda: tr("2 mph"), lambda: tr("3 mph"), lambda: tr("5 mph")],
+      param="CheckerboardStaggeringAggression",
+      inline=False)
+
     self.custom_acc_toggle = toggle_item_sp(
       title=tr("Custom ACC Speed Increments"),
       description="",
@@ -92,6 +106,8 @@ class CruiseLayout(Widget):
       self.dec_toggle,
       self.scc_v_toggle,
       self.scc_m_toggle,
+      self.checkerboard_toggle,
+      self.checkerboard_aggression,
       self.custom_acc_toggle,
       self.custom_acc_short_increment,
       self.custom_acc_long_increment,
@@ -147,15 +163,18 @@ class CruiseLayout(Widget):
         self.dec_toggle.action_item.set_enabled(has_long)
         self.scc_v_toggle.action_item.set_enabled(True)
         self.scc_m_toggle.action_item.set_enabled(True)
+        self.checkerboard_toggle.action_item.set_enabled(has_long)
       else:
         ui_state.params.remove("CustomAccIncrementsEnabled")
         ui_state.params.remove("DynamicExperimentalControl")
         ui_state.params.remove("SmartCruiseControlVision")
         ui_state.params.remove("SmartCruiseControlMap")
+        ui_state.params.remove("CheckerboardStaggeringEnabled")
         self.custom_acc_toggle.action_item.set_enabled(False)
         self.dec_toggle.action_item.set_enabled(False)
         self.scc_v_toggle.action_item.set_enabled(False)
         self.scc_m_toggle.action_item.set_enabled(False)
+        self.checkerboard_toggle.action_item.set_enabled(False)
 
     else:
       has_icbm = has_long = False
@@ -186,8 +205,15 @@ class CruiseLayout(Widget):
 
     self._on_custom_acc_toggle(self.custom_acc_toggle.action_item.get_state())
 
+    self.checkerboard_aggression.action_item.set_selected_button(ui_state.params.get("CheckerboardStaggeringAggression", return_default=True))
+    self._on_checkerboard_toggle(self.checkerboard_toggle.action_item.get_state())
+
   def _on_custom_acc_toggle(self, state):
     self.custom_acc_short_increment.set_visible(state)
     self.custom_acc_long_increment.set_visible(state)
     self.custom_acc_short_increment.action_item.set_enabled(self.custom_acc_toggle.action_item.enabled)
     self.custom_acc_long_increment.action_item.set_enabled(self.custom_acc_toggle.action_item.enabled)
+
+  def _on_checkerboard_toggle(self, state):
+    self.checkerboard_aggression.set_visible(bool(state))
+    self.checkerboard_aggression.action_item.set_enabled(self.checkerboard_toggle.action_item.enabled)

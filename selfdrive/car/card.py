@@ -71,7 +71,8 @@ class Car:
   def __init__(self, CI=None, RI=None) -> None:
     self.can_sock = messaging.sub_sock('can', timeout=20)
     self.sm = messaging.SubMaster(['pandaStates', 'carControl', 'onroadEvents'] + ['carControlSP', 'longitudinalPlanSP'])
-    self.pm = messaging.PubMaster(['sendcan', 'carState', 'carParams', 'carOutput', 'liveTracks'] + ['carParamsSP', 'carStateSP'])
+    self.pm = messaging.PubMaster(['sendcan', 'carState', 'carParams', 'carOutput', 'liveTracks'] +
+                                  ['carParamsSP', 'carStateSP', 'cameraObjectTracksSP'])
 
     self.can_rcv_cum_timeout_counter = 0
 
@@ -270,6 +271,22 @@ class Car:
     cs_sp_send.valid = CS.canValid
     cs_sp_send.carStateSP = CS_SP
     self.pm.send('carStateSP', cs_sp_send)
+
+    # Camera object tracks (e.g. Honda Bosch radarless CAMERA_OBJECT_TRACKS) — publish at ~10 Hz
+    # Only published on cars whose CarStateExt populates a `camera_object_tracker` attribute.
+    tracker = getattr(self.CI.CS, 'camera_object_tracker', None)
+    if tracker is not None and self.sm.frame % 10 == 0:
+      cot_send = messaging.new_message('cameraObjectTracksSP')
+      cot_send.valid = CS.canValid
+      snapshot = tracker.snapshot()
+      tracks_list = cot_send.cameraObjectTracksSP.init('tracks', len(snapshot))
+      for i, t in enumerate(snapshot):
+        tracks_list[i].slot = t.slot
+        tracks_list[i].objectId = t.object_id
+        tracks_list[i].dRel = float(t.d_rel)
+        tracks_list[i].yRel = float(t.y_rel)
+        tracks_list[i].valid = t.valid
+      self.pm.send('cameraObjectTracksSP', cot_send)
 
   def controls_update(self, CS: car.CarState, CC: car.CarControl, CC_SP: custom.CarControlSP):
     """control update loop, driven by carControl"""

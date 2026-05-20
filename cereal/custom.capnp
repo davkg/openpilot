@@ -198,6 +198,7 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
   aTarget @5 :Float32;
   events @6 :List(OnroadEventSP.Event);
   e2eAlerts @7 :E2eAlerts;
+  checkerboard @8 :Checkerboard;
 
   struct DynamicExperimentalControl {
     state @0 :DynamicExperimentalControlState;
@@ -294,11 +295,28 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
     sccVision @1;
     sccMap @2;
     speedLimitAssist @3;
+    checkerboard @4;
   }
 
   struct E2eAlerts {
     greenLightAlert @0 :Bool;
     leadDepartAlert @1 :Bool;
+  }
+
+  struct Checkerboard {
+    state @0 :CheckerboardState;
+    vTarget @1 :Float32;
+    aTarget @2 :Float32;
+    tFollowDelta @3 :Float32;
+    enabled @4 :Bool;
+    active @5 :Bool;
+
+    enum CheckerboardState {
+      disabled @0;     # feature off or longitudinal not enabled
+      enabled @1;      # feature on, no pacing currently
+      pacing @2;       # actively biasing speed to de-sync from an adjacent-lane car
+      overriding @3;   # user override
+    }
   }
 }
 
@@ -463,7 +481,19 @@ struct ModelDataV2SP @0xa1680744031fdb2d {
   }
 }
 
-struct CustomReserved10 @0xcb9fd56c7057593a {
+struct CameraObjectTracksSP @0xcb9fd56c7057593a {
+  # Per-cycle snapshot of adjacent-vehicle tracks reported by the stock
+  # forward camera (currently Honda Bosch radarless). Up to 10 slots; consumers
+  # filter by Track.valid. Longitudinal/lateral are in ego frame, meters.
+  tracks @0 :List(Track);
+
+  struct Track {
+    slot @0 :UInt8;          # 0..9 (camera's internal slot index)
+    objectId @1 :UInt8;      # persistent track id; 0 when slot is empty
+    dRel @2 :Float32;        # longitudinal distance from ego (m), positive ahead
+    yRel @3 :Float32;        # lateral position (m), positive = left of ego
+    valid @4 :Bool;          # slot currently carries a real track
+  }
 }
 
 struct CustomReserved11 @0xc2243c65e0340384 {

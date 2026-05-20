@@ -34,6 +34,17 @@ class VisualsLayout(Widget):
            "blind spot as long as your car has BSM supported."),
         None,
       ),
+      "AdjacentVehicleMarkers": (
+        lambda: tr("Adjacent Vehicle Markers"),
+        tr("Overlay color-coded markers on the onroad display at the position of each adjacent-lane " +
+           "vehicle detected by the stock forward camera. Currently supported on Honda Bosch radarless platforms."),
+        self._on_adjacent_vehicle_markers_toggle,
+      ),
+      "AdjacentVehicleMarkersDebug": (
+        lambda: tr("Adjacent Vehicle Markers - Debug Labels"),
+        tr("Show each detected object's id next to its marker. Requires Adjacent Vehicle Markers to be enabled."),
+        None,
+      ),
       "TorqueBar": (
         lambda: tr("Steering Arc"),
         tr("Display steering arc on the driving screen when lateral control is enabled."),
@@ -133,6 +144,8 @@ class VisualsLayout(Widget):
     for param in self._toggle_defs:
       self._toggles[param].action_item.set_state(self._params.get_bool(param))
 
+    self._on_adjacent_vehicle_markers_toggle(self._params.get_bool("AdjacentVehicleMarkers"))
+
     self._dev_ui_info.action_item.set_selected_button(ui_state.params.get("DevUIInfo", return_default=True))
 
     if ui_state.has_longitudinal_control:
@@ -143,6 +156,9 @@ class VisualsLayout(Widget):
       self._chevron_info.set_description(tr(CHEVRON_INFO_DESCRIPTION["disabled"]))
       self._chevron_info.action_item.set_enabled(False)
       ui_state.params.put("ChevronInfo", 0)
+
+  def _on_adjacent_vehicle_markers_toggle(self, state):
+    self._toggles["AdjacentVehicleMarkersDebug"].action_item.set_enabled(bool(state))
 
   def _render(self, rect):
     self._scroller.render(rect)

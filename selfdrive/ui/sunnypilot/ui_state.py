@@ -32,7 +32,8 @@ class UIStateSP:
     self.is_sp_release: bool = self.params.get_bool("IsReleaseSpBranch")
     self.sm_services_ext = [
       "modelManagerSP", "selfdriveStateSP", "longitudinalPlanSP", "backupManagerSP",
-      "gpsLocation", "liveTorqueParameters", "carStateSP", "liveMapDataSP", "carParamsSP", "liveDelay"
+      "gpsLocation", "liveTorqueParameters", "carStateSP", "liveMapDataSP", "carParamsSP", "liveDelay",
+      "cameraObjectTracksSP",
     ]
 
     self.sunnylink_state = SunnylinkState()
@@ -130,6 +131,8 @@ class UIStateSP:
     self._enforce_constraints()
     self.active_bundle = self.params.get("ModelManager_ActiveBundle")
     self.blindspot = self.params.get_bool("BlindSpot")
+    self.adjacent_vehicle_markers = self.params.get_bool("AdjacentVehicleMarkers")
+    self.adjacent_vehicle_markers_debug = self.params.get_bool("AdjacentVehicleMarkersDebug")
     self.chevron_metrics = self.params.get("ChevronInfo")
     self.custom_interactive_timeout = self.params.get("InteractivityTimeout", return_default=True)
     self.developer_ui = self.params.get("DevUIInfo")

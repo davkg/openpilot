@@ -9,6 +9,7 @@ from cereal import messaging, custom
 from opendbc.car import structs
 from openpilot.common.constants import CV
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX
+from openpilot.sunnypilot.selfdrive.controls.lib.checkerboard.checkerboard_controller import CheckerboardController
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.dec import DynamicExperimentalController
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_alerts_helper import E2EAlertsHelper
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.smart_cruise_control import SmartCruiseControl
@@ -29,6 +30,8 @@ class LongitudinalPlannerSP:
     self.scc = SmartCruiseControl()
     self.resolver = SpeedLimitResolver()
     self.sla = SpeedLimitAssist(CP, CP_SP)
+    self.checkerboard = CheckerboardController()
+    self.mpc = mpc  # used to apply T_FOLLOW delta from checkerboard
     self.generation = int(model_bundle.generation) if (model_bundle := get_active_bundle()) else None
     self.source = LongitudinalPlanSource.cruise
     self.e2e_alerts_helper = E2EAlertsHelper()
@@ -62,11 +65,17 @@ class LongitudinalPlannerSP:
     self.sla.update(long_enabled, long_override, v_ego, a_ego, v_cruise_cluster, self.resolver.speed_limit,
                     self.resolver.speed_limit_final_last, has_speed_limit, self.resolver.distance, self.events_sp)
 
+    # Checkerboard staggering — slow-only bias to break door-to-door pacing with adjacent-lane cars
+    self.checkerboard.update(sm, long_enabled, long_override, v_ego, a_ego, v_cruise)
+    # Apply the controller's T_FOLLOW delta to the MPC for the next solve (lead-bound lever).
+    self.mpc.t_follow_delta = float(self.checkerboard.t_follow_delta)
+
     targets = {
       LongitudinalPlanSource.cruise: (v_cruise, a_ego),
       LongitudinalPlanSource.sccVision: (self.scc.vision.output_v_target, self.scc.vision.output_a_target),
       LongitudinalPlanSource.sccMap: (self.scc.map.output_v_target, self.scc.map.output_a_target),
       LongitudinalPlanSource.speedLimitAssist: (self.sla.output_v_target, self.sla.output_a_target),
+      LongitudinalPlanSource.checkerboard: (self.checkerboard.output_v_target, self.checkerboard.output_a_target),
     }
 
     self.source = min(targets, key=lambda k: targets[k][0])
@@ -132,6 +141,15 @@ class LongitudinalPlannerSP:
     assist.active = self.sla.is_active
     assist.vTarget = float(self.sla.output_v_target)
     assist.aTarget = float(self.sla.output_a_target)
+
+    # Checkerboard staggering
+    checkerboard = longitudinalPlanSP.checkerboard
+    checkerboard.state = self.checkerboard.state
+    checkerboard.vTarget = float(self.checkerboard.output_v_target)
+    checkerboard.aTarget = float(self.checkerboard.output_a_target)
+    checkerboard.tFollowDelta = float(self.checkerboard.t_follow_delta)
+    checkerboard.enabled = self.checkerboard.is_enabled
+    checkerboard.active = self.checkerboard.is_active
 
     # E2E Alerts
     e2eAlerts = longitudinalPlanSP.e2eAlerts
