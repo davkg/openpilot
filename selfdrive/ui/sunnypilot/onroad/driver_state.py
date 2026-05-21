@@ -17,10 +17,10 @@ class DriverStateRendererSP(DriverStateRenderer):
 
   def _pre_calculate_drawing_elements(self):
     """Pre-calculate all drawing elements based on the current rectangle"""
-    # Calculate icon position (bottom-left or bottom-right)
+    # Calculate icon position (bottom-right or bottom-left for RHD)
     width, height = self._rect.width, self._rect.height
     offset = UI_BORDER_SIZE + BTN_SIZE // 2
-    self.position_x = self._rect.x + (width - offset if self.is_rhd else offset)
+    self.position_x = self._rect.x + (offset if self.is_rhd else width - offset)
     self.position_y = self._rect.y + height - offset - get_bottom_dev_ui_offset()
 
     # Pre-calculate the face lines positions
