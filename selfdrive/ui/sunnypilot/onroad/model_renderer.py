@@ -17,9 +17,11 @@ CALIBRATED = log.LiveCalibrationData.Status.calibrated
 
 # CAMERA_OBJECT_TRACKS marker config
 NUM_OBJECT_SLOTS = 10
-MARKER_Z_M = 1.2
-MIN_RADIUS_PX = 12.0
-MAX_RADIUS_PX = 36.0
+# Device-frame z is positive-down in _map_to_screen, so negative values lift
+# the marker above the path. ~-0.8 m puts it around mid-rear of a sedan.
+MARKER_Z_M = -0.8
+MIN_RADIUS_PX = 1.0
+MAX_RADIUS_PX = 30.0
 NEAR_RANGE_M = 5.0
 FAR_RANGE_M = 100.0
 EGO_LANE_HALF_W = 1.5
