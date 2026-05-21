@@ -183,8 +183,9 @@ class SpeedLimitRenderer(Widget, SpeedLimitAlertRenderer):
 
   def _render(self, rect: rl.Rectangle):
     width = UI_CONFIG.set_speed_width_metric if ui_state.is_metric else UI_CONFIG.set_speed_width_imperial
-    x = rect.x + 60 + width + 30 - 6
-    y = rect.y + 45 - 6
+    # Sign anchored at bottom-right: right edge 30px from rect.right, top 416px from rect.bottom.
+    x = rect.x + rect.width - 30 - width
+    y = rect.y + rect.height - 416
 
     sign_rect = rl.Rectangle(x, y, width, UI_CONFIG.set_speed_height + 6 * 2)
 

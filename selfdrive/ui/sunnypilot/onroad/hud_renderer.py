@@ -147,17 +147,7 @@ class HudRendererSP(HudRenderer):
 
     self.developer_ui.render(rect)
     self.road_name_renderer.render(rect)
-    # Speed limit sign goes to the right of set_speed at bottom right.
-    # SpeedLimitRenderer uses rect.x + 60 + width + 24 for sign left, rect.y + 39 for sign top.
-    # Solve so sign right = rect.right - 30, sign top = rect.bottom - 416.
-    set_speed_width = UI_CONFIG.set_speed_width_metric if ui_state.is_metric else UI_CONFIG.set_speed_width_imperial
-    sl_rect = rl.Rectangle(
-      rect.x + rect.width - 114 - 2 * set_speed_width,
-      rect.y + rect.height - 455,
-      rect.width,
-      rect.height,
-    )
-    self.speed_limit_renderer.render(sl_rect)
+    self.speed_limit_renderer.render(rect)
     self.smart_cruise_control_renderer.render(rect)
     self.turn_signal_controller.render(rect)
     self.circular_alerts_renderer.render(rect)
