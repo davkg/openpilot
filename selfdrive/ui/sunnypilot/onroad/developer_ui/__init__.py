@@ -4,14 +4,18 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+import math
+from collections import deque
 from enum import IntEnum
 
 import pyray as rl
 from openpilot.selfdrive.ui.ui_state import ui_state
+from openpilot.selfdrive.ui.sunnypilot.onroad.developer_ui.accel_graph import AccelGraph
 from openpilot.selfdrive.ui.sunnypilot.onroad.developer_ui.elements import (
   UiElement, RelDistElement, RelSpeedElement, SteeringAngleElement,
   DesiredLateralAccelElement, ActualLateralAccelElement, DesiredSteeringAngleElement,
-  AEgoElement, LeadSpeedElement, FrictionCoefficientElement, LatAccelFactorElement,
+  PeakAccelElement, PeakDecelElement, LeadSpeedElement,  # AEgoElement,
+  FrictionCoefficientElement, LatAccelFactorElement,
   SteeringTorqueEpsElement, BearingDegElement, AltitudeElement, DesiredSteeringPIDElement
 )
 from openpilot.system.ui.lib.application import gui_app, FontWeight
@@ -19,9 +23,14 @@ from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.widgets import Widget
 
 
+ACCEL_HISTORY_SECONDS = 10.0
+ACCEL_GRAPH_HEIGHT = 100
+ACCEL_GRAPH_GAP = 8
+
+
 def get_bottom_dev_ui_offset():
   if ui_state.developer_ui in (DeveloperUiState.BOTTOM, DeveloperUiState.BOTH):
-    return 60
+    return 60 + ACCEL_GRAPH_GAP + ACCEL_GRAPH_HEIGHT
   return 0
 
 
@@ -46,13 +55,20 @@ class DeveloperUiRenderer(Widget):
     self.actual_lat_accel_elem = ActualLateralAccelElement()
     self.desired_steer_elem = DesiredSteeringAngleElement()
     self.desired_pid_steer_elem = DesiredSteeringPIDElement()
-    self.a_ego_elem = AEgoElement()
+    # self.a_ego_elem = AEgoElement()
+    self.peak_accel_elem = PeakAccelElement()
+    self.peak_decel_elem = PeakDecelElement()
     self.lead_speed_elem = LeadSpeedElement()
     self.friction_elem = FrictionCoefficientElement()
     self.lat_accel_factor_elem = LatAccelFactorElement()
     self.steering_torque_elem = SteeringTorqueEpsElement()
     self.bearing_elem = BearingDegElement()
     self.altitude_elem = AltitudeElement()
+
+    self.accel_graph = AccelGraph()
+    buffer_len = max(2, math.ceil(ACCEL_HISTORY_SECONDS * max(gui_app.target_fps, 1)))
+    self.accel_history: deque[float] = deque(maxlen=buffer_len)
+    self._last_started_frame = 0
 
   def _update_state(self) -> None:
     self.dev_ui_mode = ui_state.developer_ui
@@ -64,6 +80,14 @@ class DeveloperUiRenderer(Widget):
     sm = ui_state.sm
     if sm.recv_frame["carState"] < ui_state.started_frame:
       return
+
+    if self.dev_ui_mode in (DeveloperUiState.BOTTOM, DeveloperUiState.BOTH):
+      if ui_state.started_frame != self._last_started_frame:
+        self.accel_history.clear()
+        self._last_started_frame = ui_state.started_frame
+
+      if sm.updated["carState"]:
+        self.accel_history.append(sm['carState'].aEgo)
 
     if self.dev_ui_mode == DeveloperUiState.BOTTOM:
       self._draw_bottom_dev_ui(rect)
@@ -131,11 +155,20 @@ class DeveloperUiRenderer(Widget):
     bar_height = 61
     y = int(rect.y + rect.height - bar_height)
 
+    graph_rect = rl.Rectangle(rect.x, y - ACCEL_GRAPH_GAP - ACCEL_GRAPH_HEIGHT,
+                              rect.width, ACCEL_GRAPH_HEIGHT)
+    self.accel_graph.render(graph_rect, self.accel_history)
+
     rl.draw_rectangle(int(rect.x), y, int(rect.width), bar_height,
                       rl.Color(0, 0, 0, 100))
 
+    peak_accel = max(self.accel_history) if self.accel_history else 0.0
+    peak_decel = min(self.accel_history) if self.accel_history else 0.0
+
     elements = [
-      self.a_ego_elem.update(sm, ui_state.is_metric),
+      # self.a_ego_elem.update(sm, ui_state.is_metric),
+      self.peak_accel_elem.update(peak_accel),
+      self.peak_decel_elem.update(peak_decel),
       self.lead_speed_elem.update(sm, ui_state.is_metric),
     ]
 
@@ -162,23 +195,17 @@ class DeveloperUiRenderer(Widget):
       return
 
     font_size = 38
-    element_widths = []
     for element in elements:
       element.measure(self._font_bold, font_size)
-      element_widths.append(element.total_width)
 
-    total_element_width = sum(element_widths)
-    num_gaps = len(elements) + 1
-    available_width = rect.width
-    gap_width = (available_width - total_element_width) / num_gaps
-
+    # Fixed equal-width slots keep each element anchored to its slot center,
+    # so values widening (e.g. "0.5" -> "12.5") don't shift neighboring elements.
+    slot_width = rect.width / len(elements)
     center_y = y + bar_height // 2
-    current_x = rect.x + gap_width
 
     for i, element in enumerate(elements):
-      element_center_x = int(current_x + element_widths[i] / 2)
+      element_center_x = int(rect.x + slot_width * (i + 0.5))
       self._draw_bottom_dev_ui_element(element_center_x, center_y, element)
-      current_x += element_widths[i] + gap_width
 
   def _draw_bottom_dev_ui_element(self, center_x: int, y: int, element: UiElement) -> None:
     font_size = 38

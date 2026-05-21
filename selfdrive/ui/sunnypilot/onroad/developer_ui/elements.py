@@ -215,14 +215,34 @@ class DesiredSteeringPIDElement(LateralControlElement):
     return UiElement(value, "DESIRED STEER", self.unit, color)
 
 
-class AEgoElement:
+# class AEgoElement:
+#   def __init__(self):
+#     self.unit = "m/s^2"
+#
+#   def update(self, sm, is_metric: bool) -> UiElement:
+#     a_ego = sm['carState'].aEgo
+#     value = f"{a_ego:.1f}"
+#     return UiElement(value, "ACC.", self.unit, rl.WHITE)
+
+
+class PeakAccelElement:
   def __init__(self):
     self.unit = "m/s^2"
 
-  def update(self, sm, is_metric: bool) -> UiElement:
-    a_ego = sm['carState'].aEgo
-    value = f"{a_ego:.1f}"
-    return UiElement(value, "ACC.", self.unit, rl.WHITE)
+  def update(self, peak_accel: float) -> UiElement:
+    value = f"{peak_accel:+.1f}"
+    color = rl.Color(0, 255, 0, 255) if peak_accel > 0 else rl.WHITE
+    return UiElement(value, "PK+", self.unit, color)
+
+
+class PeakDecelElement:
+  def __init__(self):
+    self.unit = "m/s^2"
+
+  def update(self, peak_decel: float) -> UiElement:
+    value = f"{peak_decel:+.1f}"
+    color = rl.RED if peak_decel < 0 else rl.WHITE
+    return UiElement(value, "PK-", self.unit, color)
 
 
 class LeadSpeedElement(LeadInfoElement):
