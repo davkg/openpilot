@@ -18,20 +18,39 @@ from openpilot.sunnypilot import PARAMS_UPDATE_PERIOD
 CheckerboardState = custom.LongitudinalPlanSP.Checkerboard.CheckerboardState
 
 # Lane band (m, |y_rel|) — only adjacent lanes are interesting; ego-lane handled by lead logic
-EGO_LANE_HALF_W = 1.5
+EGO_LANE_HALF_W = 2.0
 ADJACENT_LANE_OUTER = 4.5
 
 # Forward window (m, d_rel) for tracks to enter pacing logic
 LONG_WINDOW_MIN = -5.0
 LONG_WINDOW_MAX = 60.0
 
-# Pacing zone (m, d_rel) — longitudinal range where ego is "door-to-door"-ish with an adjacent car
+# Pacing zone (m, d_rel) — longitudinal range where ego is "door-to-door"-ish with an adjacent car.
+# +6 m roughly = ego's front bumper aligned with adjacent car's rear bumper (empirical, 2026-05-21).
 PACING_ZONE_MIN = -3.0
-PACING_ZONE_MAX = 5.0
+PACING_ZONE_MAX = 6.0
 
 # Hysteresis on pacing-zone occupancy
 ENTER_TICKS = 3   # consecutive ticks in zone to engage
 EXIT_TICKS = 8    # consecutive ticks out of zone to disengage
+
+# Traffic density gate — in dense traffic there's no room to checkerboard, so suppress engagement.
+# Counts valid adjacent-lane tracks (both sides) within the density window. >= threshold → crowded.
+DENSITY_WINDOW_MIN = -10.0
+DENSITY_WINDOW_MAX = 40.0
+DENSITY_THRESHOLD = 3
+
+# Relative-motion gate — suppress engagement when an adjacent car is actively passing
+# (i.e. relative longitudinal velocity is high). True pacing has |v_dot| ≈ 0.
+# Hysteresis: tighter threshold to enter, looser to stay engaged through small fluctuations.
+V_DOT_GATE_ENGAGE_MS = 0.5   # m/s (~1 mph); below this to start pacing
+V_DOT_GATE_HOLD_MS = 1.0     # m/s (~2 mph); above this disengages even while paced
+TRACK_CACHE_TTL_FRAMES = 20  # drop cached prior d_rel after this many ticks (~1 sec at DT_MDL)
+
+# Ego-stability gate — pacing is a "both cars cruising" scenario. If ego itself is
+# actively accelerating/decelerating, the situation is dynamic (merging, catching up,
+# braking into traffic) and pacing intent doesn't apply.
+EGO_STABLE_A_MAX_MS2 = 0.3   # m/s² (~0.7 mph/s); |a_ego| must be below this to engage
 
 # Aggression → absolute v_cruise delta cap (m/s)
 MPH_TO_MS = 0.44704
@@ -68,6 +87,12 @@ class CheckerboardController:
     self._pacing_ticks_out = 0
     self._is_pacing = False
 
+    # object_id → (d_rel, frame) for per-track relative-velocity estimation
+    self._track_cache: dict[int, tuple[float, int]] = {}
+
+    # Set each tick from radarState.leadOne.status; right-side pacing requires a lead.
+    self._has_lead = False
+
     self._v_bias_filter = FirstOrderFilter(0.0, V_BIAS_TAU_S, DT_MDL)
     self._t_follow_filter = FirstOrderFilter(0.0, T_FOLLOW_TAU_S, DT_MDL)
 
@@ -84,19 +109,55 @@ class CheckerboardController:
       self._delta_cap = DELTA_CAPS_MS[max(0, min(3, self._aggression))]
       self._t_follow_cap = T_FOLLOW_DELTA_CAPS_S[max(0, min(3, self._aggression))]
 
-  @staticmethod
-  def _eligible_for_pacing(t) -> bool:
-    """Track is in an adjacent lane and within the forward window."""
+  def _eligible_for_pacing(self, t) -> bool:
+    """Track is in an adjacent lane and within the forward window, and the side is allowed.
+
+    Side rule (y_rel positive = left of ego, per DBC):
+      - Left-side adjacent: always allowed.
+      - Right-side adjacent: allowed only when ego has a lead. With a lead, ego is lead-bound,
+        so our slow-only authority (t_follow_delta especially) breaks the pacing by easing back
+        from the lead — the "should speed up" intent is moot because ego can't anyway.
+        Without a lead, right-side pacing wants speed-up, which the planner can't express via
+        min-arbitration; leave that to the driver.
+    """
     if not t.valid:
       return False
     if not (LONG_WINDOW_MIN <= t.dRel <= LONG_WINDOW_MAX):
       return False
     abs_y = abs(t.yRel)
-    return EGO_LANE_HALF_W <= abs_y <= ADJACENT_LANE_OUTER
+    if not (EGO_LANE_HALF_W <= abs_y <= ADJACENT_LANE_OUTER):
+      return False
+    if t.yRel < 0 and not self._has_lead:
+      return False
+    return True
 
   @staticmethod
   def _in_pacing_zone(t) -> bool:
     return PACING_ZONE_MIN <= t.dRel <= PACING_ZONE_MAX
+
+  def _v_dot_for(self, t) -> float:
+    """Per-track relative longitudinal velocity (m/s). Returns +inf if no prior history,
+    which effectively rejects engagement until two consecutive ticks have been seen for
+    this object_id.
+    """
+    prev = self._track_cache.get(int(t.objectId))
+    if prev is None:
+      return float('inf')
+    d_prev, frame_prev = prev
+    dframes = self.frame - frame_prev
+    if dframes <= 0:
+      return 0.0
+    return (t.dRel - d_prev) / (dframes * DT_MDL)
+
+  @staticmethod
+  def _in_density_window(t) -> bool:
+    """Either adjacent lane, within the density-counting forward window."""
+    if not t.valid:
+      return False
+    if not (DENSITY_WINDOW_MIN <= t.dRel <= DENSITY_WINDOW_MAX):
+      return False
+    abs_y = abs(t.yRel)
+    return EGO_LANE_HALF_W <= abs_y <= ADJACENT_LANE_OUTER
 
   def _step_hysteresis(self, any_in_zone: bool) -> None:
     if not self._is_pacing:
@@ -136,9 +197,38 @@ class CheckerboardController:
       self.is_active = False
       return
 
-    # Find adjacent-lane tracks within the forward window
     tracks = sm['cameraObjectTracksSP'].tracks
-    any_in_zone = any(self._eligible_for_pacing(t) and self._in_pacing_zone(t) for t in tracks)
+
+    # ── Per-tick state used by per-track gates below ──────────────────────────────────
+    # Lead presence: relaxes the side rule to allow right-side pacing (see _eligible_for_pacing).
+    self._has_lead = bool(sm['radarState'].leadOne.status)
+
+    # ── Outer gates (whole-scene, not per-track) ──────────────────────────────────────
+    # Ego must be cruising, not actively accelerating/braking.
+    ego_stable = abs(a_ego) < EGO_STABLE_A_MAX_MS2
+    # Adjacent-lane traffic density. Once already pacing, the hysteresis will slew us out
+    # naturally via EXIT_TICKS rather than slamming off.
+    crowded = sum(1 for t in tracks if self._in_density_window(t)) >= DENSITY_THRESHOLD
+
+    # ── Per-track gates ───────────────────────────────────────────────────────────────
+    # Relative-motion threshold (hysteresis): tighter to enter, looser to hold engagement
+    # through small fluctuations.
+    v_dot_gate = V_DOT_GATE_HOLD_MS if self._is_pacing else V_DOT_GATE_ENGAGE_MS
+
+    def _is_pacing_track(t) -> bool:
+      return (self._eligible_for_pacing(t)             # validity, forward window, lane band, side rule
+              and self._in_pacing_zone(t)              # d_rel in door-to-door range
+              and abs(self._v_dot_for(t)) < v_dot_gate)  # relative motion small
+
+    any_in_zone = ego_stable and (not crowded) and any(_is_pacing_track(t) for t in tracks)
+
+    # Update per-track velocity cache for next tick (after the gate check).
+    for t in tracks:
+      if t.valid:
+        self._track_cache[int(t.objectId)] = (t.dRel, self.frame)
+    # Prune stale entries
+    cutoff = self.frame - TRACK_CACHE_TTL_FRAMES
+    self._track_cache = {oid: v for oid, v in self._track_cache.items() if v[1] >= cutoff}
 
     self._step_hysteresis(any_in_zone)
 
