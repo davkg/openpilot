@@ -10,8 +10,8 @@ from openpilot.system.ui.widgets import Widget
 
 BG_COLOR = rl.Color(0, 0, 0, 166)
 WHITE = rl.Color(255, 255, 255, 255)
-INDICATOR_COLOR = rl.Color(220, 0, 0, 150)
-ARROW_BASE_HALF_WIDTH = 14
+INDICATOR_COLOR = rl.Color(255, 0, 0, 150)
+ARROW_BASE_HALF_WIDTH = 16
 ARROW_TIP_RADIUS_FRAC = 1.0
 ARROW_BASE_RADIUS_FRAC = 0.60
 

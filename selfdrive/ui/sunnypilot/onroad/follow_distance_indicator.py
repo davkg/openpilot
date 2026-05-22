@@ -15,8 +15,8 @@ INDICATOR_HEIGHT = BAR_COUNT * BAR_HEIGHT + (BAR_COUNT - 1) * BAR_GAP  # 88 px
 MARGIN_RIGHT_OF_BUTTON = 24  # gap between right edge of exp button and left edge of background box
 
 # Background box around the bars
-BG_PAD_X = 10
-BG_PAD_Y = 10
+BG_PAD_X = 15
+BG_PAD_Y = 15
 BG_ROUNDNESS = 0.35
 
 _ACTIVE_COLOR = rl.Color(255, 255, 255, 255)
