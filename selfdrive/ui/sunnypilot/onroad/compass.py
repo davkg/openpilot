@@ -10,10 +10,12 @@ from openpilot.system.ui.widgets import Widget
 
 BG_COLOR = rl.Color(0, 0, 0, 166)
 WHITE = rl.Color(255, 255, 255, 255)
-INDICATOR_COLOR = rl.Color(255, 255, 255, 255)
-INDICATOR_THICKNESS = 20
+INDICATOR_COLOR = rl.Color(220, 0, 0, 150)
+ARROW_BASE_HALF_WIDTH = 14
+ARROW_TIP_RADIUS_FRAC = 1.0
+ARROW_BASE_RADIUS_FRAC = 0.60
 
-CENTER_FONT_SIZE = 72
+CENTER_FONT_SIZE = 76
 INVALID_ALPHA = 0.5
 COMPASS_GAP_ABOVE_EXP_BUTTON = 20
 
@@ -86,24 +88,21 @@ class CompassRenderer(Widget):
 
     if self._last_valid_bearing is not None:
       self._draw_indicator(cx, cy, radius, self._last_valid_bearing, alpha)
-      center_text = _bearing_to_cardinal(self._last_valid_bearing)
-    else:
-      center_text = "—"
-
-    self._draw_center_text(cx, cy, center_text, alpha)
+      self._draw_center_text(cx, cy, _bearing_to_cardinal(self._last_valid_bearing), alpha)
 
   def _draw_indicator(self, cx: float, cy: float, radius: float, bearing_deg: float, alpha: float) -> None:
-    outer_dist = radius * 1.1
-    inner_dist = radius * 0.9
+    # Needle points to North. Car heading is bearing_deg CW from North,
+    # so on screen (which is car-fixed) North sits at -bearing_deg.
+    angle = -bearing_deg
+    tip_dist = radius * ARROW_TIP_RADIUS_FRAC
+    base_dist = radius * ARROW_BASE_RADIUS_FRAC
 
-    outer = _rotate(cx, cy - outer_dist, bearing_deg, cx, cy)
-    inner = _rotate(cx, cy - inner_dist, bearing_deg, cx, cy)
+    tip = _rotate(cx, cy - tip_dist, angle, cx, cy)
+    base_left = _rotate(cx - ARROW_BASE_HALF_WIDTH, cy - base_dist, angle, cx, cy)
+    base_right = _rotate(cx + ARROW_BASE_HALF_WIDTH, cy - base_dist, angle, cx, cy)
 
     color = _with_alpha(INDICATOR_COLOR, alpha)
-    rl.draw_line_ex(rl.Vector2(*outer), rl.Vector2(*inner), INDICATOR_THICKNESS, color)
-    cap_radius = INDICATOR_THICKNESS / 2
-    rl.draw_circle_v(rl.Vector2(*outer), cap_radius, color)
-    rl.draw_circle_v(rl.Vector2(*inner), cap_radius, color)
+    rl.draw_triangle(rl.Vector2(*tip), rl.Vector2(*base_left), rl.Vector2(*base_right), color)
 
   def _draw_center_text(self, cx: float, cy: float, text: str, alpha: float) -> None:
     size = measure_text_cached(self._font_bold, text, CENTER_FONT_SIZE)
