@@ -150,6 +150,7 @@ class LongitudinalPlannerSP:
     checkerboard.tFollowDelta = float(self.checkerboard.t_follow_delta)
     checkerboard.enabled = self.checkerboard.is_enabled
     checkerboard.active = self.checkerboard.is_active
+    checkerboard.pacingObjectId = int(self.checkerboard.pacing_object_id)
 
     # E2E Alerts
     e2eAlerts = longitudinalPlanSP.e2eAlerts

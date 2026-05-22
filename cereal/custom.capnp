@@ -310,6 +310,7 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
     tFollowDelta @3 :Float32;
     enabled @4 :Bool;
     active @5 :Bool;
+    pacingObjectId @6 :UInt32;  # closest pacing-eligible adjacent track's objectId; 0 when not pacing
 
     enum CheckerboardState {
       disabled @0;     # feature off or longitudinal not enabled

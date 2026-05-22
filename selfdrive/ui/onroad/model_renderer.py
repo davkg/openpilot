@@ -151,8 +151,7 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
       self.chevron_metrics.draw_lead_status(sm, radar_state, self._rect, self._lead_vehicles)
 
     # Camera-bus object markers
-    self.update_camera_object_markers(sm)
-    self.draw_camera_object_markers()
+    self.render_camera_object_markers(sm)
 
   def _update_raw_points(self, model):
     """Sample raw 3D points from model data; filtered in _filter_raw_points"""

@@ -72,6 +72,7 @@ class CheckerboardController:
   output_v_target: float = V_CRUISE_UNSET
   output_a_target: float = 0.0
   t_follow_delta: float = 0.0  # phase 4 will drive this
+  pacing_object_id: int = 0    # closest pacing-eligible track's objectId; 0 when not pacing
 
   def __init__(self):
     self.params = Params()
@@ -193,6 +194,7 @@ class CheckerboardController:
       self.output_v_target = V_CRUISE_UNSET
       self.output_a_target = 0.0
       self.t_follow_delta = 0.0
+      self.pacing_object_id = 0
       self.is_enabled = self._enabled and long_enabled
       self.is_active = False
       return
@@ -220,7 +222,14 @@ class CheckerboardController:
               and self._in_pacing_zone(t)              # d_rel in door-to-door range
               and abs(self._v_dot_for(t)) < v_dot_gate)  # relative motion small
 
-    any_in_zone = ego_stable and (not crowded) and any(_is_pacing_track(t) for t in tracks)
+    pacing_tracks = [t for t in tracks if _is_pacing_track(t)] if (ego_stable and not crowded) else []
+    any_in_zone = bool(pacing_tracks)
+
+    # Pick the closest-|dRel| pacing-eligible track as the representative for the UI ring.
+    # Sticky across EXIT_TICKS hold-out: only reset when we fully disengage below.
+    if pacing_tracks:
+      closest = min(pacing_tracks, key=lambda t: abs(t.dRel))
+      self.pacing_object_id = int(closest.objectId)
 
     # Update per-track velocity cache for next tick (after the gate check).
     for t in tracks:
@@ -231,6 +240,9 @@ class CheckerboardController:
     self._track_cache = {oid: v for oid, v in self._track_cache.items() if v[1] >= cutoff}
 
     self._step_hysteresis(any_in_zone)
+
+    if not self._is_pacing:
+      self.pacing_object_id = 0
 
     target_bias = -self._delta_cap if self._is_pacing else 0.0
     target_t_follow = self._t_follow_cap if self._is_pacing else 0.0

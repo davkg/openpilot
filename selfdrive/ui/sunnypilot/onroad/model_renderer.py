@@ -4,6 +4,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+import math
 import pyray as rl
 
 from cereal import log
@@ -33,6 +34,12 @@ COLOR_LEFT  = (0,   200, 255)  # cyan
 COLOR_RIGHT = (255,  80, 220)  # magenta
 COLOR_FAR   = (160, 160, 160)  # dim grey
 
+# Paced-track highlight (checkerboard staggering)
+PACED_RING_GAP_PX = 6.0       # gap from dot edge to inner edge of ring
+PACED_RING_THICKNESS_PX = 3.0
+PACED_PULSE_PERIOD_S = 0.8    # full pulse cycle
+PACED_PULSE_MIN = 0.4         # alpha floor of the pulse so the ring never fully vanishes
+
 
 def _marker_color_for(y_rel: float) -> tuple[int, int, int]:
   abs_y = abs(y_rel)
@@ -57,9 +64,14 @@ class ModelRendererSP:
       FirstOrderFilter(0.0, 0.15, 1 / gui_app.target_fps) for _ in range(NUM_OBJECT_SLOTS)
     ]
     self._camera_marker_font: rl.Font = gui_app.font(FontWeight.MEDIUM)
+    self._paced_pulse_frame = 0
 
-  def update_camera_object_markers(self, sm) -> None:
-    if not getattr(ui_state, 'adjacent_vehicle_markers', False):
+  def render_camera_object_markers(self, sm) -> None:
+    # Show markers if the debug toggle is on OR the checkerboard controller is actively
+    # pacing (so the driver can see which adjacent car is triggering the bias even when
+    # the debug overlay is off).
+    paced_object_id = int(sm['longitudinalPlanSP'].checkerboard.pacingObjectId)
+    if not (getattr(ui_state, 'adjacent_vehicle_markers', False) or paced_object_id != 0):
       for f in self._camera_marker_alpha:
         f.update(0.0)
       return
@@ -74,19 +86,17 @@ class ModelRendererSP:
       if not was_seen:
         self._camera_marker_alpha[i].update(0.0)
 
-  def draw_camera_object_markers(self) -> None:
-    if not getattr(ui_state, 'adjacent_vehicle_markers', False):
-      return
+    self._paced_pulse_frame += 1
 
-    sm = ui_state.sm
-    if sm['liveCalibration'].calStatus != CALIBRATED:
-      return
-
-    tracks = sm['cameraObjectTracksSP'].tracks
-    if len(tracks) == 0:
+    if sm['liveCalibration'].calStatus != CALIBRATED or len(tracks) == 0:
       return
 
     debug = getattr(ui_state, 'adjacent_vehicle_markers_debug', False)
+
+    # Pulse phase for the paced-track ring (sinusoid clamped to [PACED_PULSE_MIN, 1]).
+    period_frames = max(1.0, PACED_PULSE_PERIOD_S * gui_app.target_fps)
+    pulse_phase = 0.5 + 0.5 * math.sin(2.0 * math.pi * self._paced_pulse_frame / period_frames)
+    pulse = PACED_PULSE_MIN + (1.0 - PACED_PULSE_MIN) * pulse_phase
 
     for t in tracks:
       if not (0 <= t.slot < NUM_OBJECT_SLOTS):
@@ -105,6 +115,15 @@ class ModelRendererSP:
       color = rl.Color(r, g, b, a)
       radius = _marker_radius_for(t.dRel)
       rl.draw_circle(int(point[0]), int(point[1]), radius, color)
+
+      # Paced-track highlight: pulsing white ring around the controller's chosen target.
+      if paced_object_id != 0 and t.valid and int(t.objectId) == paced_object_id:
+        ring_alpha = int(255 * max(0.0, min(1.0, alpha * pulse)))
+        rl.draw_ring(rl.Vector2(point[0], point[1]),
+                     radius + PACED_RING_GAP_PX,
+                     radius + PACED_RING_GAP_PX + PACED_RING_THICKNESS_PX,
+                     0.0, 360.0, 24,
+                     rl.Color(255, 255, 255, ring_alpha))
 
       if debug and t.valid:
         label_pos = rl.Vector2(point[0] + radius + 2, point[1] - 12)
