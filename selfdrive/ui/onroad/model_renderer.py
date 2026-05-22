@@ -33,6 +33,7 @@ NO_THROTTLE_COLORS = [
 @dataclass
 class ModelPoints:
   raw_points: np.ndarray = field(default_factory=lambda: np.empty((0, 3), dtype=np.float32))
+  target_points: np.ndarray = field(default_factory=lambda: np.empty((0, 3), dtype=np.float32))
   projected_points: np.ndarray = field(default_factory=lambda: np.empty((0, 2), dtype=np.float32))
 
 
@@ -55,6 +56,15 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
     self._lane_line_probs = np.zeros(4, dtype=np.float32)
     self._road_edge_stds = np.zeros(2, dtype=np.float32)
     self._lead_vehicles = [LeadVehicle(), LeadVehicle()]
+    self._lead_targets: list[tuple[float, float, float, float] | None] = [None, None]
+    # rc=0.05s = one 20Hz model period: each step is smoothed across the 3 UI frames before the next update
+    self._lead_x_filters = [FirstOrderFilter(0.0, 0.05, 1 / gui_app.target_fps, initialized=False) for _ in range(2)]
+    self._lead_y_filters = [FirstOrderFilter(0.0, 0.05, 1 / gui_app.target_fps, initialized=False) for _ in range(2)]
+    # EMA coefficient for filtering raw model points (path, lane lines, road edges) toward each frame's target
+    _path_rc = 0.05
+    _path_dt = 1 / gui_app.target_fps
+    self._path_alpha = _path_dt / (_path_rc + _path_dt)
+    self._path_length_filter = FirstOrderFilter(0.0, 0.05, 1 / gui_app.target_fps, initialized=False)
     self._path_offset_z = HEIGHT_INIT[0]
     self._counter = -1
     self._camera_offset = ui_state.params.get("CameraOffset", return_default=True) if ui_state.active_bundle else 0.0
@@ -116,26 +126,27 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
     lead_one = radar_state.leadOne if radar_state else None
     render_lead_indicator = self._longitudinal_control and radar_state is not None
 
-    # Update model data when needed
-    model_updated = sm.updated['modelV2']
-    if model_updated or sm.updated['radarState'] or self._transform_dirty:
-      if model_updated:
-        self._update_raw_points(model)
+    # Sample raw model points at model rate, then filter and project every frame
+    if sm.updated['modelV2']:
+      self._update_raw_points(model)
 
-      path_x_array = self._path.raw_points[:, 0]
-      if path_x_array.size == 0:
-        return
+    self._filter_raw_points()
 
-      self._update_model(lead_one, path_x_array)
-      if render_lead_indicator:
-        self._update_leads(radar_state, path_x_array)
-      self._transform_dirty = False
+    path_x_array = self._path.raw_points[:, 0]
+    if path_x_array.size == 0:
+      return
+
+    self._update_model(lead_one, path_x_array)
+    if render_lead_indicator and (sm.updated['radarState'] or self._transform_dirty):
+      self._update_leads(radar_state, path_x_array)
+    self._transform_dirty = False
 
     # Draw elements
     self._draw_lane_lines()
     self._draw_path(sm)
 
     if render_lead_indicator and radar_state:
+      self._update_lead_chevrons()
       self._draw_lead_indicator()
       self.chevron_metrics.draw_lead_status(sm, radar_state, self._rect, self._lead_vehicles)
 
@@ -144,25 +155,38 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
     self.draw_camera_object_markers()
 
   def _update_raw_points(self, model):
-    """Update raw 3D points from model data"""
-    self._path.raw_points = np.array([model.position.x, np.array(model.position.y) + self._camera_offset, model.position.z], dtype=np.float32).T
+    """Sample raw 3D points from model data; filtered in _filter_raw_points"""
+    self._path.target_points = np.array([model.position.x, np.array(model.position.y) + self._camera_offset, model.position.z], dtype=np.float32).T
 
     for i, lane_line in enumerate(model.laneLines):
-      self._lane_lines[i].raw_points = np.array([lane_line.x, np.array(lane_line.y) + self._camera_offset, lane_line.z], dtype=np.float32).T
+      self._lane_lines[i].target_points = np.array([lane_line.x, np.array(lane_line.y) + self._camera_offset, lane_line.z], dtype=np.float32).T
 
     for i, road_edge in enumerate(model.roadEdges):
-      self._road_edges[i].raw_points = np.array([road_edge.x, np.array(road_edge.y) + self._camera_offset, road_edge.z], dtype=np.float32).T
+      self._road_edges[i].target_points = np.array([road_edge.x, np.array(road_edge.y) + self._camera_offset, road_edge.z], dtype=np.float32).T
 
     self._lane_line_probs = np.array(model.laneLineProbs, dtype=np.float32)
     self._road_edge_stds = np.array(model.roadEdgeStds, dtype=np.float32)
     self._acceleration_x = np.array(model.acceleration.x, dtype=np.float32)
 
+  def _filter_raw_points(self):
+    """Step the per-index EMA in car space so path and lane lines glide between model updates"""
+    alpha = self._path_alpha
+    for mp in (self._path, *self._lane_lines, *self._road_edges):
+      target = mp.target_points
+      if target.shape[0] == 0:
+        continue
+      # Shape change (first sample, or model output resized) → snap so we don't blend mismatched indices
+      if mp.raw_points.shape != target.shape:
+        mp.raw_points = target.copy()
+      else:
+        mp.raw_points = (1.0 - alpha) * mp.raw_points + alpha * target
+
   def _update_leads(self, radar_state, path_x_array):
-    """Update positions of lead vehicles"""
-    self._lead_vehicles = [LeadVehicle(), LeadVehicle()]
+    """Sample raw projected positions of lead vehicles; filtered in _update_lead_chevrons"""
     leads = [radar_state.leadOne, radar_state.leadTwo]
 
     for i, lead_data in enumerate(leads):
+      target = None
       if lead_data and lead_data.status:
         d_rel, y_rel, v_rel = lead_data.dRel, lead_data.yRel, lead_data.vRel
         idx = self._get_path_length_idx(path_x_array, d_rel)
@@ -171,7 +195,24 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
         z = self._path.raw_points[idx, 2] if idx < len(self._path.raw_points) else 0.0
         point = self._map_to_screen(d_rel, -y_rel + self._camera_offset, z + self._path_offset_z)
         if point:
-          self._lead_vehicles[i] = self._update_lead_vehicle(d_rel, v_rel, point, self._rect)
+          target = (point[0], point[1], d_rel, v_rel)
+      if target is None:
+        # Snap on next reappear so the chevron doesn't glide in from a stale position
+        self._lead_x_filters[i].initialized = False
+        self._lead_y_filters[i].initialized = False
+      self._lead_targets[i] = target
+
+  def _update_lead_chevrons(self):
+    """Step screen-space filters and rebuild chevron geometry each frame"""
+    for i in range(2):
+      target = self._lead_targets[i]
+      if target is None:
+        self._lead_vehicles[i] = LeadVehicle()
+        continue
+      x, y, d_rel, v_rel = target
+      fx = self._lead_x_filters[i].update(x)
+      fy = self._lead_y_filters[i].update(y)
+      self._lead_vehicles[i] = self._update_lead_vehicle(d_rel, v_rel, (fx, fy), self._rect)
 
   def _update_model(self, lead, path_x_array):
     """Update model visualization data based on model message"""
@@ -192,6 +233,9 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
     if lead and lead.status:
       lead_d = lead.dRel * 2.0
       max_distance = np.clip(lead_d - min(lead_d * 0.35, 10.0), 0.0, max_distance)
+
+    # Smooth the tip cutoff (raw lead dRel still jumps even with the chevron screen-space filter)
+    max_distance = self._path_length_filter.update(max_distance)
 
     max_idx = self._get_path_length_idx(path_x_array, max_distance)
     self._path.projected_points = self._map_line_to_polygon(
