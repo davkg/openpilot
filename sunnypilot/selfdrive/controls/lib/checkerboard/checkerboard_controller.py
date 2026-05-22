@@ -52,8 +52,12 @@ TRACK_CACHE_TTL_FRAMES = 20  # drop cached prior d_rel after this many ticks (~1
 # braking into traffic) and pacing intent doesn't apply.
 EGO_STABLE_A_MAX_MS2 = 0.3   # m/s² (~0.7 mph/s); |a_ego| must be below this to engage
 
-# Aggression → absolute v_cruise delta cap (m/s)
+# Minimum ego speed (m/s) for engagement. Below this, surface streets are usually too
+# busy/dynamic for checkerboarding to be practical.
 MPH_TO_MS = 0.44704
+V_EGO_MIN_MS = 50.0 * MPH_TO_MS
+
+# Aggression → absolute v_cruise delta cap (m/s)
 DELTA_CAPS_MS = [
   1.0 * MPH_TO_MS,
   2.0 * MPH_TO_MS,
@@ -72,7 +76,7 @@ class CheckerboardController:
   output_v_target: float = V_CRUISE_UNSET
   output_a_target: float = 0.0
   t_follow_delta: float = 0.0  # phase 4 will drive this
-  pacing_object_id: int = 0    # closest pacing-eligible track's objectId; 0 when not pacing
+  pacing_side: int = 0  # +1 = pacing a left-adjacent car, -1 = right-adjacent, 0 = not pacing
 
   def __init__(self):
     self.params = Params()
@@ -194,7 +198,7 @@ class CheckerboardController:
       self.output_v_target = V_CRUISE_UNSET
       self.output_a_target = 0.0
       self.t_follow_delta = 0.0
-      self.pacing_object_id = 0
+      self.pacing_side = 0
       self.is_enabled = self._enabled and long_enabled
       self.is_active = False
       return
@@ -208,6 +212,8 @@ class CheckerboardController:
     # ── Outer gates (whole-scene, not per-track) ──────────────────────────────────────
     # Ego must be cruising, not actively accelerating/braking.
     ego_stable = abs(a_ego) < EGO_STABLE_A_MAX_MS2
+    # Highway-only: below ~50 mph, surface streets are too busy for staggering to be practical.
+    v_ego_ok = v_ego >= V_EGO_MIN_MS
     # Adjacent-lane traffic density. Once already pacing, the hysteresis will slew us out
     # naturally via EXIT_TICKS rather than slamming off.
     crowded = sum(1 for t in tracks if self._in_density_window(t)) >= DENSITY_THRESHOLD
@@ -222,14 +228,14 @@ class CheckerboardController:
               and self._in_pacing_zone(t)              # d_rel in door-to-door range
               and abs(self._v_dot_for(t)) < v_dot_gate)  # relative motion small
 
-    pacing_tracks = [t for t in tracks if _is_pacing_track(t)] if (ego_stable and not crowded) else []
+    pacing_tracks = [t for t in tracks if _is_pacing_track(t)] if (ego_stable and not crowded and v_ego_ok) else []
     any_in_zone = bool(pacing_tracks)
 
-    # Pick the closest-|dRel| pacing-eligible track as the representative for the UI ring.
-    # Sticky across EXIT_TICKS hold-out: only reset when we fully disengage below.
+    # Pick the closest-|dRel| pacing track to expose which side is triggering pacing.
+    # Sticky through EXIT_TICKS hold-out; only cleared when fully disengaged below.
     if pacing_tracks:
       closest = min(pacing_tracks, key=lambda t: abs(t.dRel))
-      self.pacing_object_id = int(closest.objectId)
+      self.pacing_side = 1 if closest.yRel > 0 else -1
 
     # Update per-track velocity cache for next tick (after the gate check).
     for t in tracks:
@@ -242,7 +248,7 @@ class CheckerboardController:
     self._step_hysteresis(any_in_zone)
 
     if not self._is_pacing:
-      self.pacing_object_id = 0
+      self.pacing_side = 0
 
     target_bias = -self._delta_cap if self._is_pacing else 0.0
     target_t_follow = self._t_follow_cap if self._is_pacing else 0.0

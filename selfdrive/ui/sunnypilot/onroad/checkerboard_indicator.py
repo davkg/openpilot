@@ -21,20 +21,23 @@ class CheckerboardIndicator(Widget):
   def __init__(self):
     super().__init__()
     self.pacing = False
+    self.pacing_side = 0  # +1 = left adjacent, -1 = right adjacent
     self.font = gui_app.font(FontWeight.BOLD)
 
   def update(self):
     sm = ui_state.sm
     if sm.updated["longitudinalPlanSP"]:
-      st = sm["longitudinalPlanSP"].checkerboard.state
-      self.pacing = st == CheckerboardState.pacing
+      cb = sm["longitudinalPlanSP"].checkerboard
+      self.pacing = cb.state == CheckerboardState.pacing
+      self.pacing_side = int(cb.pacingSide)
 
   def _draw_icon(self, rect_center_x, rect_height, x_offset, y_offset, name):
     font_size = 36
     padding_v = 5
-    box_width = 160
+    padding_h = 20
 
     sz = measure_text_cached(self.font, name, font_size)
+    box_width = int(sz.x + padding_h * 2)
     box_height = int(sz.y + padding_v * 2)
 
     screen_y = rect_height / 4 + y_offset
@@ -50,4 +53,10 @@ class CheckerboardIndicator(Widget):
     if not self.pacing:
       return
 
-    self._draw_icon(rect.x, rect.height, 140, 300, "CB")
+    if self.pacing_side > 0:
+      label = "CB - LEFT"
+    elif self.pacing_side < 0:
+      label = "CB - RIGHT"
+    else:
+      label = "CB"
+    self._draw_icon(rect.x, rect.height, 110, 300, label)
