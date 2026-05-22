@@ -18,6 +18,8 @@ ARROW_BASE_RADIUS_FRAC = 0.60
 CENTER_FONT_SIZE = 76
 INVALID_ALPHA = 0.5
 COMPASS_GAP_ABOVE_EXP_BUTTON = 20
+SMOOTHING_FACTOR = 0.1  # per-frame fraction of remaining angular distance to close
+MIN_SPEED_FOR_UPDATE = 0.1  # m/s; freeze the compass below this to avoid stationary bearing noise
 
 
 def _bearing_to_cardinal(deg: float) -> str:
@@ -39,6 +41,11 @@ def _bearing_to_cardinal(deg: float) -> str:
     return "NW"
 
 
+def _angular_diff(target: float, current: float) -> float:
+  """Shortest signed delta from current to target, in [-180, 180]."""
+  return (target - current + 540) % 360 - 180
+
+
 def _rotate(x: float, y: float, angle_deg: float, cx: float, cy: float) -> tuple[float, float]:
   a = math.radians(angle_deg)
   s, c = math.sin(a), math.cos(a)
@@ -54,6 +61,7 @@ class CompassRenderer(Widget):
   def __init__(self):
     super().__init__()
     self._last_valid_bearing: float | None = None
+    self._displayed_bearing: float | None = None
     self._is_valid: bool = False
 
     self._font_bold: rl.Font = gui_app.font(FontWeight.BOLD)
@@ -67,12 +75,23 @@ class CompassRenderer(Widget):
     return None
 
   def _update_state(self) -> None:
-    gps = self._get_gps_data()
-    if gps is not None and gps.bearingAccuracyDeg != 180.0:
-      self._last_valid_bearing = gps.bearingDeg
-      self._is_valid = True
-    else:
-      self._is_valid = False
+    # Only update the target bearing when moving; smoothing still runs so the
+    # indicator finishes catching up to the last known target after a stop.
+    if ui_state.sm['carState'].vEgo >= MIN_SPEED_FOR_UPDATE:
+      gps = self._get_gps_data()
+      if gps is not None and gps.bearingAccuracyDeg != 180.0:
+        self._last_valid_bearing = gps.bearingDeg
+        self._is_valid = True
+      else:
+        self._is_valid = False
+
+    # Smoothly chase the latest bearing each frame; snap on first valid reading.
+    if self._last_valid_bearing is not None:
+      if self._displayed_bearing is None:
+        self._displayed_bearing = self._last_valid_bearing
+      else:
+        diff = _angular_diff(self._last_valid_bearing, self._displayed_bearing)
+        self._displayed_bearing = (self._displayed_bearing + diff * SMOOTHING_FACTOR) % 360
 
   def _render(self, rect: rl.Rectangle) -> None:
     # Anchored above the exp button (bottom-left), same x and size.
@@ -86,9 +105,9 @@ class CompassRenderer(Widget):
 
     rl.draw_circle(int(cx), int(cy), radius, _with_alpha(BG_COLOR, alpha))
 
-    if self._last_valid_bearing is not None:
-      self._draw_indicator(cx, cy, radius, self._last_valid_bearing, alpha)
-      self._draw_center_text(cx, cy, _bearing_to_cardinal(self._last_valid_bearing), alpha)
+    if self._displayed_bearing is not None:
+      self._draw_indicator(cx, cy, radius, self._displayed_bearing, alpha)
+      self._draw_center_text(cx, cy, _bearing_to_cardinal(self._displayed_bearing), alpha)
 
   def _draw_indicator(self, cx: float, cy: float, radius: float, bearing_deg: float, alpha: float) -> None:
     # Needle points to North. Car heading is bearing_deg CW from North,
