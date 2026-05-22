@@ -8,27 +8,27 @@ from openpilot.system.ui.widgets import Widget
 
 # Bar geometry
 BAR_WIDTH = 60
-BAR_HEIGHT = 24
+BAR_HEIGHT = 40
 BAR_GAP = 8
 BAR_COUNT = 3
-INDICATOR_WIDTH = BAR_COUNT * BAR_WIDTH + (BAR_COUNT - 1) * BAR_GAP  # 132 px
-MARGIN_ABOVE_BOX = 24  # gap between top of set-speed box and bottom of bars
+INDICATOR_HEIGHT = BAR_COUNT * BAR_HEIGHT + (BAR_COUNT - 1) * BAR_GAP  # 88 px
+MARGIN_RIGHT_OF_BUTTON = 24  # gap between right edge of exp button and left edge of background box
 
-# Colors per personality for active bars, keyed by .raw int (capnp enums are not reliably hashable)
-_ACTIVE_COLORS = {
-  0: rl.Color(255, 100, 50, 255),   # aggressive  → orange-red
-  1: rl.Color(22, 127, 64, 255),    # standard    → green (UIStatus.ENGAGED)
-  2: rl.Color(255, 255, 255, 255),  # relaxed     → white
-}
-_INACTIVE_COLOR = COLORS.DARK_GREY
+# Background box around the bars
+BG_PAD_X = 10
+BG_PAD_Y = 10
+BG_ROUNDNESS = 0.35
+
+_ACTIVE_COLOR = rl.Color(255, 255, 255, 255)
+_INACTIVE_COLOR = rl.Color(255, 255, 255, 30)
 
 
 class FollowDistanceRenderer(Widget):
-  """Draws a horizontal 1-3 bar follow-distance/personality indicator.
+  """Draws a vertically stacked 1-3 bar follow-distance/personality indicator.
 
-  aggressive → 1 bar, standard → 2 bars, relaxed → 3 bars.
-  Centered horizontally between the set-speed box left edge and the
-  speed-limit sign right edge. Positioned just above both boxes.
+  aggressive → 1 bar, standard → 2 bars, relaxed → 3 bars (lit from bottom up).
+  Positioned at the bottom-left of the screen, just to the right of the
+  experimental-mode button.
   Hidden when OP does not have longitudinal control.
   """
 
@@ -62,27 +62,25 @@ class FollowDistanceRenderer(Widget):
     if not self._longitudinal_control:
       return
 
-    set_speed_width = UI_CONFIG.set_speed_width_metric if ui_state.is_metric else UI_CONFIG.set_speed_width_imperial
+    button_x = rect.x + UI_CONFIG.border_size * 2
+    button_y = rect.y + rect.height - UI_CONFIG.border_size * 2 - UI_CONFIG.button_size
+    button_center_y = button_y + UI_CONFIG.button_size / 2
 
-    # Horizontal center between set-speed left edge and speed-limit sign right edge:
-    #   set_speed_left  = rect.x + rect.width - 30 - 2*set_speed_width - 24
-    #   sign_right      = rect.x + rect.width - 30
-    #   center_x        = (set_speed_left + sign_right) / 2
-    #                   = rect.x + rect.width - 30 - set_speed_width - 12
-    center_x = rect.x + rect.width - 30 - set_speed_width - 12
+    bg_width = BAR_WIDTH + 2 * BG_PAD_X
+    bg_height = INDICATOR_HEIGHT + 2 * BG_PAD_Y
+    bg_x = button_x + UI_CONFIG.button_size + MARGIN_RIGHT_OF_BUTTON
+    bg_y = button_center_y - bg_height / 2
+    bar_x = bg_x + BG_PAD_X
+    bar_y_start = bg_y + BG_PAD_Y
 
-    # Vertical: just above the top of the set-speed / speed-limit boxes
-    set_speed_top_y = rect.y + rect.height - 410
-    bar_y = set_speed_top_y - BAR_HEIGHT - MARGIN_ABOVE_BOX
+    rl.draw_rectangle_rounded(rl.Rectangle(bg_x, bg_y, bg_width, bg_height), BG_ROUNDNESS, 10, COLORS.BLACK_TRANSLUCENT)
 
-    active_color = _ACTIVE_COLORS.get(self._personality_raw, COLORS.WHITE)
-    bar_x_start = center_x - INDICATOR_WIDTH / 2
-
+    # Light bars from the bottom up: index 0 is the bottom bar.
     for i in range(BAR_COUNT):
-      x = bar_x_start + i * (BAR_WIDTH + BAR_GAP)
-      color = active_color if i < self._active_bars else _INACTIVE_COLOR
+      y = bar_y_start + (BAR_COUNT - 1 - i) * (BAR_HEIGHT + BAR_GAP)
+      color = _ACTIVE_COLOR if i < self._active_bars else _INACTIVE_COLOR
       rl.draw_rectangle_rounded(
-        rl.Rectangle(x, bar_y, BAR_WIDTH, BAR_HEIGHT),
+        rl.Rectangle(bar_x, y, BAR_WIDTH, BAR_HEIGHT),
         0.5,
         6,
         color,
