@@ -47,6 +47,12 @@ V_DOT_GATE_ENGAGE_MS = 0.5   # m/s (~1 mph); below this to start pacing
 V_DOT_GATE_HOLD_MS = 1.0     # m/s (~2 mph); above this disengages even while paced
 TRACK_CACHE_TTL_FRAMES = 20  # drop cached prior d_rel after this many ticks (~1 sec at DT_MDL)
 
+# Per-objectId dwell required (s) before a track counts as pacing. The camera-side
+# tracker can briefly report ~0 relative motion for ~1 s after a track is born,
+# falsely satisfying the v_dot gate for fast-passing cars; requiring continuous
+# zone occupancy for this long lets the v_dot estimate settle before we engage.
+DWELL_REQUIRED_S = 3.0
+
 # Ego-stability gate — pacing is a "both cars cruising" scenario. If ego itself is
 # actively accelerating/decelerating, the situation is dynamic (merging, catching up,
 # braking into traffic) and pacing intent doesn't apply.
@@ -95,6 +101,10 @@ class CheckerboardController:
     # object_id → (d_rel, frame) for per-track relative-velocity estimation
     self._track_cache: dict[int, tuple[float, int]] = {}
 
+    # object_id → frame when track first entered the (lane band + pacing zone). Cleared
+    # when track exits either. Drives the per-track DWELL_REQUIRED_S gate.
+    self._zone_entry_frame: dict[int, int] = {}
+
     # Set each tick from radarState.leadOne.status; right-side pacing requires a lead.
     self._has_lead = False
 
@@ -139,6 +149,15 @@ class CheckerboardController:
   @staticmethod
   def _in_pacing_zone(t) -> bool:
     return PACING_ZONE_MIN <= t.dRel <= PACING_ZONE_MAX
+
+  def _has_dwelled(self, t) -> bool:
+    """True when this objectId has been continuously in the (lane band + pacing zone)
+    for at least DWELL_REQUIRED_S seconds — gates out newly-appearing tracks whose
+    v_dot estimate hasn't yet settled."""
+    entry = self._zone_entry_frame.get(int(t.objectId))
+    if entry is None:
+      return False
+    return (self.frame - entry) * DT_MDL >= DWELL_REQUIRED_S
 
   def _v_dot_for(self, t) -> float:
     """Per-track relative longitudinal velocity (m/s). Returns +inf if no prior history,
@@ -192,6 +211,7 @@ class CheckerboardController:
       self._is_pacing = False
       self._pacing_ticks_in = 0
       self._pacing_ticks_out = 0
+      self._zone_entry_frame.clear()
       self._v_bias_filter.update(0.0)
       self._t_follow_filter.update(0.0)
       self.state = CheckerboardState.overriding if long_override else CheckerboardState.disabled
@@ -218,6 +238,20 @@ class CheckerboardController:
     # naturally via EXIT_TICKS rather than slamming off.
     crowded = sum(1 for t in tracks if self._in_density_window(t)) >= DENSITY_THRESHOLD
 
+    # ── Per-track zone-dwell tracking ─────────────────────────────────────────────────
+    # Record the first frame each objectId appears in (lane band + pacing zone); drop
+    # entries whose track is no longer there. Drives DWELL_REQUIRED_S gate below.
+    in_zone_ids: set[int] = set()
+    for t in tracks:
+      if not t.valid or not self._in_pacing_zone(t):
+        continue
+      abs_y = abs(t.yRel)
+      if EGO_LANE_HALF_W <= abs_y <= ADJACENT_LANE_OUTER:
+        oid = int(t.objectId)
+        in_zone_ids.add(oid)
+        self._zone_entry_frame.setdefault(oid, self.frame)
+    self._zone_entry_frame = {oid: f for oid, f in self._zone_entry_frame.items() if oid in in_zone_ids}
+
     # ── Per-track gates ───────────────────────────────────────────────────────────────
     # Relative-motion threshold (hysteresis): tighter to enter, looser to hold engagement
     # through small fluctuations.
@@ -226,6 +260,7 @@ class CheckerboardController:
     def _is_pacing_track(t) -> bool:
       return (self._eligible_for_pacing(t)             # validity, forward window, lane band, side rule
               and self._in_pacing_zone(t)              # d_rel in door-to-door range
+              and self._has_dwelled(t)                 # been in zone long enough for v_dot to settle
               and abs(self._v_dot_for(t)) < v_dot_gate)  # relative motion small
 
     pacing_tracks = [t for t in tracks if _is_pacing_track(t)] if (ego_stable and not crowded and v_ego_ok) else []
