@@ -18,6 +18,7 @@ import argparse
 import csv
 import os
 import re
+import sys
 from collections import defaultdict
 
 import numpy as np
@@ -28,11 +29,40 @@ from matplotlib.patches import Patch
 from matplotlib.ticker import FuncFormatter
 
 from cereal import log
+import openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc as _long_mpc_mod
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import (
   COMFORT_BRAKE, get_STOP_DISTANCE, get_T_FOLLOW,
 )
 from openpilot.selfdrive.test.longitudinal_maneuvers.maneuver import Maneuver
 from openpilot.selfdrive.test.longitudinal_maneuvers.plant import Plant
+
+
+def _check_solver_freshness():
+  """Warn and exit if long_mpc.py is newer than the generated C solver.
+
+  Constants baked into the solver (COMFORT_BRAKE, the desired_dist_comfort
+  CasADi expression, etc.) only take effect after a rebuild. Sim results
+  against a stale solver are misleading.
+  """
+  long_mpc_path = _long_mpc_mod.__file__
+  c_code_dir = os.path.join(os.path.dirname(long_mpc_path), 'c_generated_code')
+  c_code_path = os.path.join(c_code_dir, 'acados_solver_long.c')
+  if not os.path.exists(c_code_path):
+    return  # never built; let the import error handle it
+  if os.path.getmtime(long_mpc_path) > os.path.getmtime(c_code_path):
+    print('=' * 78, file=sys.stderr)
+    print('ERROR: long_mpc.py is newer than the generated solver C code.', file=sys.stderr)
+    print('       Constants baked into the solver (COMFORT_BRAKE,', file=sys.stderr)
+    print('       desired_dist_comfort, etc.) WILL NOT reflect current long_mpc.py.', file=sys.stderr)
+    print('', file=sys.stderr)
+    print('       Rebuild before running:', file=sys.stderr)
+    print('         scons -u -j$(sysctl -n hw.ncpu)   # macOS', file=sys.stderr)
+    print('         scons -u -j$(nproc)               # linux', file=sys.stderr)
+    print('=' * 78, file=sys.stderr)
+    sys.exit(2)
+
+
+_check_solver_freshness()
 
 # ---- configuration -------------------------------------------------------
 # Personalities to run. Order controls PNG sort order via the slug prefix.
