@@ -24,6 +24,7 @@ class Maneuver:
     self.e2e = kwargs.get("e2e", False)
     self.personality = kwargs.get("personality", 0)
     self.force_decel = kwargs.get("force_decel", False)
+    self.mpc_lead = kwargs.get("mpc_lead", False)
 
     self.duration = duration
     self.title = title
@@ -39,6 +40,8 @@ class Maneuver:
       e2e=self.e2e,
       personality=self.personality,
       force_decel=self.force_decel,
+      mpc_lead=self.mpc_lead,
+      initial_lead_speed=float(self.speed_lead_values[0]) if self.mpc_lead else 0.0,
     )
 
     valid = True

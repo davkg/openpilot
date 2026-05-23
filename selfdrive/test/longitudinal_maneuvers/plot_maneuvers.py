@@ -2,18 +2,21 @@
 """
 Tuning dashboards for longitudinal maneuvers.
 
-Define maneuvers in build_maneuvers() (same Maneuver objects used by
-test_longitudinal), run this file, and get one annotated PNG per maneuver.
-Each dashboard shows ego/lead/set speed, commanded acceleration + jerk,
-gap-to-lead vs the desired follow gap, and time headway vs t_follow -- with
+Defines a curated maneuver suite, runs it against the real planner/MPC
+across all three personalities, and emits one annotated PNG per
+(maneuver, personality) plus a `maneuver_scores.csv` scoreboard. Each
+dashboard shows ego/lead/set speed, commanded acceleration + jerk,
+gap-to-lead vs desired follow gap, and time headway vs t_follow -- with
 the background shaded by which MPC obstacle is binding (cruise / lead0 /
-lead1). Nothing is asserted; this is purely a visualization aid for tuning
-long_mpc.
-
-All configuration is in-code (PERSONALITY and build_maneuvers below).
+lead1). On the accel axis: coast-window shading (light decel band), the
+-COMFORT_BRAKE reference line, and jerk-spike markers (>8 m/s^3).
+Nothing is asserted; this is a visualization aid for tuning long_mpc.
 
 Run: .venv/bin/python selfdrive/test/longitudinal_maneuvers/plot_maneuvers.py
 """
+import argparse
+import csv
+import os
 import re
 from collections import defaultdict
 
@@ -25,53 +28,139 @@ from matplotlib.patches import Patch
 from matplotlib.ticker import FuncFormatter
 
 from cereal import log
-from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import get_T_FOLLOW, get_STOP_DISTANCE
+from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import (
+  COMFORT_BRAKE, get_STOP_DISTANCE, get_T_FOLLOW,
+)
 from openpilot.selfdrive.test.longitudinal_maneuvers.maneuver import Maneuver
 from openpilot.selfdrive.test.longitudinal_maneuvers.plant import Plant
 
 # ---- configuration -------------------------------------------------------
-# .aggressive / .standard / .relaxed
-PERSONALITY = log.LongitudinalPersonality.aggressive
+# Personalities to run. Order controls PNG sort order via the slug prefix.
+PERSONALITIES = (
+  log.LongitudinalPersonality.aggressive,
+  log.LongitudinalPersonality.standard,
+  log.LongitudinalPersonality.relaxed,
+)
+PERSONALITY_SLUGS = {
+  int(log.LongitudinalPersonality.aggressive): 'agg',
+  int(log.LongitudinalPersonality.standard):   'std',
+  int(log.LongitudinalPersonality.relaxed):    'rlx',
+}
+
+# Coast band: aTarget within this range counts as "lift-off-throttle" coasting.
+COAST_BAND = (-0.5, -0.05)
+JERK_SPIKE_THRESHOLD = 8.0  # m/s^3 -- mark anything above this
 
 MPH = 0.44704
 SOURCE_NAMES = {0: 'cruise', 1: 'lead0', 2: 'lead1'}
 SOURCE_COLORS = {0: 'tab:blue', 1: 'tab:green', 2: 'tab:orange'}
 
 
-def build_maneuvers():
-  """The maneuvers to plot. Edit freely -- add, remove, or keep just one."""
-  p = int(PERSONALITY)
+def build_maneuvers(personality):
+  """Curated suite for tuning. Each maneuver targets a specific behavior;
+  see the W1 section of the plan for what each one stresses."""
+  p = int(personality)
   maneuvers = [
-    Maneuver('below set speed with a distant lead', duration=40., initial_speed=15.,
+    # ---- baselines kept from the original suite ------------------------
+    Maneuver('B1 below set speed with a distant lead', duration=40., initial_speed=15.,
              lead_relevancy=True, initial_distance_lead=100.,
              breakpoints=[0., 1.], speed_lead_values=[20., 20.],
              cruise_values=[75 * MPH, 75 * MPH], personality=p),
-    Maneuver('approach a stopped car', duration=25., initial_speed=20.,
+    Maneuver('B2 approach a stopped car', duration=25., initial_speed=20.,
              lead_relevancy=True, initial_distance_lead=100.,
              breakpoints=[0., 1.], speed_lead_values=[0., 0.],
              cruise_values=[20., 20.], personality=p),
-    Maneuver('lead brakes to a stop while following on highway', duration=45., initial_speed=25.,
-             lead_relevancy=True, initial_distance_lead=44.,
-             breakpoints=[0., 12., 28.], speed_lead_values=[25., 25., 0.],
-             cruise_values=[25., 25., 25.], personality=p),
-    Maneuver('following on street', duration=60., initial_speed=25 * MPH,
+    Maneuver('B3 following on street', duration=60., initial_speed=25 * MPH,
              lead_relevancy=True, initial_distance_lead=17.,
-             breakpoints=[0., 5., 15., 25., 35., 45.], speed_lead_values=[25 * MPH, 25 * MPH, 15 * MPH, 25 * MPH, 15 * MPH, 25 * MPH],
-             cruise_values=[40 * MPH, 40 * MPH, 40 * MPH, 40 * MPH, 40 * MPH, 40 * MPH], personality=p),
-    Maneuver('stop and go', duration=50., initial_speed=10.,
-             lead_relevancy=True, initial_distance_lead=22.,
-             breakpoints=[0., 5., 12., 18., 24., 31., 38., 44.],
-             speed_lead_values=[10., 10., 0., 0., 10., 10., 0., 0.],
-             cruise_values=[14.] * 8, personality=p),
-  ]
-  swap = Maneuver('lead leaves, distant lead instantly appears', duration=50.,
-                  initial_speed=18., lead_relevancy=True, initial_distance_lead=33.,
-                  breakpoints=[0., 50.], speed_lead_values=[18., 18.],
-                  cruise_values=[31., 31.], personality=p)
-  swap.lead_swaps = [(15., 90.)]  # at t=15s lead A is replaced by a lead 90 m ahead
-  maneuvers.append(swap)
+             breakpoints=[0., 5., 15., 25., 35., 45.],
+             speed_lead_values=[25 * MPH, 25 * MPH, 15 * MPH, 25 * MPH, 15 * MPH, 25 * MPH],
+             cruise_values=[40 * MPH] * 6, personality=p, mpc_lead=True),
 
-  popin = Maneuver('lead pops in at 100m, 70mph ego vs 55mph lead', duration=40.,
+    # ---- M1-M4: stop-n-go ladder (parking-lot to relaxed-suburban) -----
+    # All four use mpc_lead=True so the lead accelerates/decelerates with
+    # realistic jerk-limited transitions instead of corner-y linear interp.
+    Maneuver('M1 dense crawl 0to2 mps (parking lot)', duration=20., initial_speed=0.,
+             lead_relevancy=True, initial_distance_lead=6.,
+             breakpoints=[0., 4., 8., 12., 16.],
+             speed_lead_values=[0., 2., 0., 2., 0.],
+             cruise_values=[4.] * 5, personality=p, mpc_lead=True),
+    Maneuver('M2 dense city stop-n-go 0to7 mps', duration=32., initial_speed=0.,
+             lead_relevancy=True, initial_distance_lead=12.,
+             breakpoints=[0., 6., 11., 17., 22., 28.],
+             speed_lead_values=[0., 7., 0., 7., 0., 7.],
+             cruise_values=[9.] * 6, personality=p, mpc_lead=True),
+    Maneuver('M3 moderate stop-n-go 0to10 mps', duration=35., initial_speed=0.,
+             lead_relevancy=True, initial_distance_lead=22.,
+             breakpoints=[0., 8., 15., 23., 30.],
+             speed_lead_values=[0., 10., 0., 10., 0.],
+             cruise_values=[12.] * 5, personality=p, mpc_lead=True),
+    Maneuver('M4 relaxed stop-n-go 0to11 mps long cycle', duration=65., initial_speed=0.,
+             lead_relevancy=True, initial_distance_lead=30.,
+             breakpoints=[0., 15., 30., 45., 60.],
+             speed_lead_values=[0., 11., 0., 11., 0.],
+             cruise_values=[13.] * 5, personality=p, mpc_lead=True),
+
+    # ---- M5 family: long-range slower-lead approach --------------------
+    # Constrained to initial_distance_lead <= 100m (model vision limit).
+    # The "coast-then-brake" target shape is: long light decel -> peak decel
+    # near the end -> short coast as we settle to follow gap. Today's MPC
+    # produces the *inverse* (peak decel early, taper to coast).
+    Maneuver('M5 highway slower lead 10 mps closing', duration=25., initial_speed=32.,
+             lead_relevancy=True, initial_distance_lead=100.,
+             breakpoints=[0., 25.], speed_lead_values=[22., 22.],
+             cruise_values=[32., 32.], personality=p),
+    Maneuver('M5b moderate closing 7 mps slower lead', duration=30., initial_speed=25.,
+             lead_relevancy=True, initial_distance_lead=100.,
+             breakpoints=[0., 30.], speed_lead_values=[18., 18.],
+             cruise_values=[25., 25.], personality=p),
+    # M5c: the canonical "coast-then-brake" target scenario David described.
+    # Closing rate 7 m/s at 100 m. Ideal profile: minimal decel for ~5 s,
+    # then ramp to peak decel to settle into the follow gap without dipping
+    # below v_lead.
+    Maneuver('M5c canonical coast-then-brake 7mps closing', duration=30., initial_speed=22.,
+             lead_relevancy=True, initial_distance_lead=100.,
+             breakpoints=[0., 30.], speed_lead_values=[15., 15.],
+             cruise_values=[22., 22.], personality=p),
+    # M5d: stopped-lead approach from low speed. Tests whether "free coast
+    # time" exists -- the MPC currently holds speed for several seconds while
+    # there's runway to start a gentle lift-off.
+    Maneuver('M5d coast-to-stop from 7mps', duration=25., initial_speed=7.,
+             lead_relevancy=True, initial_distance_lead=100.,
+             breakpoints=[0., 25.], speed_lead_values=[0., 0.],
+             cruise_values=[7., 7.], personality=p),
+
+    # ---- M6: sudden hard lead brake from steady follow -----------------
+    Maneuver('M6 sudden hard lead brake from steady follow', duration=30., initial_speed=25.,
+             lead_relevancy=True, initial_distance_lead=35.,
+             breakpoints=[0., 10., 13.], speed_lead_values=[25., 25., 8.],
+             cruise_values=[25., 25., 25.], personality=p),
+
+    # ---- M7/M8: cut-in (uses only_lead2 to simulate sudden appearance) -
+    Maneuver('M7 distant cut-in rel 8 mps', duration=25., initial_speed=27.,
+             lead_relevancy=True, initial_distance_lead=60.,
+             breakpoints=[0., 25.], speed_lead_values=[19., 19.],
+             cruise_values=[27., 27.], personality=p, only_lead2=True),
+    Maneuver('M8 closer cut-in rel 12 mps', duration=20., initial_speed=27.,
+             lead_relevancy=True, initial_distance_lead=35.,
+             breakpoints=[0., 20.], speed_lead_values=[15., 15.],
+             cruise_values=[27., 27.], personality=p, only_lead2=True),
+
+    # ---- M10: highway pace at v_lead + margin (steady-state cruise) ----
+    Maneuver('M10 highway pace at v_lead plus margin 60s', duration=60., initial_speed=32.,
+             lead_relevancy=True, initial_distance_lead=50.,
+             breakpoints=[0., 60.], speed_lead_values=[27., 27.],
+             cruise_values=[32., 32.], personality=p),
+
+    # ---- M11: lead clears from stop, re-accelerate ---------------------
+    Maneuver('M11 lead clears re-accelerate', duration=20., initial_speed=0.,
+             lead_relevancy=True, initial_distance_lead=4.5,
+             breakpoints=[0., 3., 7., 20.],
+             speed_lead_values=[0., 0., 15., 15.],
+             cruise_values=[15.] * 4, personality=p, mpc_lead=True),
+  ]
+
+  # M9: stopped-lead approach with late detection (pop-in at 100m, 70mph)
+  popin = Maneuver('M9 late detection 70mph ego vs 55mph lead pop-in', duration=40.,
                    initial_speed=70 * MPH, lead_relevancy=True, initial_distance_lead=400.,
                    breakpoints=[0., 4.99, 5., 30.],
                    speed_lead_values=[55 * MPH] * 4,
@@ -79,6 +168,15 @@ def build_maneuvers():
                    cruise_values=[70 * MPH] * 4, personality=p)
   popin.lead_swaps = [(5., 100.)]  # at t=5s lead becomes visible exactly 100 m ahead
   maneuvers.append(popin)
+
+  # S1: lead-swap (lead leaves, distant lead instantly appears) -- swap-test baseline.
+  swap = Maneuver('S1 lead leaves distant lead appears', duration=50.,
+                  initial_speed=18., lead_relevancy=True, initial_distance_lead=33.,
+                  breakpoints=[0., 50.], speed_lead_values=[18., 18.],
+                  cruise_values=[31., 31.], personality=p)
+  swap.lead_swaps = [(15., 90.)]  # at t=15s lead A is replaced by a lead 90 m ahead
+  maneuvers.append(swap)
+
   return maneuvers
 
 
@@ -92,7 +190,9 @@ def simulate(m):
   """
   plant = Plant(lead_relevancy=m.lead_relevancy, speed=m.speed, distance_lead=m.distance_lead,
                 enabled=m.enabled, only_lead2=m.only_lead2, only_radar=m.only_radar,
-                e2e=m.e2e, personality=m.personality, force_decel=m.force_decel)
+                e2e=m.e2e, personality=m.personality, force_decel=m.force_decel,
+                mpc_lead=m.mpc_lead,
+                initial_lead_speed=float(m.speed_lead_values[0]) if m.mpc_lead else 0.0)
   swaps = sorted(getattr(m, 'lead_swaps', []))
   d = defaultdict(list)
   while plant.current_time < m.duration:
@@ -106,10 +206,14 @@ def simulate(m):
     prob_throttle = float(np.interp(t, m.breakpoints, m.prob_throttle_values))
     out = plant.step(v_lead, prob_lead, cruise, pitch, prob_throttle)
     visible = m.lead_relevancy and (m.only_radar or prob_lead > 0.5)
+    # In mpc_lead mode, the interp value is the lead's cruise *target*; the
+    # actual velocity is what plant just used in the radar message.
+    v_lead_actual = plant.v_lead_prev if m.mpc_lead else v_lead
     d['t'].append(t)
     d['v_ego'].append(out['speed'])
     d['a'].append(out['acceleration'])
-    d['v_lead'].append(v_lead if visible else np.nan)
+    d['v_lead'].append(v_lead_actual if visible else np.nan)
+    d['v_lead_target'].append(v_lead if visible else np.nan)
     d['v_cruise'].append(cruise)
     d['d_rel'].append((out['distance_lead'] - out['distance']) if visible else np.nan)
     d['source'].append(int(plant.planner.mpc.source))
@@ -128,9 +232,34 @@ def shade_sources(ax, t, source):
     i = j
 
 
-def plot_maneuver(m, d):
+def _coast_band_intervals(t, a, lo, hi):
+  """Return list of (t_start, t_end) where a is within [lo, hi] continuously."""
+  in_band = (a >= lo) & (a <= hi)
+  intervals = []
+  i = 0
+  while i < len(in_band):
+    if not in_band[i]:
+      i += 1
+      continue
+    j = i
+    while j < len(in_band) and in_band[j]:
+      j += 1
+    t_end = t[j - 1] if j - 1 < len(t) else t[-1]
+    intervals.append((t[i], t_end))
+    i = j
+  return intervals
+
+
+def _time_to_first_brake(t, a, threshold=-0.1):
+  """Time at which aTarget first crosses below `threshold`. NaN if never."""
+  below = np.where(a < threshold)[0]
+  return float(t[below[0]]) if len(below) else float('nan')
+
+
+def plot_maneuver(m, d, out_dir='.', label=''):
   t, v_ego, a = d['t'], d['v_ego'], d['a']
   v_lead, v_cruise, d_rel, source = d['v_lead'], d['v_cruise'], d['d_rel'], d['source']
+  v_lead_target = d.get('v_lead_target')
   has_lead = bool(m.lead_relevancy)
 
   jerk = np.gradient(a, t)
@@ -139,9 +268,14 @@ def plot_maneuver(m, d):
   desired_gap = tf * v_lead + stop
   headway = np.where(v_ego > 1.0, d_rel / np.maximum(v_ego, 1e-3), np.nan)
 
+  coast_intervals = _coast_band_intervals(t, a, COAST_BAND[0], COAST_BAND[1])
+  total_coast = sum(e - s for s, e in coast_intervals)
+  spike_idx = np.where(np.abs(jerk) > JERK_SPIKE_THRESHOLD)[0]
+  t_first_brake = _time_to_first_brake(t, a)
+
   fig, axs = plt.subplots(4, 1, figsize=(13, 15), sharex=True)
-  pers = {0: 'aggressive', 1: 'standard', 2: 'relaxed'}.get(int(m.personality), '?')
-  fig.suptitle(f"{m.title}    |    personality: {pers}", fontsize=13, y=0.998)
+  pers_name = {0: 'aggressive', 1: 'standard', 2: 'relaxed'}.get(int(m.personality), '?')
+  fig.suptitle(f"{m.title}    |    personality: {pers_name}", fontsize=13, y=0.998)
   for ax in axs:
     shade_sources(ax, t, source)
 
@@ -149,6 +283,9 @@ def plot_maneuver(m, d):
   axs[0].plot(t, v_ego, color='tab:blue', lw=2.5, label='ego speed')
   if has_lead:
     axs[0].plot(t, v_lead, color='tab:red', lw=1.8, ls='--', label='lead speed')
+    if m.mpc_lead and v_lead_target is not None:
+      axs[0].plot(t, v_lead_target, color='tab:red', lw=0.9, ls=':', alpha=0.55,
+                  label='lead cruise target')
   axs[0].plot(t, v_cruise, color='dimgray', lw=1.2, ls=':', label='set speed')
   axs[0].set_ylabel('speed (m/s)')
   src_handles = [Patch(color=SOURCE_COLORS[k], alpha=0.3, label=f'MPC source: {v}')
@@ -160,8 +297,15 @@ def plot_maneuver(m, d):
   secax.set_ylabel('speed (mph)')
 
   # --- acceleration + jerk ---
+  # Coast-band shading first so it sits behind the line.
+  for s, e in coast_intervals:
+    axs[1].axvspan(s, e, color='tab:olive', alpha=0.12, lw=0)
   axs[1].plot(t, a, color='tab:blue', lw=2.2, label='commanded accel (aTarget)')
   axs[1].axhline(0, color='gray', lw=0.8, ls=':')
+  axs[1].axhline(-COMFORT_BRAKE, color='tab:red', lw=0.9, ls='--', alpha=0.6,
+                 label=f'-COMFORT_BRAKE ({-COMFORT_BRAKE:.1f})')
+  axs[1].axhline(COAST_BAND[0], color='tab:olive', lw=0.6, ls=':', alpha=0.7)
+  axs[1].axhline(COAST_BAND[1], color='tab:olive', lw=0.6, ls=':', alpha=0.7)
   i_pd = int(np.argmin(a))
   axs[1].plot(t[i_pd], a[i_pd], 'v', color='tab:blue', ms=10)
   axs[1].annotate(f'peak {a[i_pd]:.2f}', (t[i_pd], a[i_pd]), textcoords='offset points',
@@ -170,9 +314,17 @@ def plot_maneuver(m, d):
   axs[1].yaxis.set_major_formatter(FuncFormatter(lambda v, _: f'{v:.1f}  |  {v / MPH:.1f}'))
   axb = axs[1].twinx()
   axb.plot(t, jerk, color='tab:purple', lw=0.9, alpha=0.55, label='jerk')
+  if len(spike_idx):
+    axb.plot(t[spike_idx], jerk[spike_idx], 'x', color='tab:red', ms=7,
+             label=f'|jerk| > {JERK_SPIKE_THRESHOLD:.0f}')
   axb.set_ylabel('jerk (m/s³)', color='tab:purple')
   axb.tick_params(axis='y', colors='tab:purple')
-  axs[1].legend(loc='upper left', fontsize=8)
+  # Add the coast-band shading to the accel-axis legend so it's labeled.
+  ax1_handles, ax1_labels = axs[1].get_legend_handles_labels()
+  coast_patch = Patch(facecolor='tab:olive', alpha=0.25,
+                      label=f'coast band [{COAST_BAND[0]:+.2f}, {COAST_BAND[1]:+.2f}]')
+  axs[1].legend(handles=ax1_handles + [coast_patch], labels=ax1_labels + [coast_patch.get_label()],
+                loc='upper left', fontsize=8)
   axb.legend(loc='upper right', fontsize=8)
   axs[1].grid(alpha=0.3)
 
@@ -200,29 +352,83 @@ def plot_maneuver(m, d):
   axs[3].legend(loc='best', fontsize=8)
   axs[3].grid(alpha=0.3)
 
-  # --- metrics strip ---
-  bits = [f'peak decel {a.min():+.2f}', f'peak accel {a.max():+.2f}',
-          f'max |jerk| {np.abs(jerk).max():.1f}']
+  # --- metrics ---
+  min_gap = float(np.nanmin(d_rel)) if has_lead else float('nan')
+  final_gap = float(d_rel[-1]) if has_lead else float('nan')
+  metrics = {
+    'title': m.title,
+    'personality': pers_name,
+    'peak_accel': float(a.max()),
+    'peak_decel': float(a.min()),
+    'max_abs_jerk': float(np.abs(jerk).max()),
+    'jerk_spikes': int(len(spike_idx)),
+    'min_gap': min_gap,
+    'final_gap': final_gap,
+    't_first_brake': t_first_brake,
+    'coast_time': float(total_coast),
+    'coast_intervals': len(coast_intervals),
+  }
+
+  bits = [
+    f'peak decel {metrics["peak_decel"]:+.2f}',
+    f'peak accel {metrics["peak_accel"]:+.2f}',
+    f'max |jerk| {metrics["max_abs_jerk"]:.1f}',
+    f'jerk spikes {metrics["jerk_spikes"]}',
+    f'coast {metrics["coast_time"]:.1f}s',
+  ]
   if has_lead:
-    bits += [f'min gap {np.nanmin(d_rel):.1f} m', f'final gap {d_rel[-1]:.1f} m']
+    bits += [f'min gap {min_gap:.1f} m', f'final gap {final_gap:.1f} m']
     if v_ego[-1] > 1.0:
-      bits.append(f'final headway {d_rel[-1] / v_ego[-1]:.2f} s')
+      bits.append(f'final headway {final_gap / v_ego[-1]:.2f} s')
   fig.text(0.5, 0.967, '      '.join(bits), ha='center', fontsize=9,
            bbox=dict(boxstyle='round', fc='white', ec='0.7'))
 
   fig.tight_layout(rect=[0, 0, 1, 0.955])
+  pers_slug = PERSONALITY_SLUGS.get(int(m.personality), 'pXX')
   slug = re.sub(r'[^a-z0-9]+', '_', m.title.lower()).strip('_')
-  fname = f'maneuver_{slug}.png'
+  parts = ['maneuver']
+  if label:
+    parts.append(label)
+  parts += [pers_slug, slug]
+  fname = os.path.join(out_dir, '_'.join(parts) + '.png')
   fig.savefig(fname, dpi=110)
   plt.close(fig)
-  return fname, bits
+  return fname, bits, metrics
 
 
 def main():
-  for m in build_maneuvers():
-    print(f'running: {m.title}')
-    fname, bits = plot_maneuver(m, simulate(m))
-    print(f'  saved {fname}  ({"  ".join(bits)})')
+  parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else '')
+  parser.add_argument('--label', default='',
+                      help='Label suffix for output files (e.g. "baseline", "h1_v1").')
+  parser.add_argument('--out-dir', default='.',
+                      help='Output directory for PNGs and CSV (default: cwd).')
+  args = parser.parse_args()
+
+  os.makedirs(args.out_dir, exist_ok=True)
+  all_metrics = []
+  for personality in PERSONALITIES:
+    pers_slug = PERSONALITY_SLUGS[int(personality)]
+    print(f'==== personality: {pers_slug} ====')
+    for m in build_maneuvers(personality):
+      print(f'running: {pers_slug}  {m.title}')
+      fname, bits, metrics = plot_maneuver(m, simulate(m),
+                                           out_dir=args.out_dir, label=args.label)
+      all_metrics.append(metrics)
+      print(f'  saved {fname}  ({"  ".join(bits)})')
+
+  # Scoreboard CSV -- one row per (maneuver, personality). Order matches the
+  # plot loop, so the file is grouped by personality then title.
+  csv_name = f'maneuver_scores_{args.label}.csv' if args.label else 'maneuver_scores.csv'
+  csv_path = os.path.join(args.out_dir, csv_name)
+  fieldnames = ['personality', 'title', 'peak_accel', 'peak_decel', 'max_abs_jerk',
+                'jerk_spikes', 'min_gap', 'final_gap', 't_first_brake',
+                'coast_time', 'coast_intervals']
+  with open(csv_path, 'w', newline='') as f:
+    w = csv.DictWriter(f, fieldnames=fieldnames)
+    w.writeheader()
+    for row in all_metrics:
+      w.writerow({k: row[k] for k in fieldnames})
+  print(f'wrote {csv_path} with {len(all_metrics)} rows')
 
 
 if __name__ == '__main__':

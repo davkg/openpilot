@@ -40,7 +40,7 @@ J_EGO_COST = 5.
 A_CHANGE_COST = 200.
 DANGER_ZONE_COST = 100.
 CRASH_DISTANCE = .25
-LEAD_DANGER_FACTOR = 0.66
+LEAD_DANGER_FACTOR = 0.75
 LIMIT_COST = 1e6
 ACADOS_SOLVER_TYPE = 'SQP_RTI'
 
@@ -53,7 +53,7 @@ T_IDXS_LST = [index_function(idx, max_val=MAX_T, max_idx=N) for idx in range(N+1
 T_IDXS = np.array(T_IDXS_LST)
 FCW_IDXS = T_IDXS < 5.0
 T_DIFFS = np.diff(T_IDXS, prepend=[0.])
-COMFORT_BRAKE = 2.2
+COMFORT_BRAKE = 2.5
 CRUISE_MIN_ACCEL = -1.2
 CRUISE_MAX_ACCEL = 1.6
 MIN_X_LEAD_FACTOR = 0.5
@@ -66,13 +66,16 @@ MIN_X_LEAD_FACTOR = 0.5
 LEAD_ANTICIPATION_MARGIN = 1.5  # m/s (~3.4 mph) above a slower lead's speed
 
 def get_jerk_factor(personality=log.LongitudinalPersonality.standard, v_ego=0.0):
-  # 5 m/s = 11 mph, 20 m/s = 45 mph
+  # 3 m/s = 7 mph, 5 m/s = 11 mph, 12 m/s = 27 mph, 20 m/s = 45 mph
+  # H2 (tuning sweep): make standard and aggressive speed-dependent like relaxed.
+  # Lower jerk_factor at low speed -> snappier direction flips in stop-n-go;
+  # original (higher) value is held at moderate+ speeds.
   if personality==log.LongitudinalPersonality.relaxed:
     return np.interp(v_ego, [5.0, 20.0], [0.5, 1.0])
   elif personality==log.LongitudinalPersonality.standard:
-    return 0.6
+    return np.interp(v_ego, [3.0, 12.0], [0.45, 0.6])
   elif personality==log.LongitudinalPersonality.aggressive:
-    return 0.5
+    return np.interp(v_ego, [3.0, 12.0], [0.30, 0.50])
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
@@ -280,8 +283,11 @@ class LongitudinalMpc:
     W = np.asfortranarray(np.diag(cost_weights))
     for i in range(N):
       # TODO don't hardcode A_CHANGE_COST idx
-      # reduce the cost on (a-a_prev) later in the horizon.
-      W[4,4] = cost_weights[4] * np.interp(T_IDXS[i], [0.0, 1.0, 2.0], [1.0, 1.0, 0.0])
+      # H1 (tuning sweep): A_CHANGE_COST horizon ramp -- full weight only for
+      # the immediate-future 0.3s, then linear decay through 1.2s. Direction
+      # flips respond faster without the M8 cut-in regression we saw when
+      # removing the plateau entirely.
+      W[4,4] = cost_weights[4] * np.interp(T_IDXS[i], [0.0, 0.3, 1.5], [1.0, 1.0, 0.0])
       self.solver.cost_set(i, 'W', W)
     # Setting the slice without the copy make the array not contiguous,
     # causing issues with the C interface.
