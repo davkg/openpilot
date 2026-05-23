@@ -67,15 +67,12 @@ LEAD_ANTICIPATION_MARGIN = 1.5  # m/s (~3.4 mph) above a slower lead's speed
 
 def get_jerk_factor(personality=log.LongitudinalPersonality.standard, v_ego=0.0):
   # 3 m/s = 7 mph, 5 m/s = 11 mph, 12 m/s = 27 mph, 20 m/s = 45 mph
-  # H2 (tuning sweep): make standard and aggressive speed-dependent like relaxed.
-  # Lower jerk_factor at low speed -> snappier direction flips in stop-n-go;
-  # original (higher) value is held at moderate+ speeds.
   if personality==log.LongitudinalPersonality.relaxed:
     return np.interp(v_ego, [5.0, 20.0], [0.5, 1.0])
   elif personality==log.LongitudinalPersonality.standard:
-    return np.interp(v_ego, [3.0, 12.0], [0.45, 0.6])
+    return np.interp(v_ego, [3.0, 12.0], [0.5, 0.6])
   elif personality==log.LongitudinalPersonality.aggressive:
-    return np.interp(v_ego, [3.0, 12.0], [0.30, 0.50])
+    return 0.5
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
@@ -352,7 +349,7 @@ class LongitudinalMpc:
       # the immediate-future 0.3s, then linear decay through 1.2s. Direction
       # flips respond faster without the M8 cut-in regression we saw when
       # removing the plateau entirely.
-      W[4,4] = cost_weights[4] * np.interp(T_IDXS[i], [0.0, 0.3, 1.5], [1.0, 1.0, 0.0])
+      W[4,4] = cost_weights[4] * np.interp(T_IDXS[i], [0.0, 0.5, 1.5], [1.0, 1.0, 0.0])
       self.solver.cost_set(i, 'W', W)
     # Setting the slice without the copy make the array not contiguous,
     # causing issues with the C interface.
