@@ -111,6 +111,71 @@ def get_lead_anticipation_cap(v_lead, v_ego):
   # current speed -- this only suppresses acceleration, never forces braking.
   return np.maximum(v_lead + LEAD_ANTICIPATION_MARGIN, v_ego)
 
+
+# Coast bias: when approaching a slower/stopped lead from well above the
+# comfort gap, override output_a_target with a small constant decel. Mimics
+# human "lift-off-throttle" behavior on long-range approach. Naturally
+# deactivates as the gap closes toward the comfort gap, handing off to the
+# MPC for the final approach.
+COAST_BIAS_CLOSING_GATE = 1.5  # m/s -- v_ego must exceed v_lead by at least this.
+# MPC handles smaller closing rates gracefully on its own, and this leaves the
+# MPC enough residual closing speed to plan a settled stop after coast hands off.
+
+
+def get_coast_bias_accel(personality):
+  """Per-personality coast bias. Return value is the floor accel applied
+  when coast conditions are met. Return 0.0 to disable."""
+  if personality == log.LongitudinalPersonality.relaxed:
+    return -0.45
+  elif personality == log.LongitudinalPersonality.standard:
+    return -0.30
+  elif personality == log.LongitudinalPersonality.aggressive:
+    return -0.15
+  return 0.0
+
+
+def apply_coast_bias(output_a_target, v_ego, lead, personality):
+  """Apply the coast bias to output_a_target when appropriate. Returns the
+  possibly-lowered a_target. The MPC's internal plan is not modified.
+
+  The bias only activates when *all* of these hold:
+    - Lead detected and ego is actually closing on it.
+    - The constant decel needed to settle at the comfort gap matching the
+      lead's speed is gentle enough to qualify as "coast" (below the
+      personality's max coast magnitude). If the required decel is harder
+      than coast, MPC handles it.
+    - Gap is meaningfully above comfort gap.
+
+  This produces an early-coast trajectory that bleeds the right amount of
+  speed over the available brake distance, then hands off to the MPC at low
+  speed for the final settle (or when the required decel exceeds coast)."""
+  if lead is None or not lead.status:
+    return output_a_target
+  # Defer to MPC whenever it actively wants to accelerate -- don't fight catch-up.
+  if output_a_target > 0.0:
+    return output_a_target
+  v_lead = float(lead.vLead)
+  gap = float(lead.dRel)
+  if v_ego <= v_lead + COAST_BIAS_CLOSING_GATE:
+    return output_a_target
+
+  t_follow = get_T_FOLLOW(personality, v_ego)
+  stop_dist = get_STOP_DISTANCE(personality)
+  comfort_gap_at_lead = get_safe_obstacle_distance(v_lead, t_follow, stop_dist)
+  brake_dist_available = gap - comfort_gap_at_lead
+  if brake_dist_available <= 0:
+    return output_a_target
+
+  # Constant decel needed to bleed (v_ego -> v_lead) over the available brake
+  # distance, ending at comfort gap.
+  needed_decel = (v_ego * v_ego - v_lead * v_lead) / (2.0 * brake_dist_available)
+  max_coast_magnitude = abs(get_coast_bias_accel(personality))
+  if needed_decel >= max_coast_magnitude:
+    # Required decel exceeds the personality's coast envelope -- MPC drives.
+    return output_a_target
+
+  return min(output_a_target, -needed_decel)
+
 def gen_long_model():
   model = AcadosModel()
   model.name = MODEL_NAME
