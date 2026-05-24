@@ -239,6 +239,30 @@ def build_maneuvers(personality):
              lead_relevancy=True, initial_distance_lead=35.,
              breakpoints=[0., 10., 13.], speed_lead_values=[25., 25., 8.],
              cruise_values=[25., 25., 25.], personality=p),
+    # M6b/M6c: moderate (real-world common) lead brake from steady follow.
+    # Lead bleeds 10 m/s over 4s (~2.5 m/s^2) -- firm but comfortable. This is
+    # the mid-severity regime where LDF/jerk_factor tuning shows up most.
+    Maneuver('M6b moderate lead brake from 28mps steady', duration=30., initial_speed=28.,
+             lead_relevancy=True, initial_distance_lead=42.,
+             breakpoints=[0., 10., 14.], speed_lead_values=[28., 28., 18.],
+             cruise_values=[28., 28., 28.], personality=p),
+    Maneuver('M6c moderate lead brake from 18mps steady', duration=25., initial_speed=18.,
+             lead_relevancy=True, initial_distance_lead=29.,
+             breakpoints=[0., 10., 14.], speed_lead_values=[18., 18., 8.],
+             cruise_values=[18., 18., 18.], personality=p),
+    # M6d: lead brakes from 25 -> 8 m/s. mpc_lead caps lead decel at ~1.2 m/s^2
+    # (CRUISE_MIN_ACCEL of the lead's MPC), so this is a sustained moderate
+    # brake -- not a sudden hard one. Use M6 (scripted) for true hard brake.
+    Maneuver('M6d realistic sustained lead brake from steady follow', duration=45., initial_speed=25.,
+             lead_relevancy=True, initial_distance_lead=35.,
+             breakpoints=[0., 10., 11.], speed_lead_values=[25., 25., 8.],
+             cruise_values=[25., 25., 25.], personality=p, mpc_lead=True),
+    # M6d: moderate lead brake from steady follow, lead runs its own MPC for
+    # a realistic jerk-limited decel profile. Drops 10 m/s like M6b.
+    Maneuver('M6e realistic lead brake from steady follow', duration=45., initial_speed=25.,
+             lead_relevancy=True, initial_distance_lead=35.,
+             breakpoints=[0., 10., 11.], speed_lead_values=[25., 25., 15.],
+             cruise_values=[25., 25., 25.], personality=p, mpc_lead=True),
 
     # ---- M7/M8: cut-in (uses only_lead2 to simulate sudden appearance) -
     Maneuver('M7 distant cut-in rel 8 mps', duration=25., initial_speed=27.,
@@ -429,8 +453,8 @@ def plot_maneuver(m, d, out_dir='.', label=''):
   coast_patch = Patch(facecolor='tab:olive', alpha=0.25,
                       label=f'coast band [{COAST_BAND[0]:+.2f}, {COAST_BAND[1]:+.2f}]')
   axs[1].legend(handles=ax1_handles + [coast_patch], labels=ax1_labels + [coast_patch.get_label()],
-                loc='upper left', fontsize=8)
-  axb.legend(loc='upper right', fontsize=8)
+                loc='upper right', fontsize=8)
+  axb.legend(loc='lower right', fontsize=8)
   axs[1].grid(alpha=0.3)
 
   # --- gap to lead ---

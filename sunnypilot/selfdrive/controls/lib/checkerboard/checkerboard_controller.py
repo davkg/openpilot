@@ -51,7 +51,7 @@ TRACK_CACHE_TTL_FRAMES = 20  # drop cached prior d_rel after this many ticks (~1
 # tracker can briefly report ~0 relative motion for ~1 s after a track is born,
 # falsely satisfying the v_dot gate for fast-passing cars; requiring continuous
 # zone occupancy for this long lets the v_dot estimate settle before we engage.
-DWELL_REQUIRED_S = 3.0
+DWELL_REQUIRED_S = 6.0
 
 # Ego-stability gate — pacing is a "both cars cruising" scenario. If ego itself is
 # actively accelerating/decelerating, the situation is dynamic (merging, catching up,

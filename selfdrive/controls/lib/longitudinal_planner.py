@@ -10,7 +10,7 @@ from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import (
-  LongitudinalMpc, LongitudinalPlanSource, apply_coast_bias,
+  LongitudinalMpc, LongitudinalPlanSource,
 )
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS as T_IDXS_MPC
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan
@@ -170,12 +170,6 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     else:
       output_a_target = output_a_target_mpc
       self.output_should_stop = output_should_stop_mpc
-
-    # Coast bias: when approaching a slower lead from well above the comfort
-    # gap, apply a gentle decel bias to mimic human "lift-off-throttle" feel.
-    # Naturally deactivates as gap closes; MPC handles the final approach.
-    output_a_target = apply_coast_bias(output_a_target, v_ego, sm['radarState'].leadOne,
-                                       sm['selfdriveState'].personality)
 
     for idx in range(2):
       accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)

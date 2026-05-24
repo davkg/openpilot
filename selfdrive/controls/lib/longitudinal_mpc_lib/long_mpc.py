@@ -40,7 +40,7 @@ J_EGO_COST = 5.
 A_CHANGE_COST = 200.
 DANGER_ZONE_COST = 100.
 CRASH_DISTANCE = .25
-LEAD_DANGER_FACTOR = 0.75
+LEAD_DANGER_FACTOR = 0.70
 LIMIT_COST = 1e6
 ACADOS_SOLVER_TYPE = 'SQP_RTI'
 
@@ -103,75 +103,52 @@ def get_stopped_equivalence_factor(v_lead):
 def get_safe_obstacle_distance(v_ego, t_follow, stop_distance):
   return (v_ego**2) / (2 * COMFORT_BRAKE) + t_follow * v_ego + stop_distance
 
-def get_lead_anticipation_cap(v_lead, v_ego):
-  # Cap the pace-to speed at the lead's speed plus a margin, but never below the
-  # current speed -- this only suppresses acceleration, never forces braking.
-  return np.maximum(v_lead + LEAD_ANTICIPATION_MARGIN, v_ego)
+# Lead-aware v_cruise modulation has two modes:
+#  - suppress-accel: cap v_cruise at v_lead + LEAD_ANTICIPATION_MARGIN, but
+#    never below v_ego (the original anticipation cap behavior).
+#  - active-coast:   when there's runway to bleed off speed gently before
+#    the MPC's lead obstacle would have to brake harder, allow v_cruise to
+#    *descend below v_ego* at the personality's coast_decel rate. The MPC
+#    plans toward this lower v_cruise natively, producing a sustained
+#    lift-off-throttle decel that hands off to the lead obstacle as the gap
+#    closes.
+COAST_CLOSING_GATE = 1.5    # m/s -- minimum v_ego-v_lead for coast activation
+COAST_MODELPROB_GATE = 0.7  # ignore low-confidence leads
 
 
-# Coast bias: when approaching a slower/stopped lead from well above the
-# comfort gap, override output_a_target with a small constant decel. Mimics
-# human "lift-off-throttle" behavior on long-range approach. Naturally
-# deactivates as the gap closes toward the comfort gap, handing off to the
-# MPC for the final approach.
-COAST_BIAS_CLOSING_GATE = 1.5  # m/s -- v_ego must exceed v_lead by at least this.
-# MPC handles smaller closing rates gracefully on its own, and this leaves the
-# MPC enough residual closing speed to plan a settled stop after coast hands off.
-
-
-def get_coast_bias_accel(personality):
-  """Per-personality coast bias. Return value is the floor accel applied
-  when coast conditions are met. Return 0.0 to disable."""
+def get_coast_decel(personality):
+  """Per-personality coast descent rate (m/s^2, negative). 0.0 disables."""
   if personality == log.LongitudinalPersonality.relaxed:
-    return -0.45
+    return -0.30
   elif personality == log.LongitudinalPersonality.standard:
     return -0.30
   elif personality == log.LongitudinalPersonality.aggressive:
-    return -0.15
+    return -0.20
   return 0.0
 
 
-def apply_coast_bias(output_a_target, v_ego, lead, personality):
-  """Apply the coast bias to output_a_target when appropriate. Returns the
-  possibly-lowered a_target. The MPC's internal plan is not modified.
+def get_lead_v_cruise(v_cruise_clipped, lead_x, lead_v, lead_prob,
+                      v_ego, t_follow, stop_distance, personality):
+  floor = lead_v + LEAD_ANTICIPATION_MARGIN  # never plan below lead's pace
 
-  The bias only activates when *all* of these hold:
-    - Lead detected and ego is actually closing on it.
-    - The constant decel needed to settle at the comfort gap matching the
-      lead's speed is gentle enough to qualify as "coast" (below the
-      personality's max coast magnitude). If the required decel is harder
-      than coast, MPC handles it.
-    - Gap is meaningfully above comfort gap.
+  # Default: suppress-accel only (cap at lead's pace, never below current speed).
+  v_target = np.maximum(floor, v_ego)
 
-  This produces an early-coast trajectory that bleeds the right amount of
-  speed over the available brake distance, then hands off to the MPC at low
-  speed for the final settle (or when the required decel exceeds coast)."""
-  if lead is None or not lead.status:
-    return output_a_target
-  # Defer to MPC whenever it actively wants to accelerate -- don't fight catch-up.
-  if output_a_target > 0.0:
-    return output_a_target
-  v_lead = float(lead.vLead)
-  gap = float(lead.dRel)
-  if v_ego <= v_lead + COAST_BIAS_CLOSING_GATE:
-    return output_a_target
+  # Active coast: relax the v_ego floor and let v_cruise descend at coast_decel,
+  # when the kinematic decel needed to settle at comfort gap is gentle enough.
+  coast_decel = get_coast_decel(personality)
+  if (coast_decel < 0.0
+      and lead_prob >= COAST_MODELPROB_GATE
+      and (v_ego - lead_v) >= COAST_CLOSING_GATE):
+    comfort_gap = get_safe_obstacle_distance(lead_v, t_follow, stop_distance)
+    brake_dist = lead_x - comfort_gap
+    if brake_dist > 0:
+      closing = v_ego - lead_v
+      needed_decel = (closing * closing) / (2.0 * brake_dist)
+      if needed_decel < abs(coast_decel):
+        v_target = np.maximum(floor, v_ego + coast_decel * T_IDXS)
 
-  t_follow = get_T_FOLLOW(personality, v_ego)
-  stop_dist = get_STOP_DISTANCE(personality)
-  comfort_gap_at_lead = get_safe_obstacle_distance(v_lead, t_follow, stop_dist)
-  brake_dist_available = gap - comfort_gap_at_lead
-  if brake_dist_available <= 0:
-    return output_a_target
-
-  # Constant decel needed to bleed (v_ego -> v_lead) over the available brake
-  # distance, ending at comfort gap.
-  needed_decel = (v_ego * v_ego - v_lead * v_lead) / (2.0 * brake_dist_available)
-  max_coast_magnitude = abs(get_coast_bias_accel(personality))
-  if needed_decel >= max_coast_magnitude:
-    # Required decel exceeds the personality's coast envelope -- MPC drives.
-    return output_a_target
-
-  return min(output_a_target, -needed_decel)
+  return np.minimum(v_cruise_clipped, v_target)
 
 def gen_long_model():
   model = AcadosModel()
@@ -346,7 +323,7 @@ class LongitudinalMpc:
     for i in range(N):
       # TODO don't hardcode A_CHANGE_COST idx
       # H1 (tuning sweep): A_CHANGE_COST horizon ramp -- full weight only for
-      # the immediate-future 0.3s, then linear decay through 1.2s. Direction
+      # the immediate-future 0.5s, then linear decay through 2.0s. Direction
       # flips respond faster without the M8 cut-in regression we saw when
       # removing the plateau entirely.
       W[4,4] = cost_weights[4] * np.interp(T_IDXS[i], [0.0, 0.5, 2.0], [1.0, 1.0, 0.0])
@@ -429,13 +406,14 @@ class LongitudinalMpc:
     v_upper = v_ego + (T_IDXS * CRUISE_MAX_ACCEL * 1.05)
     v_cruise_clipped = np.clip(v_cruise * np.ones(N+1), v_lower, v_upper)
 
-    # Lead-anticipation speed cap: when a slower lead is visible, hold speed (or
-    # gently approach v_lead + margin) instead of accelerating to set speed and
-    # then having to brake. When the lead is close the lead obstacle binds and
-    # this has no effect.
+    # Lead-aware v_cruise: in suppress-accel mode this caps v_cruise at
+    # v_lead + margin; when there's runway to bleed off speed gently, the cap
+    # is allowed to descend below v_ego, producing a lift-off-throttle coast.
     if radarstate.leadOne.status:
-      v_cruise_clipped = np.minimum(v_cruise_clipped,
-                                    get_lead_anticipation_cap(lead_xv_0[:, 1], v_ego))
+      v_cruise_clipped = get_lead_v_cruise(v_cruise_clipped,
+                                           lead_xv_0[0, 0], lead_xv_0[0, 1],
+                                           radarstate.leadOne.modelProb,
+                                           v_ego, t_follow, stop_distance, personality)
 
     cruise_obstacle = np.cumsum(T_DIFFS * v_cruise_clipped) + get_safe_obstacle_distance(v_cruise_clipped, t_follow, stop_distance)
 
