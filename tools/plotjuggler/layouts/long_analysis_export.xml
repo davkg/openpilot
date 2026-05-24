@@ -1,97 +1,98 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <root>
- <tabbed_widget parent="main_window" name="Main Window">
-  <Tab tab_name="tab1" containers="1">
+ <tabbed_widget name="Main Window" parent="main_window">
+  <Tab containers="1" tab_name="tab1">
    <Container>
-    <DockSplitter sizes="0.0910384;0.0905642;0.0910384;0.0910384;0.0910384;0.0905642;0.0910384;0.0910384;0.0910384;0.0905642;0.0910384" count="11" orientation="-">
+    <DockSplitter orientation="-" sizes="0.0907652;0.0912929;0.0907652;0.0907652;0.0907652;0.0912929;0.0907652;0.0907652;0.0907652;0.0912929;0.0907652" count="11">
      <DockArea name="...">
-      <plot style="Lines" mode="TimeSeries" flip_x="false" flip_y="false">
-       <range bottom="-2.966401" left="0.000000" top="1.813815" right="1128.869927"/>
+      <plot flip_x="false" flip_y="false" style="Lines" mode="TimeSeries">
+       <range top="1.691236" right="2209.858354" left="1788.659513" bottom="-2.140655"/>
        <limitY/>
-       <curve color="#d62728" name="/longitudinalPlan/aTarget"/>
+       <curve name="/longitudinalPlan/aTarget" color="#d62728"/>
       </plot>
      </DockArea>
      <DockArea name="...">
-      <plot style="Lines" mode="TimeSeries" flip_x="false" flip_y="false">
-       <range bottom="-0.050000" left="0.000000" top="2.050000" right="1128.869927"/>
+      <plot flip_x="false" flip_y="false" style="Lines" mode="TimeSeries">
+       <range top="2.050000" right="2209.858354" left="1788.659513" bottom="-0.050000"/>
        <limitY/>
-       <curve color="#1ac938" name="/longitudinalPlan/longitudinalPlanSource"/>
+       <curve name="/longitudinalPlan/longitudinalPlanSource" color="#1ac938"/>
       </plot>
      </DockArea>
      <DockArea name="...">
-      <plot style="Lines" mode="TimeSeries" flip_x="false" flip_y="false">
-       <range bottom="-11.207621" left="0.000000" top="261.492869" right="1128.869927"/>
+      <plot flip_x="false" flip_y="false" style="Lines" mode="TimeSeries">
+       <range top="261.440809" right="2209.858354" left="1788.659513" bottom="-9.073152"/>
        <limitY/>
-       <curve color="#ff7f0e" name="/carState/vEgo"/>
-       <curve color="#f14cc1" name="/carState/aEgo"/>
-       <curve color="#9467bd" name="/carState/vCruise"/>
+       <curve name="/carState/vEgo" color="#ff7f0e"/>
+       <curve name="/carState/aEgo" color="#f14cc1"/>
+       <curve name="/carState/vCruise" color="#9467bd"/>
       </plot>
      </DockArea>
      <DockArea name="...">
-      <plot style="Lines" mode="TimeSeries" flip_x="false" flip_y="false">
-       <range bottom="-13.236411" left="0.000000" top="120.584052" right="1128.869927"/>
+      <plot flip_x="false" flip_y="false" style="Lines" mode="TimeSeries">
+       <range top="109.105750" right="2209.858354" left="1788.659513" bottom="-3.366757"/>
        <limitY/>
-       <curve color="#bcbd22" name="/radarState/leadOne/dRel"/>
-       <curve color="#1f77b4" name="/radarState/leadOne/vLeadK"/>
+       <curve name="/radarState/leadOne/dRel" color="#bcbd22"/>
+       <curve name="/radarState/leadOne/vLeadK" color="#1f77b4"/>
       </plot>
      </DockArea>
      <DockArea name="...">
-      <plot style="Lines" mode="TimeSeries" flip_x="false" flip_y="false">
-       <range bottom="-0.025000" left="0.000000" top="1.025000" right="1128.869927"/>
+      <plot flip_x="false" flip_y="false" style="Lines" mode="TimeSeries">
+       <range top="1.025000" right="2209.858354" left="1788.659513" bottom="-0.025000"/>
        <limitY/>
-       <curve color="#d62728" name="/radarState/leadOne/status"/>
-       <curve color="#1ac938" name="/radarState/leadOne/modelProb"/>
+       <curve name="/radarState/leadOne/status" color="#d62728"/>
+       <curve name="/radarState/leadOne/modelProb" color="#1ac938"/>
       </plot>
      </DockArea>
      <DockArea name="...">
-      <plot style="Lines" mode="TimeSeries" flip_x="false" flip_y="false">
-       <range bottom="-3.230572" left="0.000000" top="132.453442" right="1128.869927"/>
+      <plot flip_x="false" flip_y="false" style="Lines" mode="TimeSeries">
+       <range top="109.790073" right="2209.858354" left="1788.659513" bottom="-2.677807"/>
        <limitY/>
-       <curve color="#ff7f0e" name="/radarState/leadTwo/dRel"/>
+       <curve name="/radarState/leadTwo/dRel" color="#ff7f0e"/>
       </plot>
      </DockArea>
      <DockArea name="...">
-      <plot style="Lines" mode="TimeSeries" flip_x="false" flip_y="false">
-       <range bottom="-0.025000" left="0.000000" top="1.025000" right="1128.869927"/>
+      <plot flip_x="false" flip_y="false" style="Lines" mode="TimeSeries">
+       <range top="1.025000" right="2209.858354" left="1788.659513" bottom="-0.025000"/>
        <limitY/>
-       <curve color="#f14cc1" name="/radarState/leadTwo/status"/>
+       <curve name="/radarState/leadTwo/status" color="#f14cc1"/>
       </plot>
      </DockArea>
      <DockArea name="...">
-      <plot style="Lines" mode="TimeSeries" flip_x="false" flip_y="false">
-       <range bottom="-0.050000" left="0.000000" top="2.050000" right="1128.869927"/>
+      <plot flip_x="false" flip_y="false" style="Lines" mode="TimeSeries">
+       <range top="1.025000" right="2209.858354" left="1788.659513" bottom="-0.025000"/>
        <limitY/>
-       <curve color="#9467bd" name="/selfdriveState/personality"/>
+       <curve name="/selfdriveState/personality" color="#9467bd"/>
+       <curve name="/selfdriveState/active" color="#1f77b4"/>
       </plot>
      </DockArea>
      <DockArea name="...">
-      <plot style="Lines" mode="TimeSeries" flip_x="false" flip_y="false">
-       <range bottom="-2.961850" left="0.000000" top="1.627214" right="1128.869927"/>
+      <plot flip_x="false" flip_y="false" style="Lines" mode="TimeSeries">
+       <range top="1.363073" right="2209.858354" left="1788.659513" bottom="-3.618612"/>
        <limitY/>
-       <curve color="#17becf" name="/carControl/actuators/accel"/>
+       <curve name="/carControl/actuators/accel" color="#17becf"/>
       </plot>
      </DockArea>
      <DockArea name="...">
-      <plot style="Lines" mode="TimeSeries" flip_x="false" flip_y="false">
-       <range bottom="-3.634710" left="0.000000" top="2.023122" right="1128.869927"/>
+      <plot flip_x="false" flip_y="false" style="Lines" mode="TimeSeries">
+       <range top="1.746324" right="2209.858354" left="1788.659513" bottom="-2.734720"/>
        <limitY/>
-       <curve color="#bcbd22" name="/longitudinalPlan/accels/0"/>
-       <curve color="#1f77b4" name="/longitudinalPlan/accels/1"/>
-       <curve color="#d62728" name="/longitudinalPlan/accels/2"/>
-       <curve color="#1ac938" name="/longitudinalPlan/accels/3"/>
-       <curve color="#ff7f0e" name="/longitudinalPlan/accels/4"/>
-       <curve color="#f14cc1" name="/longitudinalPlan/accels/5"/>
+       <curve name="/longitudinalPlan/accels/0" color="#bcbd22"/>
+       <curve name="/longitudinalPlan/accels/1" color="#1f77b4"/>
+       <curve name="/longitudinalPlan/accels/2" color="#d62728"/>
+       <curve name="/longitudinalPlan/accels/3" color="#1ac938"/>
+       <curve name="/longitudinalPlan/accels/4" color="#ff7f0e"/>
+       <curve name="/longitudinalPlan/accels/5" color="#f14cc1"/>
       </plot>
      </DockArea>
      <DockArea name="...">
-      <plot style="Lines" mode="TimeSeries" flip_x="false" flip_y="false">
-       <range bottom="-0.795530" left="0.000000" top="32.442173" right="1128.869927"/>
+      <plot flip_x="false" flip_y="false" style="Lines" mode="TimeSeries">
+       <range top="16.583859" right="2209.858354" left="1788.659513" bottom="-0.408737"/>
        <limitY/>
-       <curve color="#9467bd" name="/longitudinalPlan/speeds/0"/>
-       <curve color="#17becf" name="/longitudinalPlan/speeds/1"/>
-       <curve color="#bcbd22" name="/longitudinalPlan/speeds/3"/>
-       <curve color="#1f77b4" name="/longitudinalPlan/speeds/4"/>
-       <curve color="#d62728" name="/longitudinalPlan/speeds/5"/>
+       <curve name="/longitudinalPlan/speeds/0" color="#9467bd"/>
+       <curve name="/longitudinalPlan/speeds/1" color="#17becf"/>
+       <curve name="/longitudinalPlan/speeds/3" color="#bcbd22"/>
+       <curve name="/longitudinalPlan/speeds/4" color="#1f77b4"/>
+       <curve name="/longitudinalPlan/speeds/5" color="#d62728"/>
       </plot>
      </DockArea>
     </DockSplitter>
@@ -99,7 +100,7 @@
   </Tab>
   <currentTabIndex index="0"/>
  </tabbed_widget>
- <use_relative_time_offset enabled="1"/>
+ <use_relative_time_offset enabled="0"/>
  <!-- - - - - - - - - - - - - - - -->
  <!-- - - - - - - - - - - - - - - -->
  <Plugins>

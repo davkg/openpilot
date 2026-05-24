@@ -55,7 +55,7 @@ FCW_IDXS = T_IDXS < 5.0
 T_DIFFS = np.diff(T_IDXS, prepend=[0.])
 COMFORT_BRAKE = 2.5
 CRUISE_MIN_ACCEL = -1.2
-CRUISE_MAX_ACCEL = 1.6
+CRUISE_MAX_ACCEL = 2.0
 MIN_X_LEAD_FACTOR = 0.5
 
 # Lead-anticipation speed cap: when a slower lead is visible ahead, don't
@@ -70,7 +70,7 @@ def get_jerk_factor(personality=log.LongitudinalPersonality.standard, v_ego=0.0)
   if personality==log.LongitudinalPersonality.relaxed:
     return np.interp(v_ego, [5.0, 20.0], [0.5, 1.0])
   elif personality==log.LongitudinalPersonality.standard:
-    return np.interp(v_ego, [3.0, 12.0], [0.5, 0.6])
+    return np.interp(v_ego, [3.0, 12.0], [0.5, 0.8])
   elif personality==log.LongitudinalPersonality.aggressive:
     return 0.5
   else:
@@ -91,7 +91,7 @@ def get_STOP_DISTANCE(personality=log.LongitudinalPersonality.standard):
   if personality==log.LongitudinalPersonality.relaxed:
     return 6.5
   elif personality==log.LongitudinalPersonality.standard:
-    return 6.5
+    return 6.0
   elif personality==log.LongitudinalPersonality.aggressive:
     return 5.5
   else:
@@ -349,7 +349,7 @@ class LongitudinalMpc:
       # the immediate-future 0.3s, then linear decay through 1.2s. Direction
       # flips respond faster without the M8 cut-in regression we saw when
       # removing the plateau entirely.
-      W[4,4] = cost_weights[4] * np.interp(T_IDXS[i], [0.0, 0.5, 1.5], [1.0, 1.0, 0.0])
+      W[4,4] = cost_weights[4] * np.interp(T_IDXS[i], [0.0, 0.5, 2.0], [1.0, 1.0, 0.0])
       self.solver.cost_set(i, 'W', W)
     # Setting the slice without the copy make the array not contiguous,
     # causing issues with the C interface.

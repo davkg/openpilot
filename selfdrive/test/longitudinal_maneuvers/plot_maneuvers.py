@@ -37,29 +37,104 @@ from openpilot.selfdrive.test.longitudinal_maneuvers.maneuver import Maneuver
 from openpilot.selfdrive.test.longitudinal_maneuvers.plant import Plant
 
 
-def _check_solver_freshness():
-  """Warn and exit if long_mpc.py is newer than the generated C solver.
+def _solver_constants_hash():
+  """Hash of the long_mpc.py constants that get baked into the C solver.
 
-  Constants baked into the solver (COMFORT_BRAKE, the desired_dist_comfort
-  CasADi expression, etc.) only take effect after a rebuild. Sim results
-  against a stale solver are misleading.
+  Only values referenced inside `gen_long_ocp` (the CasADi expressions that
+  become the compiled QP) require a rebuild. Everything else (cost weights
+  set via cost_set, slack costs via Zl, lead_danger_factor / t_follow /
+  stop_distance via params, cruise accel clipping, FCW thresholds, coast
+  bias) is runtime Python and doesn't need a rebuild.
+
+  Baked into the C solver:
+    - COMFORT_BRAKE: appears in get_safe_obstacle_distance() which is called
+      inside gen_long_ocp to build the desired_dist_comfort CasADi expression
+      used in both cost and constraint.
+    - N, MAX_T: define the horizon structure (T_IDXS array baked into Tf,
+      ocp.dims.N, and integrator timesteps).
+    - X_DIM, U_DIM, PARAM_DIM, COST_DIM, COST_E_DIM, CONSTR_DIM: structural
+      dimensions baked into the C array sizes.
+  """
+  import hashlib
+  parts = [
+    f'COMFORT_BRAKE={_long_mpc_mod.COMFORT_BRAKE}',
+    f'N={_long_mpc_mod.N}',
+    f'MAX_T={_long_mpc_mod.MAX_T}',
+    f'X_DIM={_long_mpc_mod.X_DIM}',
+    f'U_DIM={_long_mpc_mod.U_DIM}',
+    f'PARAM_DIM={_long_mpc_mod.PARAM_DIM}',
+    f'COST_DIM={_long_mpc_mod.COST_DIM}',
+    f'COST_E_DIM={_long_mpc_mod.COST_E_DIM}',
+    f'CONSTR_DIM={_long_mpc_mod.CONSTR_DIM}',
+  ]
+  return hashlib.md5('|'.join(parts).encode()).hexdigest()
+
+
+def _check_solver_freshness():
+  """Warn and exit if the constants baked into the C solver don't match
+  what long_mpc.py currently has. The check is content-based, not mtime-based:
+  cache restores via scons don't update mtimes but the cached content IS
+  correct. We trust a stamp file written after a successful build.
+
+  Run after a rebuild:  scons ... && python -m \\
+    openpilot.selfdrive.test.longitudinal_maneuvers.plot_maneuvers --write-stamp
+  ...but more practically, this stamp is written automatically whenever a
+  fresh sim run succeeds (see _write_solver_stamp at the end of main()).
   """
   long_mpc_path = _long_mpc_mod.__file__
   c_code_dir = os.path.join(os.path.dirname(long_mpc_path), 'c_generated_code')
   c_code_path = os.path.join(c_code_dir, 'acados_solver_long.c')
   if not os.path.exists(c_code_path):
     return  # never built; let the import error handle it
+
+  stamp_path = os.path.join(c_code_dir, '.constants_hash')
+  current_hash = _solver_constants_hash()
+  stamped_hash = None
+  if os.path.exists(stamp_path):
+    try:
+      with open(stamp_path) as f:
+        stamped_hash = f.read().strip()
+    except OSError:
+      stamped_hash = None
+
+  # If the stamp matches, we're definitely good.
+  if stamped_hash == current_hash:
+    return
+
+  # No stamp yet, or stamp is stale. Fall back to the mtime hint: if the C
+  # code is newer than long_mpc.py, the user almost certainly just rebuilt
+  # and we'll write the stamp on this run (don't block them). If long_mpc.py
+  # is newer than the C code, that's a stronger signal something needs a
+  # rebuild.
   if os.path.getmtime(long_mpc_path) > os.path.getmtime(c_code_path):
     print('=' * 78, file=sys.stderr)
-    print('ERROR: long_mpc.py is newer than the generated solver C code.', file=sys.stderr)
+    print('ERROR: long_mpc.py is newer than the generated C solver AND the', file=sys.stderr)
+    print('       constants stamp does not match current long_mpc.py values.', file=sys.stderr)
     print('       Constants baked into the solver (COMFORT_BRAKE,', file=sys.stderr)
-    print('       desired_dist_comfort, etc.) WILL NOT reflect current long_mpc.py.', file=sys.stderr)
+    print('       desired_dist_comfort, etc.) WILL NOT reflect current edits.', file=sys.stderr)
     print('', file=sys.stderr)
     print('       Rebuild before running:', file=sys.stderr)
     print('         scons -u -j$(sysctl -n hw.ncpu)   # macOS', file=sys.stderr)
     print('         scons -u -j$(nproc)               # linux', file=sys.stderr)
     print('=' * 78, file=sys.stderr)
     sys.exit(2)
+  # Stamp missing or stale but C file is newer than long_mpc.py -- proceed
+  # and refresh the stamp on the way out.
+
+
+def _write_solver_stamp():
+  """Write the constants hash to .constants_hash after a successful run.
+  Lets subsequent freshness checks pass quickly via the stamp."""
+  long_mpc_path = _long_mpc_mod.__file__
+  c_code_dir = os.path.join(os.path.dirname(long_mpc_path), 'c_generated_code')
+  if not os.path.isdir(c_code_dir):
+    return
+  stamp_path = os.path.join(c_code_dir, '.constants_hash')
+  try:
+    with open(stamp_path, 'w') as f:
+      f.write(_solver_constants_hash())
+  except OSError:
+    pass
 
 
 _check_solver_freshness()
@@ -459,6 +534,7 @@ def main():
     for row in all_metrics:
       w.writerow({k: row[k] for k in fieldnames})
   print(f'wrote {csv_path} with {len(all_metrics)} rows')
+  _write_solver_stamp()
 
 
 if __name__ == '__main__':
