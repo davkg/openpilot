@@ -85,6 +85,8 @@ build/
 
 # agents
 .claude/
+.codegraph/
+.serena/
 .context/
 PLAN.md
 TASK.md

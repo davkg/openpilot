@@ -221,6 +221,23 @@ class TestDecelTapJump(TestVCruiseHelper):
     initial = self.v_cruise_helper.v_cruise_kph
     result = self._tap(ButtonType.accelCruise, self._to_ms(31, is_metric), is_metric)
     assert result > initial
+    assert self.v_cruise_helper.decel_jump_fired is False
+
+  def test_decel_jump_fired_flag(self):
+    """decel_jump_fired is True only on the frame the jump applies, then resets."""
+    self.enable(self._to_ms(70, True), False, False)
+    # tap that fires the jump
+    CS = car.CarState(vEgo=self._to_ms(31, True), cruiseState={"available": True})
+    CS.buttonEvents = [ButtonEvent(type=ButtonType.decelCruise, pressed=True)]
+    self.v_cruise_helper.update_v_cruise(CS, enabled=True, is_metric=True)
+    assert self.v_cruise_helper.decel_jump_fired is False  # press, no jump yet
+    CS.buttonEvents = [ButtonEvent(type=ButtonType.decelCruise, pressed=False)]
+    self.v_cruise_helper.update_v_cruise(CS, enabled=True, is_metric=True)
+    assert self.v_cruise_helper.decel_jump_fired is True   # release: jump fires
+    # subsequent frame with no buttons resets the flag
+    CS.buttonEvents = []
+    self.v_cruise_helper.update_v_cruise(CS, enabled=True, is_metric=True)
+    assert self.v_cruise_helper.decel_jump_fired is False
 
   def test_decel_hold_does_not_jump(self):
     """A decel hold steps by 5 per long-press tick and never triggers the jump."""
@@ -229,7 +246,9 @@ class TestDecelTapJump(TestVCruiseHelper):
     CS = car.CarState(vEgo=31 * CV.KPH_TO_MS, cruiseState={"available": True})
     CS.buttonEvents = [ButtonEvent(type=ButtonType.decelCruise, pressed=True)]
     self.v_cruise_helper.update_v_cruise(CS, enabled=True, is_metric=True)
+    assert self.v_cruise_helper.decel_jump_fired is False
     CS.buttonEvents = []
     for _ in range(50):  # one long-press tick
       self.v_cruise_helper.update_v_cruise(CS, enabled=True, is_metric=True)
+      assert self.v_cruise_helper.decel_jump_fired is False
     assert self.v_cruise_helper.v_cruise_kph == initial - 5

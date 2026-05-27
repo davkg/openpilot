@@ -9,6 +9,12 @@ ButtonType = car.CarState.ButtonEvent.Type
 EventNameSP = custom.OnroadEventSP.EventName
 
 
+def _csp(decel_jump_fired: bool = False) -> custom.CarStateSP:
+  msg = custom.CarStateSP.new_message()
+  msg.decelJumpFired = decel_jump_fired
+  return msg
+
+
 @parameterized_class(('openpilot_longitudinal',), [(True,)])
 class TestCruiseHelper:
   def setup_method(self):
@@ -23,7 +29,7 @@ class TestCruiseHelper:
       CS.buttonEvents = [ButtonEvent(type=ButtonType.gapAdjustCruise, pressed=False)]
       self.cruise_helper._experimental_mode = False
       self.cruise_helper.experimental_mode_switched = False
-      self.cruise_helper.update(CS, self.events, False)
+      self.cruise_helper.update(CS, _csp(), self.events, False)
 
 
   def test_gap_adjust_cruise_long_press_toggle_mode(self) -> None:
@@ -36,7 +42,7 @@ class TestCruiseHelper:
         for i in range(DISTANCE_LONG_PRESS):
           CS = car.CarState(cruiseState={"available": True})
           CS.buttonEvents = [ButtonEvent(type=ButtonType.gapAdjustCruise, pressed=pressed)] if i == 0 else []
-          self.cruise_helper.update(CS, self.events, experimental_mode)
+          self.cruise_helper.update(CS, _csp(), self.events, experimental_mode)
 
         # mode should be toggled
         assert self.cruise_helper._experimental_mode == toggled_mode
@@ -46,7 +52,7 @@ class TestCruiseHelper:
         for _ in range(DISTANCE_LONG_PRESS):
           CS = car.CarState(cruiseState={"available": True})
           CS.buttonEvents = [ButtonEvent(type=ButtonType.gapAdjustCruise, pressed=pressed)]
-          self.cruise_helper.update(CS, self.events, toggled_mode)
+          self.cruise_helper.update(CS, _csp(), self.events, toggled_mode)
 
         # mode should not be toggled
         assert self.cruise_helper._experimental_mode == toggled_mode
@@ -61,7 +67,7 @@ class TestCruiseHelper:
         for i in range(DISTANCE_LONG_PRESS - 1):
           CS = car.CarState(cruiseState={"available": True})
           CS.buttonEvents = [ButtonEvent(type=ButtonType.gapAdjustCruise, pressed=pressed)] if i == 0 else []
-          self.cruise_helper.update(CS, self.events, experimental_mode)
+          self.cruise_helper.update(CS, _csp(), self.events, experimental_mode)
 
         # mode should not be toggled
         assert self.cruise_helper._experimental_mode == experimental_mode
@@ -77,7 +83,7 @@ class TestCruiseHelper:
         for i in range(DISTANCE_LONG_PRESS):
           CS = car.CarState(cruiseState={"available": True})
           CS.buttonEvents = [ButtonEvent(type=ButtonType.lkas, pressed=pressed)] if i == 0 else []
-          self.cruise_helper.update(CS, self.events, experimental_mode)
+          self.cruise_helper.update(CS, _csp(), self.events, experimental_mode)
 
         assert self.cruise_helper._experimental_mode == toggled_mode
         assert self.cruise_helper.experimental_mode_switched is pressed
@@ -86,7 +92,7 @@ class TestCruiseHelper:
         for _ in range(DISTANCE_LONG_PRESS):
           CS = car.CarState(cruiseState={"available": True})
           CS.buttonEvents = [ButtonEvent(type=ButtonType.lkas, pressed=pressed)]
-          self.cruise_helper.update(CS, self.events, toggled_mode)
+          self.cruise_helper.update(CS, _csp(), self.events, toggled_mode)
 
         assert self.cruise_helper._experimental_mode == toggled_mode
         assert self.cruise_helper.experimental_mode_switched is pressed
@@ -100,7 +106,7 @@ class TestCruiseHelper:
         for i in range(DISTANCE_LONG_PRESS - 1):
           CS = car.CarState(cruiseState={"available": True})
           CS.buttonEvents = [ButtonEvent(type=ButtonType.lkas, pressed=pressed)] if i == 0 else []
-          self.cruise_helper.update(CS, self.events, experimental_mode)
+          self.cruise_helper.update(CS, _csp(), self.events, experimental_mode)
 
         assert self.cruise_helper._experimental_mode == experimental_mode
         assert self.cruise_helper.experimental_mode_switched is False
@@ -112,19 +118,19 @@ class TestCruiseHelper:
     for i in range(DISTANCE_LONG_PRESS):
       CS = car.CarState(cruiseState={"available": True})
       CS.buttonEvents = [ButtonEvent(type=ButtonType.lkas, pressed=True)] if i == 0 else []
-      self.cruise_helper.update(CS, self.events, False)
+      self.cruise_helper.update(CS, _csp(), self.events, False)
     assert self.cruise_helper._experimental_mode is True
     assert self.cruise_helper.experimental_mode_switched is True
 
     CS = car.CarState(cruiseState={"available": True})
     CS.buttonEvents = [ButtonEvent(type=ButtonType.lkas, pressed=False)]
-    self.cruise_helper.update(CS, self.events, True)
+    self.cruise_helper.update(CS, _csp(), self.events, True)
     assert self.cruise_helper.experimental_mode_switched is False
 
     for i in range(DISTANCE_LONG_PRESS):
       CS = car.CarState(cruiseState={"available": True})
       CS.buttonEvents = [ButtonEvent(type=ButtonType.lkas, pressed=True)] if i == 0 else []
-      self.cruise_helper.update(CS, self.events, True)
+      self.cruise_helper.update(CS, _csp(), self.events, True)
     assert self.cruise_helper._experimental_mode is False
     assert self.cruise_helper.experimental_mode_switched is True
 
@@ -138,7 +144,7 @@ class TestCruiseHelper:
         events_sp.clear()
         CS = car.CarState(cruiseState={"available": True})
         CS.buttonEvents = [ButtonEvent(type=button, pressed=True)] if i == 0 else []
-        self.cruise_helper.update(CS, events_sp, False)
+        self.cruise_helper.update(CS, _csp(), events_sp, False)
 
         on_step = (i + 1) % CRUISE_LONG_PRESS == 0
         assert events_sp.has(event) == on_step
@@ -158,5 +164,22 @@ class TestCruiseHelper:
           CS.buttonEvents = [ButtonEvent(type=button, pressed=False)]
         else:
           CS.buttonEvents = []
-        self.cruise_helper.update(CS, events_sp, False)
+        self.cruise_helper.update(CS, _csp(), events_sp, False)
         assert len(events_sp) == 0
+
+  def test_decel_jump_fired_chimes(self) -> None:
+    """When card signals decelJumpFired, CruiseHelper raises cruiseStepDown."""
+    self.setup_method()
+    events_sp = EventsSP()
+    CS = car.CarState(cruiseState={"available": True})
+    self.cruise_helper.update(CS, _csp(decel_jump_fired=True), events_sp, False)
+    assert events_sp.has(EventNameSP.cruiseStepDown)
+    assert not events_sp.has(EventNameSP.cruiseStepUp)
+
+  def test_decel_jump_not_fired_no_chime(self) -> None:
+    """No chime when decelJumpFired is unset."""
+    self.setup_method()
+    events_sp = EventsSP()
+    CS = car.CarState(cruiseState={"available": True})
+    self.cruise_helper.update(CS, _csp(decel_jump_fired=False), events_sp, False)
+    assert len(events_sp) == 0

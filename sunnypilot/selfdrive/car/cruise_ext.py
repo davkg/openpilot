@@ -49,6 +49,7 @@ class VCruiseHelperSP:
     self.params = Params()
     self.v_cruise_min = 0
     self.enabled_prev = False
+    self.decel_jump_fired = False  # one-shot per update_v_cruise; mirrored into CarStateSP
 
     self.custom_acc_enabled = self.params.get_bool("CustomAccIncrementsEnabled")
     self.short_increment = self.params.get("CustomAccShortPressIncrement", return_default=True)

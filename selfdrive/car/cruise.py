@@ -45,6 +45,7 @@ class VCruiseHelper(VCruiseHelperSP):
 
   def update_v_cruise(self, CS, enabled, is_metric):
     self.v_cruise_kph_last = self.v_cruise_kph
+    self.decel_jump_fired = False
 
     self.get_minimum_set_speed(is_metric)
 
@@ -122,6 +123,7 @@ class VCruiseHelper(VCruiseHelperSP):
 
     if decel_jump is not None:
       self.v_cruise_kph = decel_jump
+      self.decel_jump_fired = True
     elif long_press and self.v_cruise_kph % v_cruise_delta != 0:  # partial interval
       self.v_cruise_kph = CRUISE_NEAREST_FUNC[button_type](self.v_cruise_kph / v_cruise_delta) * v_cruise_delta
     else:
