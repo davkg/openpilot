@@ -63,7 +63,8 @@ MIN_X_LEAD_FACTOR = 0.5
 # at the lead's speed plus this margin (but never below the current speed, so
 # it only suppresses needless acceleration -- slowing down is left to the lead
 # obstacle).
-LEAD_ANTICIPATION_MARGIN = 1.5  # m/s (~3.4 mph) above a slower lead's speed
+LEAD_ANTICIPATION_MARGIN_BP = [30.0, 100.0]  # m, lead distance
+LEAD_ANTICIPATION_MARGIN_V = [0.7, 1.5]      # m/s above a slower lead's speed
 
 def get_jerk_factor(personality=log.LongitudinalPersonality.standard, v_ego=0.0):
   # 3 m/s = 7 mph, 5 m/s = 11 mph, 12 m/s = 27 mph, 20 m/s = 45 mph
@@ -104,7 +105,7 @@ def get_safe_obstacle_distance(v_ego, t_follow, stop_distance):
   return (v_ego**2) / (2 * COMFORT_BRAKE) + t_follow * v_ego + stop_distance
 
 # Lead-aware v_cruise modulation has two modes:
-#  - suppress-accel: cap v_cruise at v_lead + LEAD_ANTICIPATION_MARGIN, but
+#  - suppress-accel: cap v_cruise at v_lead + a distance-scaled margin, but
 #    never below v_ego (the original anticipation cap behavior).
 #  - active-coast:   when there's runway to bleed off speed gently before
 #    the MPC's lead obstacle would have to brake harder, allow v_cruise to
@@ -127,9 +128,11 @@ def get_coast_decel(personality):
   return 0.0
 
 
-def get_lead_v_cruise(v_cruise_clipped, lead_x, lead_v, lead_prob,
-                      v_ego, t_follow, stop_distance, personality):
-  floor = lead_v + LEAD_ANTICIPATION_MARGIN  # never plan below lead's pace
+def get_lead_aware_v_cruise(v_cruise_clipped, lead_x, lead_v, lead_prob,
+                            v_ego, t_follow, stop_distance, personality):
+  # Distance-scaled margin: tighter close in, looser far out (gentle catch-up).
+  v_margin = np.interp(lead_x, LEAD_ANTICIPATION_MARGIN_BP, LEAD_ANTICIPATION_MARGIN_V)
+  floor = lead_v + v_margin  # never plan below lead's pace
 
   # Default: suppress-accel only (cap at lead's pace, never below current speed).
   v_target = np.maximum(floor, v_ego)
@@ -410,10 +413,10 @@ class LongitudinalMpc:
     # v_lead + margin; when there's runway to bleed off speed gently, the cap
     # is allowed to descend below v_ego, producing a lift-off-throttle coast.
     if radarstate.leadOne.status:
-      v_cruise_clipped = get_lead_v_cruise(v_cruise_clipped,
-                                           lead_xv_0[0, 0], lead_xv_0[0, 1],
-                                           radarstate.leadOne.modelProb,
-                                           v_ego, t_follow, stop_distance, personality)
+      v_cruise_clipped = get_lead_aware_v_cruise(v_cruise_clipped,
+                                                 lead_xv_0[0, 0], lead_xv_0[0, 1],
+                                                 radarstate.leadOne.modelProb,
+                                                 v_ego, t_follow, stop_distance, personality)
 
     cruise_obstacle = np.cumsum(T_DIFFS * v_cruise_clipped) + get_safe_obstacle_distance(v_cruise_clipped, t_follow, stop_distance)
 

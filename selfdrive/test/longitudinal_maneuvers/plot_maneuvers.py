@@ -306,6 +306,14 @@ def build_maneuvers(personality):
   swap.lead_swaps = [(15., 90.)]  # at t=15s lead A is replaced by a lead 90 m ahead
   maneuvers.append(swap)
 
+  # S1b: lead-swap (lead leaves, a closer 60 m lead instantly appears).
+  swap = Maneuver('S1b lead leaves closer lead appears', duration=50.,
+                  initial_speed=18., lead_relevancy=True, initial_distance_lead=33.,
+                  breakpoints=[0., 50.], speed_lead_values=[18., 18.],
+                  cruise_values=[31., 31.], personality=p)
+  swap.lead_swaps = [(15., 60.)]  # at t=15s lead A is replaced by a lead 60 m ahead
+  maneuvers.append(swap)
+
   return maneuvers
 
 
