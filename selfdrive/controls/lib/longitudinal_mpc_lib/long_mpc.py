@@ -66,6 +66,19 @@ MIN_X_LEAD_FACTOR = 0.5
 LEAD_ANTICIPATION_MARGIN_BP = [30.0, 100.0]  # m, lead distance
 LEAD_ANTICIPATION_MARGIN_V = [0.7, 1.5]      # m/s above a slower lead's speed
 
+# Lead-aware v_cruise modulation has two modes:
+#  - suppress-accel: cap v_cruise at v_lead + a distance-scaled margin, but
+#    never below v_ego (the original anticipation cap behavior).
+#  - active-coast:   when there's runway to bleed off speed gently before
+#    the MPC's lead obstacle would have to brake harder, allow v_cruise to
+#    *descend below v_ego* at the personality's coast_decel rate. The MPC
+#    plans toward this lower v_cruise natively, producing a sustained
+#    lift-off-throttle decel that hands off to the lead obstacle as the gap
+#    closes.
+COAST_CLOSING_GATE = 1.5    # m/s -- minimum v_ego-v_lead for coast activation
+COAST_MODELPROB_GATE = 0.7  # ignore low-confidence leads
+LOW_SPEED_CAP_GATE = 5.0    # m/s -- below this, skip lead-aware v_cruise
+
 def get_jerk_factor(personality=log.LongitudinalPersonality.standard, v_ego=0.0):
   # 3 m/s = 7 mph, 5 m/s = 11 mph, 12 m/s = 27 mph, 20 m/s = 45 mph
   if personality==log.LongitudinalPersonality.relaxed:
@@ -104,18 +117,6 @@ def get_stopped_equivalence_factor(v_lead):
 def get_safe_obstacle_distance(v_ego, t_follow, stop_distance):
   return (v_ego**2) / (2 * COMFORT_BRAKE) + t_follow * v_ego + stop_distance
 
-# Lead-aware v_cruise modulation has two modes:
-#  - suppress-accel: cap v_cruise at v_lead + a distance-scaled margin, but
-#    never below v_ego (the original anticipation cap behavior).
-#  - active-coast:   when there's runway to bleed off speed gently before
-#    the MPC's lead obstacle would have to brake harder, allow v_cruise to
-#    *descend below v_ego* at the personality's coast_decel rate. The MPC
-#    plans toward this lower v_cruise natively, producing a sustained
-#    lift-off-throttle decel that hands off to the lead obstacle as the gap
-#    closes.
-COAST_CLOSING_GATE = 1.5    # m/s -- minimum v_ego-v_lead for coast activation
-COAST_MODELPROB_GATE = 0.7  # ignore low-confidence leads
-
 
 def get_coast_decel(personality):
   """Per-personality coast descent rate (m/s^2, negative). 0.0 disables."""
@@ -130,6 +131,10 @@ def get_coast_decel(personality):
 
 def get_lead_aware_v_cruise(v_cruise_clipped, lead_x, lead_v, lead_prob,
                             v_ego, t_follow, stop_distance, personality):
+  # Skip lead-aware modulation for stop-and-go traffic
+  if v_ego < LOW_SPEED_CAP_GATE:
+    return v_cruise_clipped
+
   # Distance-scaled margin: tighter close in, looser far out (gentle catch-up).
   v_margin = np.interp(lead_x, LEAD_ANTICIPATION_MARGIN_BP, LEAD_ANTICIPATION_MARGIN_V)
   floor = lead_v + v_margin  # never plan below lead's pace
