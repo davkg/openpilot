@@ -258,7 +258,6 @@ void loggerd_thread() {
   Params().put("CurrentRoute", s.logger.routeName());
 
   std::map<std::string, EncoderInfo> encoder_infos_dict;
-  std::vector<RemoteEncoder*> encoders_with_audio;
   for (const auto &cam : cameras_logged) {
     for (const auto &encoder_info : cam.encoder_infos) {
       encoder_infos_dict[encoder_info.publish_name] = encoder_info;
@@ -266,12 +265,10 @@ void loggerd_thread() {
     }
   }
 
-  for (auto &[sock, service] : service_state) {
-    auto it = encoder_infos_dict.find(service.name);
-    if (it != encoder_infos_dict.end() && it->second.include_audio) {
-      encoders_with_audio.push_back(&remote_encoders[sock]);
-    }
-  }
+  // standalone audio file (qaudio.aac), rotated in lockstep with the logger segment rather than
+  // driven by a camera encoder; kept local, not uploaded
+  std::unique_ptr<VideoWriter> audio_writer;
+  int audio_segment = -1;
 
   uint64_t msg_count = 0, bytes_count = 0;
   double start_ts = millis_since_boot();
@@ -296,12 +293,13 @@ void loggerd_thread() {
           auto event = cmsg.getRoot<cereal::Event>();
           auto audio_data = event.getRawAudioData().getData();
           auto sample_rate = event.getRawAudioData().getSampleRate();
-          for (auto* encoder : encoders_with_audio) {
-            if (encoder && encoder->writer) {
-              encoder->writer->write_audio((uint8_t*)audio_data.begin(), audio_data.size(), event.getLogMonoTime() / 1000, sample_rate);
-              encoder->audio_initialized = true;
-            }
+          // rotate the audio file with the segment; resetting finalizes the previous .aac first
+          if (audio_segment != s.logger.segment()) {
+            audio_writer.reset(new VideoWriter(s.logger.segmentPath().c_str(), QAUDIO_FILE,
+                                               true, 0, 0, 0, cereal::EncodeIndex::Type::QCAMERA_H264, true));
+            audio_segment = s.logger.segment();
           }
+          audio_writer->write_audio((uint8_t*)audio_data.begin(), audio_data.size(), event.getLogMonoTime() / 1000, sample_rate);
         }
 
         if (service.encoder) {

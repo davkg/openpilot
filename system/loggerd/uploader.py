@@ -102,6 +102,9 @@ class Uploader:
         continue
 
       for name in sorted(names, key=lambda n: self.immediate_priority.get(n, 1000)):
+        # qaudio.aac is kept local for manual pull
+        if name == "qaudio.aac":
+          continue
         key = os.path.join(logdir, name)
         fn = os.path.join(path, name)
         # skip files already uploaded

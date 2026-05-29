@@ -4,8 +4,8 @@
 #include "common/swaglog.h"
 #include "common/util.h"
 
-VideoWriter::VideoWriter(const char *path, const char *filename, bool remuxing, int width, int height, int fps, cereal::EncodeIndex::Type codec)
-  : remuxing(remuxing) {
+VideoWriter::VideoWriter(const char *path, const char *filename, bool remuxing, int width, int height, int fps, cereal::EncodeIndex::Type codec, bool audio_only)
+  : remuxing(remuxing), audio_only(audio_only) {
   vid_path = util::string_format("%s/%s", path, filename);
   lock_path = util::string_format("%s/%s.lock", path, filename);
 
@@ -13,8 +13,15 @@ VideoWriter::VideoWriter(const char *path, const char *filename, bool remuxing, 
   assert(lock_fd >= 0);
   close(lock_fd);
 
-  LOGD("encoder_open %s remuxing:%d", this->vid_path.c_str(), this->remuxing);
-  if (this->remuxing) {
+  LOGD("encoder_open %s remuxing:%d audio_only:%d", this->vid_path.c_str(), this->remuxing, this->audio_only);
+  if (this->audio_only) {
+    // audio-only ADTS .aac file: no video stream; the audio stream is set up lazily in
+    // initialize_audio() once the first audio packet arrives (sample rate is known then)
+    avformat_alloc_output_context2(&this->ofmt_ctx, NULL, "adts", this->vid_path.c_str());
+    assert(this->ofmt_ctx);
+    int err = avio_open(&this->ofmt_ctx->pb, this->vid_path.c_str(), AVIO_FLAG_WRITE);
+    assert(err >= 0);
+  } else if (this->remuxing) {
     bool raw = (codec == cereal::EncodeIndex::Type::BIG_BOX_LOSSLESS);
     avformat_alloc_output_context2(&this->ofmt_ctx, NULL, raw ? "matroska" : NULL, this->vid_path.c_str());
     assert(this->ofmt_ctx);
@@ -62,7 +69,7 @@ void VideoWriter::initialize_audio(int sample_rate) {
   #else
   this->audio_codec_ctx->channel_layout = AV_CH_LAYOUT_MONO;
   #endif
-  this->audio_codec_ctx->bit_rate = 32000;
+  this->audio_codec_ctx->bit_rate = 96000;  // near-transparent for 48 kHz mono; file is local-only
   this->audio_codec_ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
   this->audio_codec_ctx->time_base = (AVRational){1, audio_codec_ctx->sample_rate};
   int err = avcodec_open2(this->audio_codec_ctx, audio_avcodec, NULL);
@@ -86,6 +93,14 @@ void VideoWriter::initialize_audio(int sample_rate) {
   this->audio_frame->nb_samples = this->audio_codec_ctx->frame_size;
   err = av_frame_get_buffer(this->audio_frame, 0);
   assert(err >= 0);
+
+  if (this->audio_only) {
+    // no video codecconfig packet will arrive to write the header, so do it here now that the
+    // (only) audio stream is set up
+    err = avformat_write_header(this->ofmt_ctx, NULL);
+    assert(err >= 0);
+    this->header_written = true;
+  }
 }
 
 void VideoWriter::write(uint8_t *data, int len, long long timestamp, bool codecconfig, bool keyframe) {
@@ -143,7 +158,8 @@ void VideoWriter::write_audio(uint8_t *data, int len, long long timestamp, int s
   }
   if (!audio_codec_ctx) return;
   // sync logMonoTime of first audio packet with the timestampEof of first video packet
-  if (audio_pts == 0) {
+  // (audio-only files have no video to sync to, so start the sequence at 0)
+  if (audio_pts == 0 && !audio_only) {
     audio_pts = (timestamp * audio_codec_ctx->sample_rate) / 1000000ULL;
   }
 

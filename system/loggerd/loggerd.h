@@ -28,6 +28,9 @@ const int SEGMENT_LENGTH = LOGGERD_TEST ? atoi(getenv("LOGGERD_SEGMENT_LENGTH"))
 constexpr char PRESERVE_ATTR_NAME[] = "user.preserve";
 constexpr char PRESERVE_ATTR_VALUE = '1';
 
+// per-segment audio-only file (non-stock file kept local, excluded from comma upload in uploader.py)
+constexpr char QAUDIO_FILE[] = "qaudio.aac";
+
 struct EncoderSettings {
   cereal::EncodeIndex::Type encode_type;
   int bitrate;
@@ -125,7 +128,6 @@ const EncoderInfo stream_driver_encoder_info = {
 const EncoderInfo qcam_encoder_info = {
   .publish_name = "qRoadEncodeData",
   .filename = "qcamera.ts",
-  .include_audio = Params().getBool("RecordAudio"),
   .frame_width = 526,
   .frame_height = 330,
   .get_settings = [](int){return EncoderSettings::QcamEncoderSettings();},

@@ -21,7 +21,7 @@ class TestFeedbackd:
     for _ in range(count):
       audio_msg = messaging.new_message('rawAudioData')
       audio_msg.rawAudioData.data = bytes(1600)  # 800 samples of int16
-      audio_msg.rawAudioData.sampleRate = 16000
+      audio_msg.rawAudioData.sampleRate = 48000
       self.pm.send('rawAudioData', audio_msg)
       self.sm.update(timeout=100)
 

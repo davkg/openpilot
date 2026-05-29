@@ -135,8 +135,8 @@ class TestLoggerd:
 
       # send audio
       msg = messaging.new_message('rawAudioData')
-      msg.rawAudioData.data = bytes(800 * 2) # 800 samples of int16
-      msg.rawAudioData.sampleRate = 16000
+      msg.rawAudioData.data = bytes(2400 * 2) # 2400 samples of int16 (50ms @ 48kHz)
+      msg.rawAudioData.sampleRate = 48000
       pm.send('rawAudioData', msg)
 
       for _, _, state in streams:
@@ -189,6 +189,7 @@ class TestLoggerd:
   @pytest.mark.xdist_group("camera_encoder_tests")  # setting xdist group ensures tests are run in same worker, prevents encoderd from crashing
   def test_rotation(self):
     Params().put("RecordFront", True)
+    Params().put_bool("RecordAudio", False)  # deterministic: no qaudio.aac (param shared via xdist group)
 
     expected_files = {"rlog.zst", "qlog.zst", "qcamera.ts", "fcamera.hevc", "dcamera.hevc", "ecamera.hevc"}
 
@@ -324,10 +325,20 @@ class TestLoggerd:
 
     self._publish_camera_and_audio_messages()
 
-    qcamera_ts_path = os.path.join(self._get_latest_log_dir(), 'qcamera.ts')
-    ffprobe_cmd = f"ffprobe -i {qcamera_ts_path} -show_streams -select_streams a -loglevel error"
-    has_audio_stream = subprocess.run(ffprobe_cmd, shell=True, capture_output=True).stdout.strip() != b''
-    assert has_audio_stream == record_audio
+    log_dir = self._get_latest_log_dir()
 
-    raw_audio_in_rlog = any(m.which() == 'rawAudioData' for m in LogReader(os.path.join(self._get_latest_log_dir(), 'rlog.zst')))
+    def has_audio_stream(path):
+      cmd = f"ffprobe -i {path} -show_streams -select_streams a -loglevel error"
+      return subprocess.run(cmd, shell=True, capture_output=True).stdout.strip() != b''
+
+    # audio should not be muxed into qcamera.ts
+    assert not has_audio_stream(os.path.join(log_dir, 'qcamera.ts'))
+
+    # audio is written to a separate local qaudio.aac file when recording is enabled
+    qaudio_path = os.path.join(log_dir, 'qaudio.aac')
+    assert os.path.exists(qaudio_path) == record_audio
+    if record_audio:
+      assert has_audio_stream(qaudio_path)
+
+    raw_audio_in_rlog = any(m.which() == 'rawAudioData' for m in LogReader(os.path.join(log_dir, 'rlog.zst')))
     assert raw_audio_in_rlog == record_audio

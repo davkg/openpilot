@@ -11,15 +11,20 @@ from openpilot.common.swaglog import cloudlog
 RATE = 10
 FFT_SAMPLES = 1600 # 100ms
 REFERENCE_SPL = 2e-5  # newtons/m^2
-SAMPLE_RATE = 16000
-SAMPLE_BUFFER = 800  # 50ms
+# Capture at 48 kHz for recording fidelity (qaudio.aac). The sound-pressure analysis still runs
+# at 16 kHz (SPL_SAMPLE_RATE) on a decimated copy, so alert-volume behavior is unchanged.
+# Note to not upload higher-than-stock bitrate files to comma to avoid uploading excess data
+SAMPLE_RATE = 48000  # recording / rawAudioData rate (also imported by feedbackd)
+SAMPLE_BUFFER = 2400  # 50ms
+SPL_SAMPLE_RATE = 16000
+SPL_DECIMATION = SAMPLE_RATE // SPL_SAMPLE_RATE  # 48k -> 16k for sound-pressure analysis
 
 
 @cache
 def get_a_weighting_filter():
   # Calculate the A-weighting filter
   # https://en.wikipedia.org/wiki/A-weighting
-  freqs = np.fft.fftfreq(FFT_SAMPLES, d=1 / SAMPLE_RATE)
+  freqs = np.fft.fftfreq(FFT_SAMPLES, d=1 / SPL_SAMPLE_RATE)
   A = 12194 ** 2 * freqs ** 4 / ((freqs ** 2 + 20.6 ** 2) * (freqs ** 2 + 12194 ** 2) * np.sqrt((freqs ** 2 + 107.7 ** 2) * (freqs ** 2 + 737.9 ** 2)))
   return A / np.max(A)
 
@@ -83,7 +88,11 @@ class Mic:
     self.pm.send('rawAudioData', msg)
 
     with self.lock:
-      self.measurements = np.concatenate((self.measurements, indata[:, 0]))
+      # decimate the 48 kHz capture to 16 kHz for the sound-pressure analysis (numpy box filter)
+      mono = indata[:, 0]
+      trimmed = mono[: (mono.size // SPL_DECIMATION) * SPL_DECIMATION]
+      spl_samples = trimmed.reshape(-1, SPL_DECIMATION).mean(axis=1)
+      self.measurements = np.concatenate((self.measurements, spl_samples))
 
       while self.measurements.size >= FFT_SAMPLES:
         measurements = self.measurements[:FFT_SAMPLES]

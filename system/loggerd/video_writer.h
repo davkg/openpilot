@@ -12,7 +12,7 @@ extern "C" {
 
 class VideoWriter {
 public:
-  VideoWriter(const char *path, const char *filename, bool remuxing, int width, int height, int fps, cereal::EncodeIndex::Type codec);
+  VideoWriter(const char *path, const char *filename, bool remuxing, int width, int height, int fps, cereal::EncodeIndex::Type codec, bool audio_only = false);
   void write(uint8_t *data, int len, long long timestamp, bool codecconfig, bool keyframe);
   void write_audio(uint8_t *data, int len, long long timestamp, int sample_rate);
 
@@ -26,9 +26,10 @@ private:
   std::string vid_path, lock_path;
   FILE *of = nullptr;
 
-  AVCodecContext *codec_ctx;
-  AVFormatContext *ofmt_ctx;
-  AVStream *out_stream;
+  // init to nullptr, the audio_only path leaves codec_ctx/out_stream unset
+  AVCodecContext *codec_ctx = nullptr;
+  AVFormatContext *ofmt_ctx = nullptr;
+  AVStream *out_stream = nullptr;
 
   bool audio_initialized = false;
   bool header_written = false;
@@ -39,4 +40,5 @@ private:
   std::deque<float> audio_buffer;
 
   bool remuxing;
+  bool audio_only = false;  // write an audio-only (ADTS .aac) file with no video stream
 };
