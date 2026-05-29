@@ -82,7 +82,7 @@ class CheckerboardController:
   output_v_target: float = V_CRUISE_UNSET
   output_a_target: float = 0.0
   t_follow_delta: float = 0.0  # phase 4 will drive this
-  pacing_side: int = 0  # +1 = pacing a left-adjacent car, -1 = right-adjacent, 0 = not pacing
+  pacing_side: int = 0  # +1 = pacing a left-adjacent car (left-lane only for now), 0 = not pacing
 
   def __init__(self):
     self.params = Params()
@@ -105,9 +105,6 @@ class CheckerboardController:
     # when track exits either. Drives the per-track DWELL_REQUIRED_S gate.
     self._zone_entry_frame: dict[int, int] = {}
 
-    # Set each tick from radarState.leadOne.status; right-side pacing requires a lead.
-    self._has_lead = False
-
     self._v_bias_filter = FirstOrderFilter(0.0, V_BIAS_TAU_S, DT_MDL)
     self._t_follow_filter = FirstOrderFilter(0.0, T_FOLLOW_TAU_S, DT_MDL)
 
@@ -125,24 +122,20 @@ class CheckerboardController:
       self._t_follow_cap = T_FOLLOW_DELTA_CAPS_S[max(0, min(3, self._aggression))]
 
   def _eligible_for_pacing(self, t) -> bool:
-    """Track is in an adjacent lane and within the forward window, and the side is allowed.
+    """Track is in the left-adjacent lane and within the forward window.
 
-    Side rule (y_rel positive = left of ego, per DBC):
-      - Left-side adjacent: always allowed.
-      - Right-side adjacent: allowed only when ego has a lead. With a lead, ego is lead-bound,
-        so our slow-only authority (t_follow_delta especially) breaks the pacing by easing back
-        from the lead — the "should speed up" intent is moot because ego can't anyway.
-        Without a lead, right-side pacing wants speed-up, which the planner can't express via
-        min-arbitration; leave that to the driver.
+    Left-lane only (y_rel positive = left of ego, per DBC): right-side pacing wants a
+    speed-up, which our slow-only authority can't express via the planner's min-arbitration,
+    so it's left to the driver.
     """
     if not t.valid:
       return False
     if not (LONG_WINDOW_MIN <= t.dRel <= LONG_WINDOW_MAX):
       return False
+    if t.yRel < 0:
+      return False
     abs_y = abs(t.yRel)
     if not (EGO_LANE_HALF_W <= abs_y <= ADJACENT_LANE_OUTER):
-      return False
-    if t.yRel < 0 and not self._has_lead:
       return False
     return True
 
@@ -225,10 +218,6 @@ class CheckerboardController:
 
     tracks = sm['cameraObjectTracksSP'].tracks
 
-    # ── Per-tick state used by per-track gates below ──────────────────────────────────
-    # Lead presence: relaxes the side rule to allow right-side pacing (see _eligible_for_pacing).
-    self._has_lead = bool(sm['radarState'].leadOne.status)
-
     # ── Outer gates (whole-scene, not per-track) ──────────────────────────────────────
     # Ego must be cruising, not actively accelerating/braking.
     ego_stable = abs(a_ego) < EGO_STABLE_A_MAX_MS2
@@ -266,11 +255,10 @@ class CheckerboardController:
     pacing_tracks = [t for t in tracks if _is_pacing_track(t)] if (ego_stable and not crowded and v_ego_ok) else []
     any_in_zone = bool(pacing_tracks)
 
-    # Pick the closest-|dRel| pacing track to expose which side is triggering pacing.
-    # Sticky through EXIT_TICKS hold-out; only cleared when fully disengaged below.
+    # Left-lane only, so the side is always left when pacing. Sticky through EXIT_TICKS
+    # hold-out; only cleared when fully disengaged below.
     if pacing_tracks:
-      closest = min(pacing_tracks, key=lambda t: abs(t.dRel))
-      self.pacing_side = 1 if closest.yRel > 0 else -1
+      self.pacing_side = 1
 
     # Update per-track velocity cache for next tick (after the gate check).
     for t in tracks:
