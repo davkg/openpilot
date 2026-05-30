@@ -58,26 +58,12 @@ CRUISE_MIN_ACCEL = -1.2
 CRUISE_MAX_ACCEL = 2.0
 MIN_X_LEAD_FACTOR = 0.5
 
-# Lead-anticipation speed cap: when a slower lead is visible ahead, don't
-# accelerate toward set speed only to brake again. The cruise speed is capped
-# at the lead's speed plus this margin (but never below the current speed, so
-# it only suppresses needless acceleration -- slowing down is left to the lead
-# obstacle).
+# Lead-anticipation speed cap (suppress-accel): when a slower lead is visible
+# ahead, don't accelerate toward set speed only to brake again. v_cruise is
+# capped at the lead's speed plus this margin, but never below the current speed
 LEAD_ANTICIPATION_MARGIN_BP = [30.0, 100.0]  # m, lead distance
 LEAD_ANTICIPATION_MARGIN_V = [0.7, 1.5]      # m/s above a slower lead's speed
-
-# Lead-aware v_cruise modulation has two modes:
-#  - suppress-accel: cap v_cruise at v_lead + a distance-scaled margin, but
-#    never below v_ego (the original anticipation cap behavior).
-#  - active-coast:   when there's runway to bleed off speed gently before
-#    the MPC's lead obstacle would have to brake harder, allow v_cruise to
-#    *descend below v_ego* at the personality's coast_decel rate. The MPC
-#    plans toward this lower v_cruise natively, producing a sustained
-#    lift-off-throttle decel that hands off to the lead obstacle as the gap
-#    closes.
-COAST_CLOSING_GATE = 1.5    # m/s -- minimum v_ego-v_lead for coast activation
-COAST_MODELPROB_GATE = 0.7  # ignore low-confidence leads
-LOW_SPEED_CAP_GATE = 5.0    # m/s -- below this, skip lead-aware v_cruise
+LOW_SPEED_CAP_GATE = 7.0                     # m/s -- below this, skip lead-aware v_cruise
 
 def get_jerk_factor(personality=log.LongitudinalPersonality.standard, v_ego=0.0):
   # 3 m/s = 7 mph, 5 m/s = 11 mph, 12 m/s = 27 mph, 20 m/s = 45 mph
@@ -118,43 +104,17 @@ def get_safe_obstacle_distance(v_ego, t_follow, stop_distance):
   return (v_ego**2) / (2 * COMFORT_BRAKE) + t_follow * v_ego + stop_distance
 
 
-def get_coast_decel(personality):
-  """Per-personality coast descent rate (m/s^2, negative). 0.0 disables."""
-  if personality == log.LongitudinalPersonality.relaxed:
-    return -0.30
-  elif personality == log.LongitudinalPersonality.standard:
-    return -0.30
-  elif personality == log.LongitudinalPersonality.aggressive:
-    return -0.20
-  return 0.0
-
-
-def get_lead_aware_v_cruise(v_cruise_clipped, lead_x, lead_v, lead_prob,
-                            v_ego, t_follow, stop_distance, personality):
+def get_lead_aware_v_cruise(v_cruise_clipped, lead_x, lead_v, v_ego):
   # Skip lead-aware modulation for stop-and-go traffic
   if v_ego < LOW_SPEED_CAP_GATE:
     return v_cruise_clipped
 
   # Distance-scaled margin: tighter close in, looser far out (gentle catch-up).
   v_margin = np.interp(lead_x, LEAD_ANTICIPATION_MARGIN_BP, LEAD_ANTICIPATION_MARGIN_V)
-  floor = lead_v + v_margin  # never plan below lead's pace
+  floor = lead_v + v_margin  # gently faster than lead
 
-  # Default: suppress-accel only (cap at lead's pace, never below current speed).
+  # Suppress-accel: cap at the lead's pace + margin, never below current speed
   v_target = np.maximum(floor, v_ego)
-
-  # Active coast: relax the v_ego floor and let v_cruise descend at coast_decel,
-  # when the kinematic decel needed to settle at comfort gap is gentle enough.
-  coast_decel = get_coast_decel(personality)
-  if (coast_decel < 0.0
-      and lead_prob >= COAST_MODELPROB_GATE
-      and (v_ego - lead_v) >= COAST_CLOSING_GATE):
-    comfort_gap = get_safe_obstacle_distance(lead_v, t_follow, stop_distance)
-    brake_dist = lead_x - comfort_gap
-    if brake_dist > 0:
-      closing = v_ego - lead_v
-      needed_decel = (closing * closing) / (2.0 * brake_dist)
-      if needed_decel < abs(coast_decel):
-        v_target = np.maximum(floor, v_ego + coast_decel * T_IDXS)
 
   return np.minimum(v_cruise_clipped, v_target)
 
@@ -414,14 +374,12 @@ class LongitudinalMpc:
     v_upper = v_ego + (T_IDXS * CRUISE_MAX_ACCEL * 1.05)
     v_cruise_clipped = np.clip(v_cruise * np.ones(N+1), v_lower, v_upper)
 
-    # Lead-aware v_cruise: in suppress-accel mode this caps v_cruise at
-    # v_lead + margin; when there's runway to bleed off speed gently, the cap
-    # is allowed to descend below v_ego, producing a lift-off-throttle coast.
+    # Lead-aware v_cruise (suppress-accel): cap v_cruise at v_lead + margin so we
+    # don't gun toward set speed with a slower lead ahead. Bleeding off speed is
+    # left to the lead obstacle, allow_throttle coast, and DEC blended.
     if radarstate.leadOne.status:
       v_cruise_clipped = get_lead_aware_v_cruise(v_cruise_clipped,
-                                                 lead_xv_0[0, 0], lead_xv_0[0, 1],
-                                                 radarstate.leadOne.modelProb,
-                                                 v_ego, t_follow, stop_distance, personality)
+                                                 lead_xv_0[0, 0], lead_xv_0[0, 1], v_ego)
 
     cruise_obstacle = np.cumsum(T_DIFFS * v_cruise_clipped) + get_safe_obstacle_distance(v_cruise_clipped, t_follow, stop_distance)
 
