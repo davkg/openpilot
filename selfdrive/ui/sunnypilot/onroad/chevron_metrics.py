@@ -63,13 +63,10 @@ class ChevronMetrics:
     """Build text lines based on chevron info setting"""
     text_lines = []
 
-    # Distance
+    # Distance — always shown in meters
     if ui_state.chevron_metrics == ChevronOptions.DISTANCE_ONLY or ui_state.chevron_metrics == ChevronOptions.ALL:
       val = max(0.0, d_rel)
-      unit = "m" if ui_state.is_metric else "ft"
-      if not ui_state.is_metric:
-        val *= 3.28084
-      text_lines.append(f"{val:.0f} {unit}")
+      text_lines.append(f"{val:.0f} m")
 
     # Speed
     if ui_state.chevron_metrics == ChevronOptions.SPEED_ONLY or ui_state.chevron_metrics == ChevronOptions.ALL:
