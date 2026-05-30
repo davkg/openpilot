@@ -17,6 +17,7 @@ from openpilot.selfdrive.ui.sunnypilot.onroad.checkerboard_indicator import Chec
 from openpilot.selfdrive.ui.sunnypilot.onroad.turn_signal import TurnSignalController
 from openpilot.selfdrive.ui.sunnypilot.onroad.circular_alerts import CircularAlertsRenderer
 from openpilot.selfdrive.ui.sunnypilot.onroad.compass import CompassRenderer
+from openpilot.selfdrive.ui.sunnypilot.onroad.exp_button import ExpButtonSP
 from openpilot.selfdrive.ui.sunnypilot.onroad.follow_distance_indicator import FollowDistanceRenderer
 from openpilot.selfdrive.ui.sunnypilot.onroad.speed_renderer import SpeedRenderer
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
@@ -44,6 +45,7 @@ class HudRendererSP(HudRenderer):
     self.speed_renderer = SpeedRenderer()
     self._compass = CompassRenderer()
     self._torque_bar = TorqueBar(scale=3.0, always=True)
+    self._exp_button = ExpButtonSP(UI_CONFIG.button_size, UI_CONFIG.wheel_icon_size)
 
     self.pcm_cruise_speed: bool = True
     self.show_icbm_status: bool = False
