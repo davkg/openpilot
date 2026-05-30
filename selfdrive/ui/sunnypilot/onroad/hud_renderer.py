@@ -150,6 +150,7 @@ class HudRendererSP(HudRenderer):
         torque_rect = rl.Rectangle(rect.x, rect.y, rect.width * ONROAD_SCALE, rect.height - get_bottom_dev_ui_offset())
       self._torque_bar.render(torque_rect)
 
+    self.follow_distance_renderer.render(rect)
     self.developer_ui.render(rect)
     self.road_name_renderer.render(rect)
     self.speed_limit_renderer.render(rect)
@@ -157,6 +158,5 @@ class HudRendererSP(HudRenderer):
     self.checkerboard_indicator.render(rect)
     self.turn_signal_controller.render(rect)
     self.circular_alerts_renderer.render(rect)
-    self.follow_distance_renderer.render(rect)
     self.rocket_fuel.render(rect, ui_state.sm)
     self._compass.render(rect)
