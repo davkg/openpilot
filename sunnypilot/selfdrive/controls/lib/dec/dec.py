@@ -171,6 +171,7 @@ class DynamicExperimentalController:
       smoothing_factor=0.5
     )
     self._has_lead_filtered = False
+    self._has_close_lead = False
     self._has_slow_down = False
     self._has_slowness = False
     self._has_mpc_fcw = False
@@ -220,6 +221,11 @@ class DynamicExperimentalController:
     self._lead_filter.add_data(float(lead_one.status))
     lead_value = self._lead_filter.get_value() or 0.0
     self._has_lead_filtered = lead_value > WMACConstants.LEAD_PROB
+
+    # Close-lead gate (presence-gated by filtered status so flicker doesn't toggle it):
+    # a lead within the speed-based close distance is handled responsively by ACC.
+    close_dist = interp(self._v_ego_kph, WMACConstants.LEAD_CLOSE_BP, WMACConstants.LEAD_CLOSE_DIST)
+    self._has_close_lead = self._has_lead_filtered and 0.0 < lead_one.dRel < close_dist
 
     # MPC FCW detection
     fcw_filtered_value = self._mpc_fcw_filter.get_value() or 0.0
@@ -310,20 +316,28 @@ class DynamicExperimentalController:
       self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
       return
 
+    # EMERGENCY: high-urgency slow down. Sits above the close-lead gate so that a close lead only
+    # suppresses blended for routine following.
+    if self._has_slow_down and self._urgency > 0.7:
+      self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
+      return
+
+    # Close lead: use ACC for responsive, predictable car-following / stop-n-go (above standstill
+    # so heavy traffic stays ACC end-to-end). The trajectory-shortfall blended path below is thus
+    # reserved for the no-close-lead case (distant lead / red light / stop the model sees further).
+    if self._has_close_lead:
+      self._mode_manager.request_mode('acc', confidence=1.0)
+      return
+
     # Standstill: use blended
     if self._standstill_count > 3:
       self._mode_manager.request_mode('blended', confidence=0.9)
       return
 
-    # Slow down scenarios: emergency for high urgency, normal for lower urgency
+    # Slow down scenarios: lower urgency, normal blended (high urgency handled above the close lead gate)
     if self._has_slow_down:
-      if self._urgency > 0.7:
-        # Emergency: immediate blended mode for high urgency stops
-        self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
-      else:
-        # Normal: blended with urgency-based confidence
-        confidence = min(1.0, self._urgency * 1.5)
-        self._mode_manager.request_mode('blended', confidence=confidence)
+      confidence = min(1.0, self._urgency * 1.5)
+      self._mode_manager.request_mode('blended', confidence=confidence)
       return
 
     # Driving slow: use ACC (but not if actively slowing down)
