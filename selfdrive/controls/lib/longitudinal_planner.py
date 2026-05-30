@@ -22,7 +22,9 @@ from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import Lon
 A_CRUISE_MAX_VALS = [2.0, 1.6, 0.8, 0.6]
 A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
-ALLOW_THROTTLE_THRESHOLD = 0.4
+ALLOW_THROTTLE_THRESHOLD_BP = [8.0, 25.0]   # m/s
+ALLOW_THROTTLE_THRESHOLD_V = [0.4, 0.7]     # gasPressProbs[1] threshold
+ALLOW_THROTTLE_HYSTERESIS = 0.1             # prob must exceed threshold + this to resume throttle (anti-chatter)
 MIN_ALLOW_THROTTLE_SPEED = 2.5
 
 # Lookup table for turns
@@ -124,8 +126,17 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # Prevent divergence, smooth in current v_ego
     self.v_desired_filter.x = max(0.0, self.v_desired_filter.update(v_ego))
     _, _, _, _, throttle_prob = self.parse_model(sm['modelV2'])
-    # Don't clip at low speeds since throttle_prob doesn't account for creep
-    self.allow_throttle = throttle_prob > ALLOW_THROTTLE_THRESHOLD or v_ego <= MIN_ALLOW_THROTTLE_SPEED
+    # Coast/throttle decision with hysteresis
+    allow_throttle_threshold = np.interp(v_ego, ALLOW_THROTTLE_THRESHOLD_BP, ALLOW_THROTTLE_THRESHOLD_V)
+    if v_ego <= MIN_ALLOW_THROTTLE_SPEED:
+      # Always allow throttle at creep speeds (throttle_prob doesn't account for creep)
+      self.allow_throttle = True
+    elif self.allow_throttle:
+      # Allowing throttle: enter coast once prob drops below the threshold
+      self.allow_throttle = throttle_prob > allow_throttle_threshold
+    else:
+      # Coasting: require a margin above the threshold before resuming throttle (sticky coast)
+      self.allow_throttle = throttle_prob > allow_throttle_threshold + ALLOW_THROTTLE_HYSTERESIS
 
     if not self.allow_throttle:
       clipped_accel_coast = max(accel_coast, accel_clip[0])
