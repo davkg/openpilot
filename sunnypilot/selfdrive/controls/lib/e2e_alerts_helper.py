@@ -15,6 +15,9 @@ from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 GREEN_LIGHT_X_THRESHOLD = 30
 LEAD_DEPART_DIST_THRESHOLD = 1.0
 TRIGGER_TIMER_THRESHOLD = 0.3
+# grace periods for driver to pull away before chiming
+GREEN_LIGHT_REACTION_DELAY = 1.5
+LEAD_DEPART_REACTION_DELAY = 1.5
 
 
 class E2EStates:
@@ -38,7 +41,9 @@ class E2EAlertsHelper:
     self.lead_depart_alert_enabled = self._params.get_bool("LeadDepartAlert")
 
     self.green_light_trigger_timer = 0
+    self.green_light_pending_timer = 0
     self.lead_depart_trigger_timer = 0
+    self.lead_depart_pending_timer = 0
     self.last_lead_distance = -1
     self.last_moving_frame = -1
 
@@ -82,9 +87,15 @@ class E2EAlertsHelper:
         self.green_light_trigger_timer = 0
 
       if self.green_light_trigger_timer * DT_MDL > TRIGGER_TIMER_THRESHOLD:
+        self.green_light_pending_timer += 1
+      else:
+        self.green_light_pending_timer = 0
+
+      if self.green_light_pending_timer * DT_MDL > GREEN_LIGHT_REACTION_DELAY:
         green_light_trigger = True
     elif self.green_light_state != E2EStates.ARMED:
       self.green_light_trigger_timer = 0
+      self.green_light_pending_timer = 0
 
     # Lead Departure Alert
     close_lead_valid = self.has_lead and lead_dRel < 8.0
@@ -113,10 +124,16 @@ class E2EAlertsHelper:
         self.lead_depart_trigger_timer = 0
 
       if self.lead_depart_trigger_timer * DT_MDL > TRIGGER_TIMER_THRESHOLD:
+        self.lead_depart_pending_timer += 1
+      else:
+        self.lead_depart_pending_timer = 0
+
+      if self.lead_depart_pending_timer * DT_MDL > LEAD_DEPART_REACTION_DELAY:
         lead_depart_trigger = True
     elif self.lead_depart_state != E2EStates.ARMED:
       self.last_lead_distance = -1
       self.lead_depart_trigger_timer = 0
+      self.lead_depart_pending_timer = 0
 
     self.last_allowed = self.allowed
 
