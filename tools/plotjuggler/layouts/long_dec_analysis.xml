@@ -1,54 +1,58 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <root>
- <tabbed_widget parent="main_window" name="Main Window">
+ <tabbed_widget name="Main Window" parent="main_window">
   <Tab containers="1" tab_name="tab1">
    <Container>
-    <DockSplitter orientation="-" sizes="0.0812236;0.0806962;0.10443;0.121835;0.0801688;0.0981013;0.166139;0.0838608;0.0996835;0.0838608" count="10">
+    <DockSplitter orientation="-" sizes="0.0906933;0.0911681;0.0906933;0.0911681;0.0906933;0.0911681;0.0906933;0.0911681;0.0906933;0.0911681;0.0906933" count="11">
      <DockArea name="...">
       <plot flip_x="false" flip_y="false" style="Lines" mode="TimeSeries">
-       <range bottom="-0.100000" right="628.413349" top="0.100000" left="606.150942"/>
+       <range right="354.392919" top="1.025000" left="309.190349" bottom="-0.025000"/>
        <limitY/>
-       <curve name="/longitudinalPlanSP/dec/state" color="#1f77b4"/>
+       <curve name="/longitudinalPlanSP/dec/state" color="#f14cc1"/>
       </plot>
      </DockArea>
      <DockArea name="...">
       <plot flip_x="false" flip_y="false" style="Lines" mode="TimeSeries">
-       <range bottom="76.700003" right="628.413349" top="76.900003" left="606.150942"/>
-       <limitY/>
-       <curve name="/carState/vCruise" color="#1f77b4"/>
+       <range right="354.392919" top="90.000000" left="309.190349" bottom="25.880110"/>
+       <limitY max="90"/>
+       <curve name="/carState/vCruise" color="#1f77b4">
+        <transform name="Scale/Offset" alias="/carState/vCruise[mph]">
+         <options time_offset="0" value_offset="0" value_scale="0.6213711922"/>
+        </transform>
+       </curve>
       </plot>
      </DockArea>
      <DockArea name="...">
       <plot flip_x="false" flip_y="false" style="Lines" mode="TimeSeries">
-       <range bottom="-0.599471" right="628.413349" top="18.607756" left="606.150942"/>
+       <range right="354.392919" top="15.677724" left="309.190349" bottom="5.119660"/>
        <limitY/>
        <curve name="/carState/vEgo" color="#1ac938"/>
       </plot>
      </DockArea>
      <DockArea name="...">
       <plot flip_x="false" flip_y="false" style="Lines" mode="TimeSeries">
-       <range bottom="3.547098" right="628.413349" top="34.060849" left="606.150942"/>
+       <range right="354.392919" top="62.293049" left="309.190349" bottom="17.788540"/>
        <limitY/>
        <curve name="/radarState/leadOne/dRel" color="#ff7f0e"/>
       </plot>
      </DockArea>
      <DockArea name="...">
       <plot flip_x="false" flip_y="false" style="Lines" mode="TimeSeries">
-       <range bottom="0.900000" right="628.413349" top="1.100000" left="606.150942"/>
+       <range right="354.392919" top="1.100000" left="309.190349" bottom="0.900000"/>
        <limitY/>
        <curve name="/radarState/leadOne/status" color="#f14cc1"/>
       </plot>
      </DockArea>
      <DockArea name="...">
       <plot flip_x="false" flip_y="false" style="Lines" mode="TimeSeries">
-       <range bottom="-0.019734" right="628.413349" top="1.013176" left="606.150942"/>
+       <range right="354.392919" top="1.021046" left="309.190349" bottom="0.026080"/>
        <limitY/>
        <curve name="/modelV2/meta/disengagePredictions/gasPressProbs/1" color="#9467bd"/>
       </plot>
      </DockArea>
      <DockArea name="...">
       <plot flip_x="false" flip_y="false" style="Lines" mode="TimeSeries">
-       <range bottom="-2.794212" right="628.413349" top="1.008422" left="606.150942"/>
+       <range right="354.392919" top="1.542298" left="309.190349" bottom="-1.945385"/>
        <limitY/>
        <curve name="/modelV2/action/desiredAcceleration" color="#f14cc1"/>
        <curve name="/longitudinalPlan/aTarget" color="#9467bd"/>
@@ -57,25 +61,31 @@
      </DockArea>
      <DockArea name="...">
       <plot flip_x="false" flip_y="false" style="Lines" mode="TimeSeries">
-       <range bottom="-0.050000" right="628.413349" top="2.050000" left="606.150942"/>
+       <range right="354.392919" top="3.458892" left="309.190349" bottom="-0.064710"/>
        <limitY/>
        <curve name="/longitudinalPlan/longitudinalPlanSource" color="#17becf"/>
       </plot>
      </DockArea>
      <DockArea name="...">
       <plot flip_x="false" flip_y="false" style="Lines" mode="TimeSeries">
-       <range bottom="-3.850746" right="628.413349" top="172.591759" left="606.150942"/>
+       <range right="354.392919" top="174.675128" left="309.190349" bottom="33.069188"/>
        <limitY/>
        <curve name="/modelV2/position/x/32" color="#ff7f0e"/>
       </plot>
      </DockArea>
      <DockArea name="...">
       <plot flip_x="false" flip_y="false" style="Lines" mode="TimeSeries">
-       <range bottom="-0.025000" right="628.413349" top="1.025000" left="606.150942"/>
+       <range right="354.392919" top="1.100000" left="309.190349" bottom="0.900000"/>
        <limitY/>
-       <curve name="/longitudinalPlanSP/dec/active" color="#d62728"/>
-       <curve name="/longitudinalPlanSP/dec/state" color="#1f77b4"/>
        <curve name="/selfdriveState/active" color="#bcbd22"/>
+      </plot>
+     </DockArea>
+     <DockArea name="...">
+      <plot flip_x="false" flip_y="false" style="Lines" mode="TimeSeries">
+       <range right="354.392919" top="1.100000" left="309.190349" bottom="0.900000"/>
+       <limitY/>
+       <curve name="/longitudinalPlanSP/dec/active" color="#ff7f0e"/>
+       <curve name="/longitudinalPlanSP/dec/enabled" color="#9467bd"/>
       </plot>
      </DockArea>
     </DockSplitter>
@@ -83,12 +93,12 @@
   </Tab>
   <currentTabIndex index="0"/>
  </tabbed_widget>
- <use_relative_time_offset enabled="0"/>
+ <use_relative_time_offset enabled="1"/>
  <!-- - - - - - - - - - - - - - - -->
  <!-- - - - - - - - - - - - - - - -->
  <Plugins>
   <plugin ID="DataLoad CSV">
-   <default time_axis="" delimiter="0"/>
+   <default delimiter="0" time_axis=""/>
   </plugin>
   <plugin ID="DataLoad MCAP"/>
   <plugin ID="DataLoad Rlog"/>
