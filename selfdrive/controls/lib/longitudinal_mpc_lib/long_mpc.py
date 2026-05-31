@@ -107,16 +107,16 @@ def get_safe_obstacle_distance(v_ego, t_follow, stop_distance):
 def get_lead_aware_v_cruise(v_cruise_clipped, lead_x, lead_v, v_ego):
   # Skip lead-aware modulation for stop-and-go traffic
   if v_ego < LOW_SPEED_CAP_GATE:
-    return v_cruise_clipped
+    return v_cruise_clipped, 0.0, 0.0
 
   # Distance-scaled margin: tighter close in, looser far out (gentle catch-up).
-  v_margin = np.interp(lead_x, LEAD_ANTICIPATION_MARGIN_BP, LEAD_ANTICIPATION_MARGIN_V)
+  v_margin = float(np.interp(lead_x, LEAD_ANTICIPATION_MARGIN_BP, LEAD_ANTICIPATION_MARGIN_V))
   floor = lead_v + v_margin  # gently faster than lead
 
   # Suppress-accel: cap at the lead's pace + margin, never below current speed
   v_target = np.maximum(floor, v_ego)
 
-  return np.minimum(v_cruise_clipped, v_target)
+  return np.minimum(v_cruise_clipped, v_target), float(floor), v_margin
 
 def gen_long_model():
   model = AcadosModel()
@@ -254,6 +254,9 @@ class LongitudinalMpc:
     self.reset()
     self.source = LongitudinalPlanSource.cruise
     self.t_follow_delta = 0.0  # additive bias from checkerboard staggering controller
+    # lead-aware v_cruise (suppress-accel) telemetry, refreshed each update()
+    self.lead_aware_floor = 0.0
+    self.lead_aware_margin = 0.0
 
   def reset(self):
     self.solver.reset()
@@ -377,9 +380,11 @@ class LongitudinalMpc:
     # Lead-aware v_cruise (suppress-accel): cap v_cruise at v_lead + margin so we
     # don't gun toward set speed with a slower lead ahead. Bleeding off speed is
     # left to the lead obstacle, allow_throttle coast, and DEC blended.
+    self.lead_aware_floor = 0.0
+    self.lead_aware_margin = 0.0
     if radarstate.leadOne.status:
-      v_cruise_clipped = get_lead_aware_v_cruise(v_cruise_clipped,
-                                                 lead_xv_0[0, 0], lead_xv_0[0, 1], v_ego)
+      v_cruise_clipped, self.lead_aware_floor, self.lead_aware_margin = get_lead_aware_v_cruise(
+        v_cruise_clipped, lead_xv_0[0, 0], lead_xv_0[0, 1], v_ego)
 
     cruise_obstacle = np.cumsum(T_DIFFS * v_cruise_clipped) + get_safe_obstacle_distance(v_cruise_clipped, t_follow, stop_distance)
 

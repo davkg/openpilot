@@ -199,6 +199,7 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
   events @6 :List(OnroadEventSP.Event);
   e2eAlerts @7 :E2eAlerts;
   checkerboard @8 :Checkerboard;
+  leadAware @9 :LeadAware;
 
   struct DynamicExperimentalControl {
     state @0 :DynamicExperimentalControlState;
@@ -318,6 +319,11 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
       pacing @2;       # actively biasing speed to de-sync from an adjacent-lane car
       overriding @3;   # user override
     }
+  }
+
+  struct LeadAware {
+    floor @0 :Float32;   # v_cruise floor = lead_v + margin (m/s); 0 when inactive
+    margin @1 :Float32;  # distance-scaled margin above the lead's speed (m/s); 0 when inactive
   }
 }
 
