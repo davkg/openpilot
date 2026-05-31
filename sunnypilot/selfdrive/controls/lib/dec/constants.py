@@ -17,5 +17,11 @@ class WMACConstants:
   SLOWNESS_CRUISE_OFFSET = 1.025  # Conservative cruise speed offset
 
   # Close-lead gate: leads within this distance are handled by ACC (steady following / stop-n-go)
-  LEAD_CLOSE_BP = [0., 30., 60.]      # km/h
+  LEAD_CLOSE_BP = [0., 30., 60.]     # km/h
   LEAD_CLOSE_DIST = [70., 70., 90.]  # m
+
+  # Model-decel trigger: engage blended when the model's desiredAcceleration shows it wants to brake
+  # earlier than the trajectory-endpoint shortfall sees
+  MODEL_DECEL_ENGAGE = -0.4     # m/s^2 -- desiredAcceleration at/below this -> blended
+  MODEL_DECEL_RELEASE = -0.2    # m/s^2 -- must rise above this to release (hysteresis)
+  MODEL_DECEL_MIN_SPEED = 12.0  # m/s -- below this, don't use the model-decel trigger

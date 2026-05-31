@@ -18,10 +18,11 @@ class MockCarState:
     self.standstill = standstill
 
 class MockModelData:
-  def __init__(self, valid=True):
+  def __init__(self, valid=True, desired_accel=0.0):
     size = 33 if valid else 10  # incomplete if invalid
     self.position = type("Pos", (), {"x": [0.0] * size})()
     self.orientation = type("Ori", (), {"x": [0.0] * size})()
+    self.action = type("Action", (), {"desiredAcceleration": desired_accel})()
 
 class MockSelfDriveState:
   def __init__(self, experimentalMode=False):
@@ -109,6 +110,39 @@ def test_radarless_close_lead_forces_acc(mock_cp, mock_mpc, default_sm):
   default_sm['modelV2'] = MockModelData(valid=False)
 
   for _ in range(10):
+    controller.update(default_sm)
+
+  assert controller.mode() == "acc"
+
+
+def test_radarless_model_decel_triggers_blended(mock_cp, mock_mpc, default_sm):
+  # The model's desiredAcceleration anticipating a slowdown (no close lead, above the speed gate)
+  # should engage blended even when the trajectory-endpoint shortfall hasn't tripped yet.
+  mock_cp.radarUnavailable = True
+  controller = DynamicExperimentalController(mock_cp, mock_mpc, params=MockParams())
+
+  default_sm['carState'].vEgo = 15.0           # above MODEL_DECEL_MIN_SPEED (12 m/s)
+  default_sm['radarState'] = MockRadarState(status=0.0)
+  controller._slow_down_filter = FakeKalman(value=0.0)   # isolate: no slow-down trigger
+  default_sm['modelV2'] = MockModelData(valid=True, desired_accel=-0.5)  # model wants to brake
+
+  for _ in range(12):
+    controller.update(default_sm)
+
+  assert controller.mode() == "blended"
+
+
+def test_radarless_model_decel_speed_gated(mock_cp, mock_mpc, default_sm):
+  # Below the speed gate (stop-n-go), the same model decel must NOT pull us into blended.
+  mock_cp.radarUnavailable = True
+  controller = DynamicExperimentalController(mock_cp, mock_mpc, params=MockParams())
+
+  default_sm['carState'].vEgo = 8.0            # below MODEL_DECEL_MIN_SPEED (12 m/s)
+  default_sm['radarState'] = MockRadarState(status=0.0)
+  controller._slow_down_filter = FakeKalman(value=0.0)
+  default_sm['modelV2'] = MockModelData(valid=True, desired_accel=-0.5)
+
+  for _ in range(12):
     controller.update(default_sm)
 
   assert controller.mode() == "acc"

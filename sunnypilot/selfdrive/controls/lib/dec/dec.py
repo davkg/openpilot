@@ -172,6 +172,7 @@ class DynamicExperimentalController:
     )
     self._has_lead_filtered = False
     self._has_close_lead = False
+    self._has_model_decel = False
     self._has_slow_down = False
     self._has_slowness = False
     self._has_mpc_fcw = False
@@ -226,6 +227,16 @@ class DynamicExperimentalController:
     # a lead within the speed-based close distance is handled responsively by ACC.
     close_dist = interp(self._v_ego_kph, WMACConstants.LEAD_CLOSE_BP, WMACConstants.LEAD_CLOSE_DIST)
     self._has_close_lead = self._has_lead_filtered and 0.0 < lead_one.dRel < close_dist
+
+    # Model-decel trigger (hysteretic, speed-gated): the model's desiredAcceleration anticipates a
+    # slowdown earlier than the trajectory-endpoint shortfall (e.g. a distant lead beyond ~100 m).
+    e2e_accel = md.action.desiredAcceleration
+    if car_state.vEgo < WMACConstants.MODEL_DECEL_MIN_SPEED:
+      self._has_model_decel = False
+    elif self._has_model_decel:
+      self._has_model_decel = e2e_accel < WMACConstants.MODEL_DECEL_RELEASE
+    else:
+      self._has_model_decel = e2e_accel < WMACConstants.MODEL_DECEL_ENGAGE
 
     # MPC FCW detection
     fcw_filtered_value = self._mpc_fcw_filter.get_value() or 0.0
@@ -320,6 +331,14 @@ class DynamicExperimentalController:
     # suppresses blended for routine following.
     if self._has_slow_down and self._urgency > 0.7:
       self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
+      return
+
+    # Model anticipates a slowdown: desiredAcceleration goes negative earlier than the trajectory
+    # shortfall. Above the close-lead gate so a lead the model is actively braking for (close or
+    # distant) uses blended; the speed gate keeps stop-n-go in ACC, and steady following has
+    # e2e_a ~0 so it stays ACC there too.
+    if self._has_model_decel:
+      self._mode_manager.request_mode('blended', confidence=1.0)
       return
 
     # Close lead: use ACC for responsive, predictable car-following / stop-n-go (above standstill
