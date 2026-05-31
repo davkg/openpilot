@@ -56,6 +56,42 @@ VideoWriter::VideoWriter(const char *path, const char *filename, bool remuxing, 
   }
 }
 
+void VideoWriter::rotate_audio_file(const char *path, const char *filename) {
+  // Swap the output .aac to the next segment without resetting the AAC encoder.
+  assert(this->audio_only && this->audio_initialized);
+
+  // finalize the current .aac (adts trailer is a no-op, kept for symmetry) and
+  // drop its .lock so pull/uploader see it as complete
+  int err = av_write_trailer(this->ofmt_ctx);
+  if (err != 0) LOGE("av_write_trailer failed %d", err);
+  err = avio_closep(&this->ofmt_ctx->pb);
+  if (err != 0) LOGE("avio_closep failed %d", err);
+  avformat_free_context(this->ofmt_ctx);
+  this->ofmt_ctx = nullptr;
+  unlink(this->lock_path.c_str());
+
+  // open the next segment's .aac + lock
+  this->vid_path = util::string_format("%s/%s", path, filename);
+  this->lock_path = util::string_format("%s/%s.lock", path, filename);
+  int lock_fd = HANDLE_EINTR(open(this->lock_path.c_str(), O_RDWR | O_CREAT, 0664));
+  assert(lock_fd >= 0);
+  close(lock_fd);
+
+  avformat_alloc_output_context2(&this->ofmt_ctx, NULL, "adts", this->vid_path.c_str());
+  assert(this->ofmt_ctx);
+  err = avio_open(&this->ofmt_ctx->pb, this->vid_path.c_str(), AVIO_FLAG_WRITE);
+  assert(err >= 0);
+
+  // re-bind the audio stream to the new muxer; the persistent encoder's params
+  // (incl. AudioSpecificConfig) carry over, and each ADTS frame is self-describing
+  this->audio_stream = avformat_new_stream(this->ofmt_ctx, NULL);
+  assert(this->audio_stream);
+  err = avcodec_parameters_from_context(this->audio_stream->codecpar, this->audio_codec_ctx);
+  assert(err >= 0);
+  err = avformat_write_header(this->ofmt_ctx, NULL);
+  assert(err >= 0);
+}
+
 void VideoWriter::initialize_audio(int sample_rate) {
   assert(this->ofmt_ctx->oformat->audio_codec != AV_CODEC_ID_NONE); // check output format supports audio streams
   const AVCodec *audio_avcodec = avcodec_find_encoder(AV_CODEC_ID_AAC);

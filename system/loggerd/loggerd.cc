@@ -293,10 +293,17 @@ void loggerd_thread() {
           auto event = cmsg.getRoot<cereal::Event>();
           auto audio_data = event.getRawAudioData().getData();
           auto sample_rate = event.getRawAudioData().getSampleRate();
-          // rotate the audio file with the segment; resetting finalizes the previous .aac first
+          // rotate the audio file with the segment. The first segment builds the
+          // writer; later segments swap only the output file (rotate_audio_file) so
+          // the AAC encoder runs continuously and the per-segment .aac files
+          // concatenate gaplessly
           if (audio_segment != s.logger.segment()) {
-            audio_writer.reset(new VideoWriter(s.logger.segmentPath().c_str(), QAUDIO_FILE,
-                                               true, 0, 0, 0, cereal::EncodeIndex::Type::QCAMERA_H264, true));
+            if (!audio_writer) {
+              audio_writer.reset(new VideoWriter(s.logger.segmentPath().c_str(), QAUDIO_FILE,
+                                                 true, 0, 0, 0, cereal::EncodeIndex::Type::QCAMERA_H264, true));
+            } else {
+              audio_writer->rotate_audio_file(s.logger.segmentPath().c_str(), QAUDIO_FILE);
+            }
             audio_segment = s.logger.segment();
           }
           audio_writer->write_audio((uint8_t*)audio_data.begin(), audio_data.size(), event.getLogMonoTime() / 1000, sample_rate);
