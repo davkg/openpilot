@@ -68,7 +68,7 @@ LOW_SPEED_CAP_GATE = 7.0                     # m/s -- below this, skip lead-awar
 def get_jerk_factor(personality=log.LongitudinalPersonality.standard, v_ego=0.0):
   # 3 m/s = 7 mph, 5 m/s = 11 mph, 12 m/s = 27 mph, 20 m/s = 45 mph
   if personality==log.LongitudinalPersonality.relaxed:
-    return np.interp(v_ego, [5.0, 20.0], [0.5, 1.0])
+    return np.interp(v_ego, [3.0, 12.0], [0.5, 1.0])
   elif personality==log.LongitudinalPersonality.standard:
     return np.interp(v_ego, [3.0, 12.0], [0.5, 0.8])
   elif personality==log.LongitudinalPersonality.aggressive:
@@ -81,7 +81,7 @@ def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard, v_ego=0.0):
   if personality==log.LongitudinalPersonality.relaxed:
     return 2.0
   elif personality==log.LongitudinalPersonality.standard:
-    return 1.3
+    return np.interp(v_ego, [0.0, 12.0, 20.0], [1.3, 1.6, 1.3])
   elif personality==log.LongitudinalPersonality.aggressive:
     return 1.0
   else:
