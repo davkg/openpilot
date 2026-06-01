@@ -228,12 +228,11 @@ class DynamicExperimentalController:
     close_dist = interp(self._v_ego_kph, WMACConstants.LEAD_CLOSE_BP, WMACConstants.LEAD_CLOSE_DIST)
     self._has_close_lead = self._has_lead_filtered and 0.0 < lead_one.dRel < close_dist
 
-    # Model-decel trigger (hysteretic, speed-gated): the model's desiredAcceleration anticipates a
-    # slowdown earlier than the trajectory-endpoint shortfall (e.g. a distant lead beyond ~100 m).
+    # Model-decel trigger: the model's desiredAcceleration anticipates a slowdown earlier than the
+    # trajectory-endpoint shortfall (e.g. a distant lead beyond ~100 m). Only applies with no close
+    # lead. Hysteresis: hold blended until the model is basically done decelerating.
     e2e_accel = md.action.desiredAcceleration
-    if car_state.vEgo < WMACConstants.MODEL_DECEL_MIN_SPEED:
-      self._has_model_decel = False
-    elif self._has_model_decel:
+    if self._has_model_decel:
       self._has_model_decel = e2e_accel < WMACConstants.MODEL_DECEL_RELEASE
     else:
       self._has_model_decel = e2e_accel < WMACConstants.MODEL_DECEL_ENGAGE
@@ -276,7 +275,9 @@ class DynamicExperimentalController:
 
       self._slow_down_filter.add_data(urgency)
       urgency_filtered = self._slow_down_filter.get_value() or 0.0
-      self._has_slow_down = urgency_filtered > WMACConstants.SLOW_DOWN_PROB
+      # Hysteresis: lower release threshold so noisy endpoint spikes don't drop blended
+      threshold = WMACConstants.SLOW_DOWN_PROB * (WMACConstants.SLOW_DOWN_RELEASE_RATIO if self._has_slow_down else 1.0)
+      self._has_slow_down = urgency_filtered > threshold
       self._urgency = urgency_filtered
       return
 
@@ -315,8 +316,11 @@ class DynamicExperimentalController:
     self._slow_down_filter.add_data(urgency)
     urgency_filtered = self._slow_down_filter.get_value() or 0.0
 
-    # Update state with lower threshold for better stop detection
-    self._has_slow_down = urgency_filtered > (WMACConstants.SLOW_DOWN_PROB * 0.8)
+    # Update state with lower threshold for better stop detection, plus hysteresis on release so a
+    # noisy trajectory endpoint (distant/flickering lead) doesn't chatter has_slow_down on/off.
+    engage = WMACConstants.SLOW_DOWN_PROB * 0.8
+    threshold = engage * (WMACConstants.SLOW_DOWN_RELEASE_RATIO if self._has_slow_down else 1.0)
+    self._has_slow_down = urgency_filtered > threshold
     self._urgency = urgency_filtered
 
   def _radarless_mode(self) -> None:
@@ -333,19 +337,18 @@ class DynamicExperimentalController:
       self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
       return
 
-    # Model anticipates a slowdown: desiredAcceleration goes negative earlier than the trajectory
-    # shortfall. Above the close-lead gate so a lead the model is actively braking for (close or
-    # distant) uses blended; the speed gate keeps stop-n-go in ACC, and steady following has
-    # e2e_a ~0 so it stays ACC there too.
-    if self._has_model_decel:
-      self._mode_manager.request_mode('blended', confidence=1.0)
-      return
-
     # Close lead: use ACC for responsive, predictable car-following / stop-n-go (above standstill
     # so heavy traffic stays ACC end-to-end). The trajectory-shortfall blended path below is thus
     # reserved for the no-close-lead case (distant lead / red light / stop the model sees further).
     if self._has_close_lead:
       self._mode_manager.request_mode('acc', confidence=1.0)
+      return
+
+    # Model anticipates a slowdown (no close lead): desiredAcceleration goes negative earlier than
+    # the trajectory shortfall, so engage blended for the distant-lead / red-light approach. Below
+    # the close-lead gate so a gentle close-lead slowdown stays ACC; speed-gated for stop-n-go.
+    if self._has_model_decel:
+      self._mode_manager.request_mode('blended', confidence=1.0)
       return
 
     # Standstill: use blended

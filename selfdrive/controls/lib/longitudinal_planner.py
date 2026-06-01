@@ -26,6 +26,8 @@ ALLOW_THROTTLE_THRESHOLD_BP = [8.0, 25.0]   # m/s
 ALLOW_THROTTLE_THRESHOLD_V = [0.4, 0.7]     # gasPressProbs[1] threshold
 ALLOW_THROTTLE_HYSTERESIS = 0.1             # prob must exceed threshold + this to resume throttle (anti-chatter)
 MIN_ALLOW_THROTTLE_SPEED = 2.5
+BLENDED_TRANSITION_JERK = 1.0               # m/s^3 -- ease-in rate for the extra braking blended adds over the MPC
+BLENDED_TRANSITION_HARD_A = -1.2            # m/s^2 -- below this the blended target is applied immediately (no ease-in)
 
 # Lookup table for turns
 _A_TOTAL_MAX_V = [1.7, 3.2]
@@ -181,6 +183,16 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     else:
       output_a_target = output_a_target_mpc
       self.output_should_stop = output_should_stop_mpc
+
+    # Smoothing DEC transition from acc to e2e for braking.
+    # Ease in the extra braking that blended (min(e2e, mpc)) adds over the MPC so acc<->blended
+    # transitions don't step -- but only for minor transitions. An emergency-level target (below
+    # BLENDED_TRANSITION_HARD_A) is applied immediately, no ease-in. The MPC's own braking always
+    # passes through (the min), so this only delays the e2e-extra, never brakes less than ACC, and
+    # is a no-op in acc mode (target == mpc).
+    if not reset_state and output_a_target >= BLENDED_TRANSITION_HARD_A:
+      rate_limited = max(output_a_target, self.output_a_target - BLENDED_TRANSITION_JERK * self.dt)
+      output_a_target = min(rate_limited, output_a_target_mpc)
 
     for idx in range(2):
       accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)

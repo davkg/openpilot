@@ -116,12 +116,12 @@ def test_radarless_close_lead_forces_acc(mock_cp, mock_mpc, default_sm):
 
 
 def test_radarless_model_decel_triggers_blended(mock_cp, mock_mpc, default_sm):
-  # The model's desiredAcceleration anticipating a slowdown (no close lead, above the speed gate)
-  # should engage blended even when the trajectory-endpoint shortfall hasn't tripped yet.
+  # The model's desiredAcceleration anticipating a slowdown (no close lead) should engage blended
+  # even when the trajectory-endpoint shortfall hasn't tripped yet.
   mock_cp.radarUnavailable = True
   controller = DynamicExperimentalController(mock_cp, mock_mpc, params=MockParams())
 
-  default_sm['carState'].vEgo = 15.0           # above MODEL_DECEL_MIN_SPEED (12 m/s)
+  default_sm['carState'].vEgo = 15.0
   default_sm['radarState'] = MockRadarState(status=0.0)
   controller._slow_down_filter = FakeKalman(value=0.0)   # isolate: no slow-down trigger
   default_sm['modelV2'] = MockModelData(valid=True, desired_accel=-0.5)  # model wants to brake
@@ -132,20 +132,38 @@ def test_radarless_model_decel_triggers_blended(mock_cp, mock_mpc, default_sm):
   assert controller.mode() == "blended"
 
 
-def test_radarless_model_decel_speed_gated(mock_cp, mock_mpc, default_sm):
-  # Below the speed gate (stop-n-go), the same model decel must NOT pull us into blended.
+def test_radarless_close_lead_gentle_model_decel_stays_acc(mock_cp, mock_mpc, default_sm):
+  # A close lead slowing gently (model wants -0.5, above the hard threshold) must stay ACC -
+  # the MPC ramps into it smoothly; only hard model braking overrides the close-lead gate.
   mock_cp.radarUnavailable = True
   controller = DynamicExperimentalController(mock_cp, mock_mpc, params=MockParams())
 
-  default_sm['carState'].vEgo = 8.0            # below MODEL_DECEL_MIN_SPEED (12 m/s)
-  default_sm['radarState'] = MockRadarState(status=0.0)
+  default_sm['carState'].vEgo = 20.0
+  default_sm['radarState'] = MockRadarState(status=1.0, dRel=30.0)   # close lead
+  controller._slow_down_filter = FakeKalman(value=0.0)
+  default_sm['modelV2'] = MockModelData(valid=True, desired_accel=-0.5)  # gentle (> -1.2 hard)
+
+  for _ in range(12):
+    controller.update(default_sm)
+
+  assert controller.mode() == "acc"
+
+
+def test_radarless_low_speed_no_lead_model_decel_blended(mock_cp, mock_mpc, default_sm):
+  # No speed gate: with no close lead, model-decel engages at any speed (e.g. a low-speed approach
+  # to a stop sign / red light). Stop-n-go stays ACC via the close-lead gate, not a speed gate.
+  mock_cp.radarUnavailable = True
+  controller = DynamicExperimentalController(mock_cp, mock_mpc, params=MockParams())
+
+  default_sm['carState'].vEgo = 8.0
+  default_sm['radarState'] = MockRadarState(status=0.0)   # no lead
   controller._slow_down_filter = FakeKalman(value=0.0)
   default_sm['modelV2'] = MockModelData(valid=True, desired_accel=-0.5)
 
   for _ in range(12):
     controller.update(default_sm)
 
-  assert controller.mode() == "acc"
+  assert controller.mode() == "blended"
 
 
 def test_radarless_close_lead_high_urgency_blended(mock_cp, mock_mpc, default_sm):

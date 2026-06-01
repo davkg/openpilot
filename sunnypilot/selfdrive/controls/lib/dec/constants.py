@@ -6,6 +6,7 @@ class WMACConstants:
   # Slow down detection parameters
   SLOW_DOWN_WINDOW_SIZE = 5  # Responsive but stable
   SLOW_DOWN_PROB = 0.3  # Balanced threshold for slow down scenarios
+  SLOW_DOWN_RELEASE_RATIO = 0.6  # hysteresis: release has_slow_down at this fraction of the engage threshold
 
   # Optimized slow down distance curve - smooth and progressive
   SLOW_DOWN_BP = [0., 10., 20., 30., 40., 50., 55., 60.]
@@ -21,7 +22,8 @@ class WMACConstants:
   LEAD_CLOSE_DIST = [70., 70., 90.]  # m
 
   # Model-decel trigger: engage blended when the model's desiredAcceleration shows it wants to brake
-  # earlier than the trajectory-endpoint shortfall sees
-  MODEL_DECEL_ENGAGE = -0.4     # m/s^2 -- desiredAcceleration at/below this -> blended
-  MODEL_DECEL_RELEASE = -0.2    # m/s^2 -- must rise above this to release (hysteresis)
-  MODEL_DECEL_MIN_SPEED = 12.0  # m/s -- below this, don't use the model-decel trigger
+  # earlier than the trajectory-endpoint shortfall sees. Only used when there's no close lead
+  # (distant-lead / red-light anticipation); close-lead hard braking is left to the high-urgency
+  # slow-down emergency.
+  MODEL_DECEL_ENGAGE = -0.3   # m/s^2 -- desiredAcceleration at/below this -> blended
+  MODEL_DECEL_RELEASE = -0.1  # m/s^2 -- release once e2e rises above this (model basically done decelerating)
