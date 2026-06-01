@@ -379,11 +379,15 @@ class LongitudinalMpc:
 
     # Lead-aware v_cruise (suppress-accel): cap v_cruise at v_lead + margin so we
     # don't gun toward set speed with a slower lead ahead. Bleeding off speed is
-    # left to the lead obstacle, allow_throttle coast, and DEC blended.
+    # left to the lead obstacle, allow_throttle coast, and DEC blended. Lead-aware
+    # logic can only reduce acceleration toward set speed, not induce braking.
     self.lead_aware_floor = 0.0
     self.lead_aware_margin = 0.0
     if radarstate.leadOne.status:
-      v_cruise_clipped, self.lead_aware_floor, self.lead_aware_margin = get_lead_aware_v_cruise(
+      # Disable lead-aware cruise temporarily
+      # v_cruise_clipped, self.lead_aware_floor, self.lead_aware_margin = get_lead_aware_v_cruise(
+      #   v_cruise_clipped, lead_xv_0[0, 0], lead_xv_0[0, 1], v_ego)
+      _, self.lead_aware_floor, self.lead_aware_margin = get_lead_aware_v_cruise(
         v_cruise_clipped, lead_xv_0[0, 0], lead_xv_0[0, 1], v_ego)
 
     cruise_obstacle = np.cumsum(T_DIFFS * v_cruise_clipped) + get_safe_obstacle_distance(v_cruise_clipped, t_follow, stop_distance)
