@@ -62,6 +62,13 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.dt = dt
     self.allow_throttle = True
 
+    # Coast diagnostics
+    self.throttle_prob = 0.0
+    self.allow_throttle_threshold = 0.0
+    self.coast_accel = 0.0
+    self.coast_lowered_clip = False
+    self.coast_active = False
+
     self.a_desired = init_a
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
     self.prev_accel_clip = [ACCEL_MIN, ACCEL_MAX]
@@ -128,8 +135,10 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # Prevent divergence, smooth in current v_ego
     self.v_desired_filter.x = max(0.0, self.v_desired_filter.update(v_ego))
     _, _, _, _, throttle_prob = self.parse_model(sm['modelV2'])
+    self.throttle_prob = throttle_prob
     # Coast/throttle decision with hysteresis
     allow_throttle_threshold = np.interp(v_ego, ALLOW_THROTTLE_THRESHOLD_BP, ALLOW_THROTTLE_THRESHOLD_V)
+    self.allow_throttle_threshold = allow_throttle_threshold
     if v_ego <= MIN_ALLOW_THROTTLE_SPEED:
       # Always allow throttle at creep speeds (throttle_prob doesn't account for creep)
       self.allow_throttle = True
@@ -138,12 +147,18 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       self.allow_throttle = throttle_prob > allow_throttle_threshold
     else:
       # Coasting: require a margin above the threshold before resuming throttle (sticky coast)
-      self.allow_throttle = throttle_prob > allow_throttle_threshold + ALLOW_THROTTLE_HYSTERESIS
+      self.allow_throttle_threshold = allow_throttle_threshold + ALLOW_THROTTLE_HYSTERESIS
+      self.allow_throttle = throttle_prob > self.allow_throttle_threshold
 
+    self.coast_lowered_clip = False
+    self.coast_accel = 0.0
     if not self.allow_throttle:
       clipped_accel_coast = max(accel_coast, accel_clip[0])
       clipped_accel_coast_interp = np.interp(v_ego, [MIN_ALLOW_THROTTLE_SPEED, MIN_ALLOW_THROTTLE_SPEED*2], [accel_clip[1], clipped_accel_coast])
+      pre_coast_upper = accel_clip[1]
       accel_clip[1] = min(accel_clip[1], clipped_accel_coast_interp)
+      self.coast_accel = clipped_accel_coast_interp
+      self.coast_lowered_clip = accel_clip[1] < pre_coast_upper
 
     # Get new v_cruise and a_desired from Smart Cruise Control and Speed Limit Assist
     v_cruise, self.a_desired = LongitudinalPlannerSP.update_targets(self, sm, self.v_desired_filter.x, self.a_desired, v_cruise)
@@ -184,12 +199,9 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       output_a_target = output_a_target_mpc
       self.output_should_stop = output_should_stop_mpc
 
-    # Smoothing DEC transition from acc to e2e for braking.
-    # Ease in the extra braking that blended (min(e2e, mpc)) adds over the MPC so acc<->blended
-    # transitions don't step -- but only for minor transitions. An emergency-level target (below
-    # BLENDED_TRANSITION_HARD_A) is applied immediately, no ease-in. The MPC's own braking always
-    # passes through (the min), so this only delays the e2e-extra, never brakes less than ACC, and
-    # is a no-op in acc mode (target == mpc).
+    # Rate limit non-emergency deceleration to soften DEC transitions. acc->blended
+    # can cause abrupt changes in decel. Higher decel targets are applied immediately.
+    # Always allow MPC braking through immediately, this is no-op in acc mode.
     if not reset_state and output_a_target >= BLENDED_TRANSITION_HARD_A:
       rate_limited = max(output_a_target, self.output_a_target - BLENDED_TRANSITION_JERK * self.dt)
       output_a_target = min(rate_limited, output_a_target_mpc)
@@ -198,6 +210,9 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)
     self.output_a_target = np.clip(output_a_target, accel_clip[0], accel_clip[1])
     self.prev_accel_clip = accel_clip
+
+    self.coast_active = (not self.allow_throttle and self.mpc.source == LongitudinalPlanSource.cruise
+                         and self.coast_lowered_clip and self.output_a_target >= accel_clip[1] - 1e-3)
 
   def publish(self, sm, pm):
     plan_send = messaging.new_message('longitudinalPlan')

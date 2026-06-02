@@ -200,6 +200,7 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
   e2eAlerts @7 :E2eAlerts;
   checkerboard @8 :Checkerboard;
   leadAware @9 :LeadAware;
+  coast @10 :Coast;
 
   struct DynamicExperimentalControl {
     state @0 :DynamicExperimentalControlState;
@@ -324,6 +325,13 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
   struct LeadAware {
     floor @0 :Float32;   # v_cruise floor = lead_v + margin (m/s); 0 when inactive
     margin @1 :Float32;  # distance-scaled margin above the lead's speed (m/s); 0 when inactive
+  }
+
+  struct Coast {
+    active @0 :Bool;        # coast ceiling is the binding constraint on aTarget (cruise path)
+    coastAccel @1 :Float32; # coast accel ceiling applied (m/s^2); 0 when coast not enforced
+    throttleProb @2 :Float32;  # model throttle prob being thresholded (trigger input)
+    threshold @3 :Float32;  # active allow_throttle threshold incl. hysteresis (trigger gate)
   }
 }
 

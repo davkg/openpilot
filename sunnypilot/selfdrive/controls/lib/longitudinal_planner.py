@@ -162,4 +162,11 @@ class LongitudinalPlannerSP:
     leadAware.floor = float(self.mpc.lead_aware_floor)
     leadAware.margin = float(self.mpc.lead_aware_margin)
 
+    # Coast diagnostics (trigger inputs + applied coast accel)
+    coast = longitudinalPlanSP.coast
+    coast.active = bool(self.coast_active)
+    coast.coastAccel = float(self.coast_accel)
+    coast.throttleProb = float(self.throttle_prob)
+    coast.threshold = float(self.allow_throttle_threshold)
+
     pm.send('longitudinalPlanSP', plan_sp_send)
