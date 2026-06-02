@@ -86,8 +86,8 @@ class ChevronMetrics:
   def _render_text_lines(self, text_lines: list[str], chevron_x: float, chevron_y: float,
                          sz: float, rect: rl.Rectangle):
     """Render text lines with proper centering and positioning"""
-    font_size = 40
-    line_height = 50
+    font_size = 56
+    line_height = 70
     margin = 20
 
     text_y = chevron_y + sz + 15
