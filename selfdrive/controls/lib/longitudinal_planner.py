@@ -29,15 +29,17 @@ MIN_ALLOW_THROTTLE_SPEED = 2.5
 BLENDED_TRANSITION_JERK = 2.0               # m/s^3 -- ease-in rate for the extra braking blended adds over the MPC
 BLENDED_TRANSITION_HARD_A = -1.2            # m/s^2 -- below this the blended target is applied immediately (no ease-in)
 
-# Forward-looking e2e accel cap: don't accelerate harder than the model intends when we're below
-# set speed behind a lead. The model intuits the road/lead and eases off accel before a slowdown,
-# so this damps over-accel into undulating traffic -- continuous (no abrupt acc<->blended switch),
-# smoothed by the existing accel-clip rate limit. Floored so it never sandbags set-speed pursuit
-# (the model reaches set speed only approximately). Gated to far-below-set-speed + lead: there a
-# low model accel reflects a real reason to hold back, not "we've arrived".
-ACCEL_E2E_CAP_ENABLE = False     # trial after the follow-distance relaxation; overlaps it in the same regime
-ACCEL_E2E_CAP_FLOOR = 0.5        # m/s^2 -- never cap accel below this
-ACCEL_E2E_CAP_SPEED_GAP = 2.0    # m/s -- only cap when at least this far below set speed
+# Forward-looking e2e accel cap (EXPERIMENT): never accelerate harder than the model wants to.
+# The model produces a smooth, context-aware desiredAcceleration; capping the upper accel clip at
+# it lets the MPC still drive toward set speed / the lead, but bleeds off the MPC's over-eager
+# acceleration (e.g. rushing to set speed only to brake for a lead that later comes into view).
+# Continuous (no acc<->blended mode switch), smoothed by the existing accel-clip rate limit. No
+# lead/speed gate -- it caps whenever the model wants gentler accel than the MPC. Floored so a timid
+# model estimate can't fully sandbag acceleration; the FLOOR is the main knob (raise it if the car
+# feels lazy reaching set speed). Caveat: e2e_a can't be validated offline -- the logged model
+# output is conditioned on the speed actually driven (the model tends to accept the speed it's given).
+ACCEL_E2E_CAP_ENABLE = True
+ACCEL_E2E_CAP_FLOOR = 0.5        # m/s^2 -- never cap accel below this (main tuning knob)
 
 # Lookup table for turns
 _A_TOTAL_MAX_V = [1.7, 3.2]
@@ -216,10 +218,11 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       rate_limited = max(output_a_target, self.output_a_target - BLENDED_TRANSITION_JERK * self.dt)
       output_a_target = min(rate_limited, output_a_target_mpc)
 
-    # Forward-looking e2e accel cap (see constants): below set speed behind a lead, don't
-    # accelerate harder than the model wants to. Floored so it can't sandbag; never induces
-    # braking (only lowers the upper clip). Rate-limited like any clip change just below.
-    if ACCEL_E2E_CAP_ENABLE and sm['radarState'].leadOne.status and (v_cruise - v_ego) > ACCEL_E2E_CAP_SPEED_GAP:
+    # Forward-looking e2e accel cap (see constants): cap the upper accel clip at the model's
+    # desired accel, floored. No lead/speed gate -- applies whenever the model wants gentler accel
+    # than the MPC (e.g. rushing to set speed). Never induces braking (only lowers the upper clip);
+    # rate-limited like any clip change just below.
+    if ACCEL_E2E_CAP_ENABLE:
       accel_clip[1] = min(accel_clip[1], max(output_a_target_e2e, ACCEL_E2E_CAP_FLOOR))
 
     for idx in range(2):

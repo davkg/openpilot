@@ -263,7 +263,7 @@ class LongitudinalMpc:
     self.source = LongitudinalPlanSource.cruise
     self.t_follow_delta = 0.0  # additive bias from checkerboard staggering controller
     self.t_follow_relax = 0.0  # transient bias when the lead pulls away hard (see T_FOLLOW_RELAX_*)
-    self.t_follow_relax_enabled = True
+    self.t_follow_relax_enabled = False  # disabled: too sensitive to noisy vision vRel in steady following
     # lead-aware v_cruise (suppress-accel) telemetry, refreshed each update()
     self.lead_aware_floor = 0.0
     self.lead_aware_margin = 0.0
