@@ -70,7 +70,7 @@ LOW_SPEED_CAP_GATE = 7.0                     # m/s -- below this, skip lead-awar
 # again -- damps speed oscillation in undulating traffic. Smoothly filtered (no step) and
 # decays back once the lead stops pulling away. Only widens the gap (never tightens it).
 T_FOLLOW_RELAX_VREL = 1.0    # m/s -- lead pulling away faster than this (vRel) arms the relaxation
-T_FOLLOW_RELAX_MAX = 0.5     # s -- max added to t_follow when fully relaxed
+T_FOLLOW_RELAX_MAX = 0.2     # s -- max added to t_follow when fully relaxed
 T_FOLLOW_RELAX_TAU = 1.2     # s -- first-order rise/decay time constant
 
 def get_jerk_factor(personality=log.LongitudinalPersonality.standard, v_ego=0.0):
