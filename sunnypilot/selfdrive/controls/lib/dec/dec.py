@@ -331,9 +331,11 @@ class DynamicExperimentalController:
       self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
       return
 
-    # EMERGENCY: high-urgency slow down. Sits above the close-lead gate so that a close lead only
-    # suppresses blended for routine following.
-    if self._has_slow_down and self._urgency > 0.7:
+    # EMERGENCY: high-urgency slow down, but only with NO close lead. A close lead's trajectory
+    # naturally shortens the endpoint (manufacturing phantom urgency) even in routine following,
+    # which over-fired blended in undulating traffic; ACC handles close leads. Reserved here for
+    # the distant-lead / invisible-lead hard stop the model sees beyond the close-lead range.
+    if self._has_slow_down and self._urgency > 0.7 and not self._has_close_lead:
       self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
       return
 

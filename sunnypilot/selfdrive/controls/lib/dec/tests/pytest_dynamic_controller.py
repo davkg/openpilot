@@ -166,21 +166,22 @@ def test_radarless_low_speed_no_lead_model_decel_blended(mock_cp, mock_mpc, defa
   assert controller.mode() == "blended"
 
 
-def test_radarless_close_lead_high_urgency_blended(mock_cp, mock_mpc, default_sm):
-  # Regression: a close lead braking hard (high-urgency slowdown) must still go blended, so the
-  # model's anticipation isn't suppressed by the close-lead gate when the MPC can't keep up.
+def test_radarless_close_lead_high_urgency_stays_acc(mock_cp, mock_mpc, default_sm):
+  # Regression: a close lead's trajectory naturally shortens the endpoint, manufacturing phantom
+  # high urgency even in routine following (which over-fired blended in undulating traffic). The
+  # urgency emergency is gated on no-close-lead, so a close lead + high urgency stays ACC.
   mock_cp.radarUnavailable = True
   controller = DynamicExperimentalController(mock_cp, mock_mpc, params=MockParams())
 
-  # Close lead present, but the slowdown urgency is high (> 0.7)
+  # Close lead present, and the slowdown urgency is high (> 0.7) -- close-lead gate wins
   default_sm['radarState'] = MockRadarState(status=1.0, dRel=15.0)
   controller._slow_down_filter = FakeKalman(value=1.0)
   default_sm['modelV2'] = MockModelData(valid=False)
 
-  for _ in range(3):
+  for _ in range(10):
     controller.update(default_sm)
 
-  assert controller.mode() == "blended"
+  assert controller.mode() == "acc"
 
 
 def test_radarless_distant_lead_allows_blended(mock_cp, mock_mpc, default_sm):

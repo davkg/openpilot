@@ -19,15 +19,25 @@ from openpilot.common.swaglog import cloudlog
 
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP
 
-A_CRUISE_MAX_VALS = [2.0, 1.6, 0.8, 0.6]
+A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
 A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 ALLOW_THROTTLE_THRESHOLD_BP = [8.0, 25.0]   # m/s
 ALLOW_THROTTLE_THRESHOLD_V = [0.4, 0.7]     # gasPressProbs[1] threshold
 ALLOW_THROTTLE_HYSTERESIS = 0.1             # prob must exceed threshold + this to resume throttle (anti-chatter)
 MIN_ALLOW_THROTTLE_SPEED = 2.5
-BLENDED_TRANSITION_JERK = 1.0               # m/s^3 -- ease-in rate for the extra braking blended adds over the MPC
+BLENDED_TRANSITION_JERK = 2.0               # m/s^3 -- ease-in rate for the extra braking blended adds over the MPC
 BLENDED_TRANSITION_HARD_A = -1.2            # m/s^2 -- below this the blended target is applied immediately (no ease-in)
+
+# Forward-looking e2e accel cap: don't accelerate harder than the model intends when we're below
+# set speed behind a lead. The model intuits the road/lead and eases off accel before a slowdown,
+# so this damps over-accel into undulating traffic -- continuous (no abrupt acc<->blended switch),
+# smoothed by the existing accel-clip rate limit. Floored so it never sandbags set-speed pursuit
+# (the model reaches set speed only approximately). Gated to far-below-set-speed + lead: there a
+# low model accel reflects a real reason to hold back, not "we've arrived".
+ACCEL_E2E_CAP_ENABLE = False     # trial after the follow-distance relaxation; overlaps it in the same regime
+ACCEL_E2E_CAP_FLOOR = 0.5        # m/s^2 -- never cap accel below this
+ACCEL_E2E_CAP_SPEED_GAP = 2.0    # m/s -- only cap when at least this far below set speed
 
 # Lookup table for turns
 _A_TOTAL_MAX_V = [1.7, 3.2]
@@ -205,6 +215,12 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     if not reset_state and output_a_target >= BLENDED_TRANSITION_HARD_A:
       rate_limited = max(output_a_target, self.output_a_target - BLENDED_TRANSITION_JERK * self.dt)
       output_a_target = min(rate_limited, output_a_target_mpc)
+
+    # Forward-looking e2e accel cap (see constants): below set speed behind a lead, don't
+    # accelerate harder than the model wants to. Floored so it can't sandbag; never induces
+    # braking (only lowers the upper clip). Rate-limited like any clip change just below.
+    if ACCEL_E2E_CAP_ENABLE and sm['radarState'].leadOne.status and (v_cruise - v_ego) > ACCEL_E2E_CAP_SPEED_GAP:
+      accel_clip[1] = min(accel_clip[1], max(output_a_target_e2e, ACCEL_E2E_CAP_FLOOR))
 
     for idx in range(2):
       accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)
