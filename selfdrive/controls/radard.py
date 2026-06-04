@@ -160,6 +160,73 @@ def get_RadarState_from_vision(lead_msg: capnp._DynamicStructReader, v_ego: floa
   }
 
 
+class VisionLeadSpeedFilter:
+  """Correct the model's over-estimated distant-lead speed on radarless cars.
+
+  On a radarless car the lead's vLead comes straight from the model, which over-reports a distant
+  lead's speed (biased toward ego speed) and converges only as the lead closes -- so the planner
+  doesn't realize the lead is slower until it is close, and brakes late. The lead's *position*
+  (dRel) is more reliable than its inferred velocity, so a position-derived speed
+  (v_ego + d(dRel)/dt) recovers the true speed.
+
+  Blend the position-derived speed into vLead weighted by the model's own velocity uncertainty
+  (leadsV3 vStd): trust the model when it is confident (vStd low, lead close -- where precise
+  braking matters) and fade toward the position-derived speed when the model is uncertain (vStd
+  high, lead far). Downward-only (never raise the reported speed), robustified (median + clip + EMA
+  on the noisy dRel derivative, which rejects re-ranging jumps) and rate-limited so it eases rather
+  than jumps. aLeadK is left untouched: this corrects a speed estimate, it does not imply the lead
+  is decelerating. Validated via offline replay (late_brake brakes ~3 s earlier; low-speed/gentle
+  unchanged). Thresholds tuned on limited routes -- revisit as data accumulates.
+  """
+  W_VSTD = (0.8, 1.6)        # leadsV3 vStd window: blend weight ramps 0 -> 1 across it
+  CLOSE_CLIP = (-12.0, 8.0)  # m/s -- plausible closing-rate bound (rejects dRel re-ranging jumps)
+  V_RATE = 5.0               # m/s^2 -- max rate the corrected speed eases
+  DREL_TAU, GAP_TAU = 0.3, 0.6  # s -- smoothing time constants
+
+  def __init__(self, dt: float):
+    self.dt = dt
+    self.reset()
+
+  def reset(self) -> None:
+    self.ema_drel: float | None = None
+    self.closings: deque[float] = deque(maxlen=11)
+    self.gap_off = 0.0        # smoothed (position-derived speed - v_ego)
+    self.v_corr: float | None = None
+
+  def correct(self, lead: dict[str, Any], v_ego: float, v_std: float) -> dict[str, Any]:
+    if (not lead['status']) or lead.get('radar', False):  # only vision leads
+      self.reset()
+      return lead
+    dt = self.dt
+    d_rel = lead['dRel']
+    v_model = lead['vLead']
+    if self.ema_drel is None:
+      self.ema_drel = d_rel
+      self.v_corr = v_model
+
+    # position-derived speed: median-filtered, clipped closing rate added to v_ego
+    prev = self.ema_drel
+    self.ema_drel += (dt / (self.DREL_TAU + dt)) * (d_rel - prev)
+    self.closings.append((self.ema_drel - prev) / dt)
+    med = sorted(self.closings)[len(self.closings) // 2]
+    med = min(max(med, self.CLOSE_CLIP[0]), self.CLOSE_CLIP[1])
+    self.gap_off += (dt / (self.GAP_TAU + dt)) * (med - self.gap_off)
+    gap_v = v_ego + self.gap_off
+
+    # vStd-weighted blend, downward-only, eased
+    w = min(max((v_std - self.W_VSTD[0]) / (self.W_VSTD[1] - self.W_VSTD[0]), 0.0), 1.0)
+    target = min(v_model, (1.0 - w) * v_model + w * gap_v)
+    step = self.V_RATE * dt
+    self.v_corr += min(max(target - self.v_corr, -step), step)
+    v_new = min(self.v_corr, v_model)
+    if v_new < v_model - 0.05:
+      lead = dict(lead)
+      lead['vLead'] = float(v_new)
+      lead['vLeadK'] = float(v_new)
+      lead['vRel'] = float(v_new - v_ego)
+    return lead
+
+
 def get_lead(v_ego: float, ready: bool, tracks: dict[int, Track], lead_msg: capnp._DynamicStructReader,
              model_v_ego: float, CP: structs.CarParams, CP_SP: structs.CarParamsSP, low_speed_override: bool = True) -> dict[str, Any]:
   # Determine leads, this is where the essential logic happens
@@ -215,6 +282,10 @@ class RadarD:
 
     self.ready = False
 
+    # Correct the model's over-estimated distant-lead speed on radarless cars (see class docstring)
+    self.lead_one_speed_filter = VisionLeadSpeedFilter(DT_MDL)
+    self.lead_two_speed_filter = VisionLeadSpeedFilter(DT_MDL)
+
   def update(self, sm: messaging.SubMaster, rr: car.RadarData):
     self.ready = sm.seen['modelV2']
     self.current_time = 1e-9*max(sm.logMonoTime.values())
@@ -256,8 +327,13 @@ class RadarD:
       model_v_ego = self.v_ego
     leads_v3 = sm['modelV2'].leadsV3
     if len(leads_v3) > 1:
-      self.radar_state.leadOne = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[0], model_v_ego, self.CP, self.CP_SP, low_speed_override=True)
-      self.radar_state.leadTwo = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[1], model_v_ego, self.CP, self.CP_SP, low_speed_override=False)
+      lead_one = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[0], model_v_ego, self.CP, self.CP_SP, low_speed_override=True)
+      lead_two = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[1], model_v_ego, self.CP, self.CP_SP, low_speed_override=False)
+      if self.CP.radarUnavailable:  # vision-only lead speed is over-estimated at distance; correct it
+        lead_one = self.lead_one_speed_filter.correct(lead_one, self.v_ego, leads_v3[0].vStd[0] if len(leads_v3[0].vStd) else 0.0)
+        lead_two = self.lead_two_speed_filter.correct(lead_two, self.v_ego, leads_v3[1].vStd[0] if len(leads_v3[1].vStd) else 0.0)
+      self.radar_state.leadOne = lead_one
+      self.radar_state.leadTwo = lead_two
 
   def publish(self, pm: messaging.PubMaster):
     assert self.radar_state is not None
