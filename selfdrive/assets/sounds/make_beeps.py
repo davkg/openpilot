@@ -40,5 +40,4 @@ def click(freq, duration_seconds=0.12, ring_tc=800.0, tick_amt=0.5, tick_tc=60.0
     return signal / np.max(np.abs(signal)) * max_int16
 
 wavfile.write("cruise_step_up.wav", sr, click(2000.0, ring_tc=1800.0).astype(np.int16))  # brighter pitch -> step up
-# down click uses ~1.6x the up click's ring_tc to compensate for lower frequency
-wavfile.write("cruise_step_down.wav", sr, click(1200.0, ring_tc=2900.0).astype(np.int16))  # darker pitch -> step down
+wavfile.write("cruise_step_down.wav", sr, click(1500.0, ring_tc=2900.0).astype(np.int16))  # darker pitch -> step down
