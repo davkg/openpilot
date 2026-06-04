@@ -173,6 +173,7 @@ class DynamicExperimentalController:
     self._has_lead_filtered = False
     self._has_close_lead = False
     self._has_model_decel = False
+    self._e2e_accel = 0.0
     self._has_slow_down = False
     self._has_slowness = False
     self._has_mpc_fcw = False
@@ -231,11 +232,11 @@ class DynamicExperimentalController:
     # Model-decel trigger: the model's desiredAcceleration anticipates a slowdown earlier than the
     # trajectory-endpoint shortfall (e.g. a distant lead beyond ~100 m). Only applies with no close
     # lead. Hysteresis: hold blended until the model is basically done decelerating.
-    e2e_accel = md.action.desiredAcceleration
+    self._e2e_accel = md.action.desiredAcceleration
     if self._has_model_decel:
-      self._has_model_decel = e2e_accel < WMACConstants.MODEL_DECEL_RELEASE
+      self._has_model_decel = self._e2e_accel < WMACConstants.MODEL_DECEL_RELEASE
     else:
-      self._has_model_decel = e2e_accel < WMACConstants.MODEL_DECEL_ENGAGE
+      self._has_model_decel = self._e2e_accel < WMACConstants.MODEL_DECEL_ENGAGE
 
     # MPC FCW detection
     fcw_filtered_value = self._mpc_fcw_filter.get_value() or 0.0
@@ -331,12 +332,21 @@ class DynamicExperimentalController:
       self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
       return
 
-    # EMERGENCY: high-urgency slow down, but only with NO close lead. A close lead's trajectory
+    # EMERGENCY: high-urgency slow down, but only with no close lead. A close lead's trajectory
     # naturally shortens the endpoint (manufacturing phantom urgency) even in routine following,
     # which over-fired blended in undulating traffic; ACC handles close leads. Reserved here for
     # the distant-lead / invisible-lead hard stop the model sees beyond the close-lead range.
     if self._has_slow_down and self._urgency > 0.7 and not self._has_close_lead:
       self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
+      return
+
+    # Model decel (close lead): model anticipates a slowdown at speed with a lead car. At highway
+    # speed, a lead coming to a stop can need more anticipatory braking than the reactive ACC
+    # gives. Blended can react to highway slow down scenarios earlier than strict lead following.
+    # Only engage when blended would add braking over ACC.
+    if (self._v_ego_kph > WMACConstants.MODEL_DECEL_OVERRIDE_MIN_SPEED and self._has_model_decel and
+        self._e2e_accel < self._mpc.a_solution[0] - WMACConstants.MODEL_DECEL_OVERRIDE_MARGIN):
+      self._mode_manager.request_mode('blended', confidence=1.0)
       return
 
     # Close lead: use ACC for responsive, predictable car-following / stop-n-go (above standstill
@@ -346,9 +356,8 @@ class DynamicExperimentalController:
       self._mode_manager.request_mode('acc', confidence=1.0)
       return
 
-    # Model anticipates a slowdown (no close lead): desiredAcceleration goes negative earlier than
-    # the trajectory shortfall, so engage blended for the distant-lead / red-light approach. Below
-    # the close-lead gate so a gentle close-lead slowdown stays ACC; speed-gated for stop-n-go.
+    # Model decel (no close lead): Engage blended for the distant-lead / red-light approach. Below
+    # the close-lead gate, so a gentle close-lead slowdown at low speed stays ACC.
     if self._has_model_decel:
       self._mode_manager.request_mode('blended', confidence=1.0)
       return

@@ -219,9 +219,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       output_a_target = min(rate_limited, output_a_target_mpc)
 
     # Forward-looking e2e accel cap (see constants): cap the upper accel clip at the model's
-    # desired accel, floored. No lead/speed gate -- applies whenever the model wants gentler accel
-    # than the MPC (e.g. rushing to set speed). Never induces braking (only lowers the upper clip);
-    # rate-limited like any clip change just below.
+    # desired accel, floored. Applies whenever the model wants gentler accel than the MPC
+    # (e.g. rushing to set speed). Never induces braking (only lowers the upper clip).
     if ACCEL_E2E_CAP_ENABLE:
       accel_clip[1] = min(accel_clip[1], max(output_a_target_e2e, ACCEL_E2E_CAP_FLOOR))
 

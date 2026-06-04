@@ -52,6 +52,7 @@ def mock_cp():
 def mock_mpc():
   class MPC:
     crash_cnt = 0
+    a_solution = [0.0] * 13  # MPC accel trajectory; a_solution[0] = current accel (0 = not braking)
   return MPC()
 
 # Fake Kalman Filter that always returns a given value
@@ -132,16 +133,51 @@ def test_radarless_model_decel_triggers_blended(mock_cp, mock_mpc, default_sm):
   assert controller.mode() == "blended"
 
 
-def test_radarless_close_lead_gentle_model_decel_stays_acc(mock_cp, mock_mpc, default_sm):
-  # A close lead slowing gently (model wants -0.5, above the hard threshold) must stay ACC -
-  # the MPC ramps into it smoothly; only hard model braking overrides the close-lead gate.
+def test_radarless_low_speed_close_lead_model_decel_stays_acc(mock_cp, mock_mpc, default_sm):
+  # Below MODEL_DECEL_OVERRIDE_MIN_SPEED (15 m/s), a close lead slowing gently stays ACC -- the MPC
+  # handles low-speed close-lead slowdowns confidently and the close-lead gate keeps stop-n-go responsive.
   mock_cp.radarUnavailable = True
+  controller = DynamicExperimentalController(mock_cp, mock_mpc, params=MockParams())
+
+  default_sm['carState'].vEgo = 10.0   # below the 15 m/s override speed
+  default_sm['radarState'] = MockRadarState(status=1.0, dRel=30.0)   # close lead
+  controller._slow_down_filter = FakeKalman(value=0.0)
+  default_sm['modelV2'] = MockModelData(valid=True, desired_accel=-0.5)
+
+  for _ in range(12):
+    controller.update(default_sm)
+
+  assert controller.mode() == "acc"
+
+
+def test_radarless_highspeed_close_lead_model_decel_blended(mock_cp, mock_mpc, default_sm):
+  # Above 15 m/s, model-decel overrides the close-lead gate: a close lead the model anticipates
+  # slowing (e.g. coasting toward a stop at highway speed) engages blended for early braking.
+  mock_cp.radarUnavailable = True
+  controller = DynamicExperimentalController(mock_cp, mock_mpc, params=MockParams())
+
+  default_sm['carState'].vEgo = 20.0   # above the 15 m/s override speed
+  default_sm['radarState'] = MockRadarState(status=1.0, dRel=30.0)   # close lead
+  controller._slow_down_filter = FakeKalman(value=0.0)
+  default_sm['modelV2'] = MockModelData(valid=True, desired_accel=-0.5)  # e2e -0.5 << MPC (0.0)
+
+  for _ in range(12):
+    controller.update(default_sm)
+
+  assert controller.mode() == "blended"
+
+
+def test_radarless_highspeed_mpc_already_braking_stays_acc(mock_cp, mock_mpc, default_sm):
+  # Above 15 m/s with a close lead the model wants to slow -- but the MPC is ALREADY braking harder
+  # than e2e, so min(e2e,mpc) would add nothing. The margin gate keeps DEC in ACC (no pointless flip).
+  mock_cp.radarUnavailable = True
+  mock_mpc.a_solution = [-1.2] * 13   # MPC already braking harder than e2e (-0.5)
   controller = DynamicExperimentalController(mock_cp, mock_mpc, params=MockParams())
 
   default_sm['carState'].vEgo = 20.0
   default_sm['radarState'] = MockRadarState(status=1.0, dRel=30.0)   # close lead
   controller._slow_down_filter = FakeKalman(value=0.0)
-  default_sm['modelV2'] = MockModelData(valid=True, desired_accel=-0.5)  # gentle (> -1.2 hard)
+  default_sm['modelV2'] = MockModelData(valid=True, desired_accel=-0.5)
 
   for _ in range(12):
     controller.update(default_sm)
