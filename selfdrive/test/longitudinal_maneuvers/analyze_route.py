@@ -64,6 +64,18 @@ def build_sm(r):
   car_state_sp = messaging.new_message('carStateSP')
   live_map_data_sp = messaging.new_message('liveMapDataSP')
   gps = messaging.new_message('gpsLocation')
+  cot = messaging.new_message('cameraObjectTracksSP')
+
+  # optional camera object tracks: r['cam_tracks'] = list of (objectId, dRel, yRel, valid) per slot
+  ct = r.get('cam_tracks')
+  if ct:
+    tl = cot.cameraObjectTracksSP.init('tracks', len(ct))
+    for i, (oid, dr, yr, v) in enumerate(ct):
+      tl[i].slot = i
+      tl[i].objectId = int(oid)
+      tl[i].dRel = float(dr)
+      tl[i].yRel = float(yr)
+      tl[i].valid = bool(v)
 
   radar.radarState.leadOne = mk_lead(r['l1_dRel'], r['l1_vLead'], r['l1_vLeadK'],
                                      r['l1_aLeadK'], r['l1_aLeadTau'], r['l1_status'],
@@ -86,7 +98,8 @@ def build_sm(r):
           'carControl': car_control.carControl, 'controlsState': control.controlsState,
           'selfdriveState': ss.selfdriveState, 'liveParameters': lp.liveParameters,
           'modelV2': model.modelV2, 'carStateSP': car_state_sp.carStateSP,
-          'liveMapDataSP': live_map_data_sp.liveMapDataSP, 'gpsLocation': gps.gpsLocation}
+          'liveMapDataSP': live_map_data_sp.liveMapDataSP, 'gpsLocation': gps.gpsLocation,
+          'cameraObjectTracksSP': cot.cameraObjectTracksSP}
 
 
 def replay(frames):

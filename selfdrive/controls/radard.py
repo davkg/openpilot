@@ -172,13 +172,14 @@ class VisionLeadSpeedFilter:
   Blend the position-derived speed into vLead weighted by the model's own velocity uncertainty
   (leadsV3 vStd): trust the model when it is confident (vStd low, lead close -- where precise
   braking matters) and fade toward the position-derived speed when the model is uncertain (vStd
-  high, lead far). Downward-only (never raise the reported speed), robustified (median + clip + EMA
-  on the noisy dRel derivative, which rejects re-ranging jumps) and rate-limited so it eases rather
-  than jumps. aLeadK is left untouched: this corrects a speed estimate, it does not imply the lead
-  is decelerating. Validated via offline replay (late_brake brakes ~3 s earlier; low-speed/gentle
+  high, lead far). Downward-only (never raise the reported speed), robustified (ego folded in before a
+  median + clip + EMA over the noisy dRel derivative, so the estimate is unbiased by ego accel/decel
+  and rejects re-ranging jumps) and rate-limited so it eases rather than jumps. aLeadK is left
+  untouched: this corrects a speed estimate, it does not imply the lead is decelerating.
+  Validated via offline replay (late_brake brakes ~3 s earlier; low-speed/gentle
   unchanged). Thresholds tuned on limited routes -- revisit as data accumulates.
   """
-  W_VSTD = (0.8, 1.6)        # leadsV3 vStd window: blend weight ramps 0 -> 1 across it
+  W_VSTD = (1.0, 1.6)        # leadsV3 vStd window: blend weight ramps 0 -> 1 across it (off below, where the model is confident < ~60 m)
   CLOSE_CLIP = (-12.0, 8.0)  # m/s -- plausible closing-rate bound (rejects dRel re-ranging jumps)
   V_RATE = 5.0               # m/s^2 -- max rate the corrected speed eases
   DREL_TAU, GAP_TAU = 0.3, 0.6  # s -- smoothing time constants
@@ -191,8 +192,9 @@ class VisionLeadSpeedFilter:
 
   def reset(self) -> None:
     self.ema_drel: float | None = None
-    self.closings: deque[float] = deque(maxlen=11)
-    self.gap_off = 0.0        # smoothed (position-derived speed - v_ego)
+    self.ema_vego: float | None = None   # v_ego smoothed to the closing's lag (for ego-matched, unbiased speed)
+    self.samples: deque[float] = deque(maxlen=11)   # position-derived ABSOLUTE lead-speed samples
+    self.v_abs: float | None = None      # smoothed position-derived lead speed
     self.v_corr: float | None = None
     self.miss = 0             # consecutive dropout frames
 
@@ -216,26 +218,30 @@ class VisionLeadSpeedFilter:
     v_model = lead['vLead']
     if self.ema_drel is None:
       self.ema_drel = d_rel
+      self.ema_vego = v_ego
+      self.v_abs = v_model
       self.v_corr = v_model
 
-    # position-derived speed: median-filtered, clipped closing rate added to v_ego. An implausible
-    # dRel step (re-ranging / dropout spike, common for a distant lead) is not real motion -- snap to
-    # it and emit no closing, so it can't leak through the median as an accel-undulating spike.
+    # Position-derived ABSOLUTE lead speed = ego speed + closing rate, with ego folded in *before* the
+    # smoothing so an ego accel/decel can't bias the estimate -- smoothing the closing alone and adding
+    # the current v_ego would leave a (v_ego_now - v_ego_lagged) ~ aEgo*tau error. v_ego is smoothed to
+    # the closing's lag for the match. An implausible dRel step (re-range/dropout spike, common for a
+    # distant lead) is not motion -- snap to it and hold the estimate so it can't leak through the
+    # median as a phantom-brake spike.
+    self.ema_vego += (dt / (self.DREL_TAU + dt)) * (v_ego - self.ema_vego)
     prev = self.ema_drel
     if abs(d_rel - prev) > self.JUMP_REJECT:
       self.ema_drel = d_rel
-      self.closings.append(0.0)
+      self.samples.append(self.v_abs)
     else:
       self.ema_drel += (dt / (self.DREL_TAU + dt)) * (d_rel - prev)
-      self.closings.append((self.ema_drel - prev) / dt)
-    med = sorted(self.closings)[len(self.closings) // 2]
-    med = min(max(med, self.CLOSE_CLIP[0]), self.CLOSE_CLIP[1])
-    self.gap_off += (dt / (self.GAP_TAU + dt)) * (med - self.gap_off)
-    gap_v = v_ego + self.gap_off
+      closing = min(max((self.ema_drel - prev) / dt, self.CLOSE_CLIP[0]), self.CLOSE_CLIP[1])
+      self.samples.append(self.ema_vego + closing)
+    self.v_abs += (dt / (self.GAP_TAU + dt)) * (sorted(self.samples)[len(self.samples) // 2] - self.v_abs)
 
     # vStd-weighted blend, downward-only, eased
     w = min(max((v_std - self.W_VSTD[0]) / (self.W_VSTD[1] - self.W_VSTD[0]), 0.0), 1.0)
-    target = min(v_model, (1.0 - w) * v_model + w * gap_v)
+    target = min(v_model, (1.0 - w) * v_model + w * self.v_abs)
     step = self.V_RATE * dt
     self.v_corr += min(max(target - self.v_corr, -step), step)
     v_new = min(self.v_corr, v_model)
