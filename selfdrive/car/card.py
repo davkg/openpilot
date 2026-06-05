@@ -284,6 +284,8 @@ class Car:
     if tracker is not None and self.sm.frame % 10 == 0:
       cot_send = messaging.new_message('cameraObjectTracksSP')
       cot_send.valid = CS.canValid
+      cot_send.cameraObjectTracksSP.leadDistance = float(tracker.lead_distance)
+      cot_send.cameraObjectTracksSP.leadValid = tracker.lead_valid
       snapshot = tracker.snapshot()
       tracks_list = cot_send.cameraObjectTracksSP.init('tracks', len(snapshot))
       for i, t in enumerate(snapshot):

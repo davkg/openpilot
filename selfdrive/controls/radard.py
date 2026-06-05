@@ -193,8 +193,12 @@ class VisionLeadSpeedFilter:
     self.gap_off = 0.0        # smoothed (position-derived speed - v_ego)
     self.v_corr: float | None = None
 
-  def correct(self, lead: dict[str, Any], v_ego: float, v_std: float) -> dict[str, Any]:
-    if (not lead['status']) or lead.get('radar', False):  # only vision leads
+  def correct(self, lead: dict[str, Any], v_ego: float, v_std: float, freeze: bool = False) -> dict[str, Any]:
+    # freeze: a lead re-range (cut-in) is in progress (see CutInDetector) -- the model's dRel is
+    # jumping between vehicles, so its derivative is a fabricated closing rate that would otherwise
+    # be turned into phantom braking. Pass the model's own vLead through and re-init, so the filter
+    # re-engages cleanly on the settled lead once the re-range is done.
+    if (not lead['status']) or lead.get('radar', False) or freeze:  # only steady vision leads
       self.reset()
       return lead
     dt = self.dt
@@ -225,6 +229,88 @@ class VisionLeadSpeedFilter:
       lead['vLeadK'] = float(v_new)
       lead['vRel'] = float(v_new - v_ego)
     return lead
+
+
+class CutInDetector:
+  """Detect a lead re-range (cut-in) on radarless cars using the stock camera's lead track.
+
+  The model's leadOne can smoothly re-range from a far lead onto a nearer car that cuts in. That
+  looks like a hard-decelerating lead (dRel collapsing ~100->40 m in ~1 s) even though nothing
+  actually decelerated -- it fabricates a closing rate that VisionLeadSpeedFilter would turn into
+  phantom braking. The stock forward camera reports identity-stable object tracks
+  (cameraObjectTracksSP); its lead track (slot 0) holds a steady distance while the model
+  re-ranges, so a cut-in shows up as either:
+
+    * the model's leadOne closing much faster than the camera's in-path lead actually is, or
+    * the camera lead's objectId changing.
+
+  Either flags a re-range; while flagged the speed filter is frozen. The camera only sees to
+  ~100 m, so when it has no in-path lead (lead beyond range, or only adjacent-lane cars) it can't
+  corroborate and never flags -- leaving the filter free to do its job on distant leads. The
+  camera's lateral is curve-compensated, so the in-path test holds on bends. (slot 0 == camera
+  TRACK_INDEX 1; the in-path gate guards the case where it parks on an adjacent car.)
+  """
+  Y_INPATH = 1.8       # m, |yRel| within this is in the ego path (vs an adjacent-lane car)
+  DIV_ENGAGE = 8.0     # m/s, model closing this much faster than the camera lead -> re-range
+  TAU = 0.3            # s, smoothing for dRel and the closing-rate estimates
+
+  def __init__(self, dt: float):
+    self.dt = dt
+    self.hold_frames = int(round(1.0 / dt))  # keep the flag up through the ~1 s re-range
+    self.reset()
+
+  def reset(self) -> None:
+    self.prev_id: int | None = None
+    self.ema_cam: float | None = None
+    self.ema_model: float | None = None
+    self.cam_closing = 0.0
+    self.model_closing = 0.0
+    self.flagged = False
+    self.hold = 0
+
+  def _ema(self, prev: float | None, x: float) -> float:
+    return x if prev is None else prev + (self.dt / (self.TAU + self.dt)) * (x - prev)
+
+  def update(self, cam_tracks, model_lead: dict[str, Any]) -> bool:
+    if not model_lead['status']:
+      self.reset()
+      return False
+
+    # slot 0 is the camera's designated lead; only trust it as a lead when it is in-path
+    cam = cam_tracks[0] if len(cam_tracks) else None
+    cam_inpath = cam is not None and cam.valid and abs(cam.yRel) < self.Y_INPATH
+
+    id_changed = False
+    if cam_inpath:
+      if self.prev_id is not None and cam.objectId != self.prev_id:
+        id_changed = True
+        self.ema_cam = float(cam.dRel)  # don't differentiate dRel across an identity change
+      prev = self.ema_cam
+      self.ema_cam = self._ema(self.ema_cam, float(cam.dRel))
+      if prev is not None and not id_changed:
+        self.cam_closing = self._ema(self.cam_closing, -(self.ema_cam - prev) / self.dt)
+      self.prev_id = cam.objectId
+    else:
+      self.prev_id = None
+      self.ema_cam = None
+      self.cam_closing = 0.0
+
+    prev_m = self.ema_model
+    self.ema_model = self._ema(self.ema_model, float(model_lead['dRel']))
+    if prev_m is not None:
+      self.model_closing = self._ema(self.model_closing, -(self.ema_model - prev_m) / self.dt)
+
+    divergence = self.model_closing - self.cam_closing
+    trigger = cam_inpath and (id_changed or divergence > self.DIV_ENGAGE)
+    if trigger:
+      self.flagged = True
+      self.hold = self.hold_frames
+    elif self.flagged:
+      if self.hold <= 0:
+        self.flagged = False
+      else:
+        self.hold -= 1
+    return self.flagged
 
 
 def get_lead(v_ego: float, ready: bool, tracks: dict[int, Track], lead_msg: capnp._DynamicStructReader,
@@ -285,6 +371,9 @@ class RadarD:
     # Correct the model's over-estimated distant-lead speed on radarless cars (see class docstring)
     self.lead_one_speed_filter = VisionLeadSpeedFilter(DT_MDL)
     self.lead_two_speed_filter = VisionLeadSpeedFilter(DT_MDL)
+    # Freeze the speed filter during a lead re-range / cut-in so a model lead swap isn't turned
+    # into phantom braking (uses the stock camera's object tracks; see CutInDetector)
+    self.cut_in_detector = CutInDetector(DT_MDL)
 
   def update(self, sm: messaging.SubMaster, rr: car.RadarData):
     self.ready = sm.seen['modelV2']
@@ -330,8 +419,12 @@ class RadarD:
       lead_one = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[0], model_v_ego, self.CP, self.CP_SP, low_speed_override=True)
       lead_two = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[1], model_v_ego, self.CP, self.CP_SP, low_speed_override=False)
       if self.CP.radarUnavailable:  # vision-only lead speed is over-estimated at distance; correct it
-        lead_one = self.lead_one_speed_filter.correct(lead_one, self.v_ego, leads_v3[0].vStd[0] if len(leads_v3[0].vStd) else 0.0)
-        lead_two = self.lead_two_speed_filter.correct(lead_two, self.v_ego, leads_v3[1].vStd[0] if len(leads_v3[1].vStd) else 0.0)
+        cam_tracks = sm['cameraObjectTracksSP'].tracks if sm.valid['cameraObjectTracksSP'] else []
+        freeze = self.cut_in_detector.update(cam_tracks, lead_one)  # lead re-range (cut-in) in progress?
+        v_std0 = leads_v3[0].vStd[0] if len(leads_v3[0].vStd) else 0.0
+        v_std1 = leads_v3[1].vStd[0] if len(leads_v3[1].vStd) else 0.0
+        lead_one = self.lead_one_speed_filter.correct(lead_one, self.v_ego, v_std0, freeze=freeze)
+        lead_two = self.lead_two_speed_filter.correct(lead_two, self.v_ego, v_std1, freeze=freeze)
       self.radar_state.leadOne = lead_one
       self.radar_state.leadTwo = lead_two
 
@@ -358,7 +451,7 @@ def main() -> None:
   cloudlog.info("radard got CarParamsSP")
 
   # *** setup messaging
-  sm = messaging.SubMaster(['modelV2', 'carState', 'liveTracks'], poll='modelV2')
+  sm = messaging.SubMaster(['modelV2', 'carState', 'liveTracks', 'cameraObjectTracksSP'], poll='modelV2')
   pm = messaging.PubMaster(['radarState'])
 
   RD = RadarD(CP, CP_SP, CP.radarDelay)

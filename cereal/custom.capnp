@@ -504,6 +504,11 @@ struct CameraObjectTracksSP @0xcb9fd56c7057593a {
   # filter by Track.valid. Longitudinal/lateral are in ego frame, meters.
   tracks @0 :List(Track);
 
+  # Single-lead distance from the camera's own CAMERA_LEAD message. Reported more accurately
+  # at range than the per-object tracks (which are tuned for the dash display).
+  leadDistance @1 :Float32;
+  leadValid @2 :Bool;
+
   struct Track {
     slot @0 :UInt8;          # 0..9 (camera's internal slot index)
     objectId @1 :UInt8;      # persistent track id; 0 when slot is empty
