@@ -182,6 +182,8 @@ class VisionLeadSpeedFilter:
   CLOSE_CLIP = (-12.0, 8.0)  # m/s -- plausible closing-rate bound (rejects dRel re-ranging jumps)
   V_RATE = 5.0               # m/s^2 -- max rate the corrected speed eases
   DREL_TAU, GAP_TAU = 0.3, 0.6  # s -- smoothing time constants
+  JUMP_REJECT = 8.0          # m -- a dRel step beyond this is a re-range/dropout spike, not motion
+  DROP_HOLD = 5              # frames (~0.25 s) to hold filter state through a brief lead dropout
 
   def __init__(self, dt: float):
     self.dt = dt
@@ -192,15 +194,23 @@ class VisionLeadSpeedFilter:
     self.closings: deque[float] = deque(maxlen=11)
     self.gap_off = 0.0        # smoothed (position-derived speed - v_ego)
     self.v_corr: float | None = None
+    self.miss = 0             # consecutive dropout frames
 
   def correct(self, lead: dict[str, Any], v_ego: float, v_std: float, freeze: bool = False) -> dict[str, Any]:
     # freeze: a lead re-range (cut-in) is in progress (see CutInDetector) -- the model's dRel is
     # jumping between vehicles, so its derivative is a fabricated closing rate that would otherwise
     # be turned into phantom braking. Pass the model's own vLead through and re-init, so the filter
     # re-engages cleanly on the settled lead once the re-range is done.
-    if (not lead['status']) or lead.get('radar', False) or freeze:  # only steady vision leads
+    if lead.get('radar', False) or freeze:  # cut-in/radar lead: don't correct, drop the smoothing state
       self.reset()
       return lead
+    # brief lead dropouts: hold internal state so we don't re-init (and spike) on reacquisition
+    if not lead['status']:
+      self.miss += 1
+      if self.miss > self.DROP_HOLD:
+        self.reset()
+      return lead
+    self.miss = 0
     dt = self.dt
     d_rel = lead['dRel']
     v_model = lead['vLead']
@@ -208,10 +218,16 @@ class VisionLeadSpeedFilter:
       self.ema_drel = d_rel
       self.v_corr = v_model
 
-    # position-derived speed: median-filtered, clipped closing rate added to v_ego
+    # position-derived speed: median-filtered, clipped closing rate added to v_ego. An implausible
+    # dRel step (re-ranging / dropout spike, common for a distant lead) is not real motion -- snap to
+    # it and emit no closing, so it can't leak through the median as an accel-undulating spike.
     prev = self.ema_drel
-    self.ema_drel += (dt / (self.DREL_TAU + dt)) * (d_rel - prev)
-    self.closings.append((self.ema_drel - prev) / dt)
+    if abs(d_rel - prev) > self.JUMP_REJECT:
+      self.ema_drel = d_rel
+      self.closings.append(0.0)
+    else:
+      self.ema_drel += (dt / (self.DREL_TAU + dt)) * (d_rel - prev)
+      self.closings.append((self.ema_drel - prev) / dt)
     med = sorted(self.closings)[len(self.closings) // 2]
     med = min(max(med, self.CLOSE_CLIP[0]), self.CLOSE_CLIP[1])
     self.gap_off += (dt / (self.GAP_TAU + dt)) * (med - self.gap_off)

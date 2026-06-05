@@ -26,7 +26,7 @@ ALLOW_THROTTLE_THRESHOLD_BP = [8.0, 25.0]   # m/s
 ALLOW_THROTTLE_THRESHOLD_V = [0.4, 0.7]     # gasPressProbs[1] threshold
 ALLOW_THROTTLE_HYSTERESIS = 0.1             # prob must exceed threshold + this to resume throttle (anti-chatter)
 MIN_ALLOW_THROTTLE_SPEED = 2.5
-BLENDED_TRANSITION_JERK = 2.0               # m/s^3 -- ease-in rate for the extra braking blended adds over the MPC
+BLENDED_TRANSITION_JERK = 1.0               # m/s^3 -- ease-in rate for the extra braking blended adds over the MPC
 BLENDED_TRANSITION_HARD_A = -1.2            # m/s^2 -- below this the blended target is applied immediately (no ease-in)
 
 # Forward-looking e2e accel cap (EXPERIMENT): never accelerate harder than the model wants to.
@@ -85,6 +85,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
     self.prev_accel_clip = [ACCEL_MIN, ACCEL_MAX]
     self.output_a_target = 0.0
+    self.prev_output_a_target = 0.0
     self.output_should_stop = False
 
     self.v_desired_trajectory = np.zeros(CONTROL_N)
@@ -143,6 +144,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       self.v_desired_filter.x = v_ego
       # Clip aEgo to cruise limits to prevent large accelerations when becoming active
       self.a_desired = np.clip(sm['carState'].aEgo, accel_clip[0], accel_clip[1])
+      self.prev_output_a_target = self.a_desired  # keep the blended rate-limit baseline sane on reset
 
     # Prevent divergence, smooth in current v_ego
     self.v_desired_filter.x = max(0.0, self.v_desired_filter.update(v_ego))
@@ -215,7 +217,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # can cause abrupt changes in decel. Higher decel targets are applied immediately.
     # Always allow MPC braking through immediately, this is no-op in acc mode.
     if not reset_state and output_a_target >= BLENDED_TRANSITION_HARD_A:
-      rate_limited = max(output_a_target, self.output_a_target - BLENDED_TRANSITION_JERK * self.dt)
+      rate_limited = max(output_a_target, self.prev_output_a_target - BLENDED_TRANSITION_JERK * self.dt)
       output_a_target = min(rate_limited, output_a_target_mpc)
 
     # Forward-looking e2e accel cap (see constants): cap the upper accel clip at the model's
@@ -227,6 +229,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     for idx in range(2):
       accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)
     self.output_a_target = np.clip(output_a_target, accel_clip[0], accel_clip[1])
+    self.prev_output_a_target = self.output_a_target
     self.prev_accel_clip = accel_clip
 
     self.coast_active = (not self.allow_throttle and self.mpc.source == LongitudinalPlanSource.cruise
