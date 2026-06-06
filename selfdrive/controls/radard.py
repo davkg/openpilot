@@ -163,50 +163,80 @@ def get_RadarState_from_vision(lead_msg: capnp._DynamicStructReader, v_ego: floa
 class VisionLeadSpeedFilter:
   """Correct the model's over-estimated distant-lead speed on radarless cars.
 
-  On a radarless car the lead's vLead comes straight from the model, which over-reports a distant
-  lead's speed (biased toward ego speed) and converges only as the lead closes -- so the planner
-  doesn't realize the lead is slower until it is close, and brakes late. The lead's *position*
-  (dRel) is more reliable than its inferred velocity, so a position-derived speed
-  (v_ego + d(dRel)/dt) recovers the true speed.
-
-  Blend the position-derived speed into vLead weighted by the model's own velocity uncertainty
-  (leadsV3 vStd): trust the model when it is confident (vStd low, lead close -- where precise
-  braking matters) and fade toward the position-derived speed when the model is uncertain (vStd
-  high, lead far). Downward-only (never raise the reported speed), robustified (ego folded in before a
-  median + clip + EMA over the noisy dRel derivative, so the estimate is unbiased by ego accel/decel
-  and rejects re-ranging jumps) and rate-limited so it eases rather than jumps. aLeadK is left
-  untouched: this corrects a speed estimate, it does not imply the lead is decelerating.
-  Validated via offline replay (late_brake brakes ~3 s earlier; low-speed/gentle
-  unchanged). Thresholds tuned on limited routes -- revisit as data accumulates.
+  The model over-reports a distant lead's speed (biased toward ego speed), so the planner brakes late.
+  Position is more reliable than the model's velocity, so a position-derived speed (v_ego + d(dist)/dt)
+  recovers it. Position fuses two sources by k_cam, the camera's blend weight (1 = LKAS camera, 0 =
+  model): the model's dRel (always available, noisy -> heavy smoothing) and the LKAS camera's
+  leadDistance (cleaner in ~55-110 m -> light smoothing). k_cam -> 0 when the camera can't see (no
+  leadValid / out of band), so the estimate falls back to the model.
+  The result blends into vLead by the model's velocity uncertainty (vStd: trust the model close), is
+  ego-matched before smoothing (so ego accel can't bias it), downward-only and rate-limited. aLeadK is
+  untouched (a speed estimate, not a deceleration). Tuned on daytime routes; revisit leadValid in rain.
   """
-  W_VSTD = (1.0, 1.6)        # leadsV3 vStd window: blend weight ramps 0 -> 1 across it (off below, where the model is confident < ~60 m)
-  CLOSE_CLIP = (-12.0, 8.0)  # m/s -- plausible closing-rate bound (rejects dRel re-ranging jumps)
+  W_VSTD = (1.0, 1.6)        # vStd blend window: weight ramps 0->1 (off below ~60 m, where the model is confident)
+  CLOSE_CLIP = (-12.0, 8.0)  # m/s -- plausible closing-rate bound
   V_RATE = 5.0               # m/s^2 -- max rate the corrected speed eases
-  DREL_TAU, GAP_TAU = 0.3, 0.6  # s -- smoothing time constants
-  JUMP_REJECT = 8.0          # m -- a dRel step beyond this is a re-range/dropout spike, not motion
-  DROP_HOLD = 5              # frames (~0.25 s) to hold filter state through a brief lead dropout
+  JUMP_REJECT = 8.0          # m -- a position step beyond this is a re-range, not motion
+  DROP_HOLD = 5              # frames to hold state through a brief lead dropout
+  MODEL_TAU = (0.3, 0.6)     # s -- (dRel EMA, gap EMA), noisy model branch
+  MODEL_MED = 11             # median window, model branch
+  CAM_TAU = (0.15, 0.25)     # s -- lighter smoothing, clean leadDistance branch
+  CAM_MED = 5
+  CAM_BAND_LO = (55.0, 65.0)   # m -- camera weight ramps 0->1 (half at the ~60 m model edge)
+  CAM_BAND_HI = (90.0, 110.0)  # m -- ramps 1->0 near the camera's ~100 m limit
 
   def __init__(self, dt: float):
     self.dt = dt
     self.reset()
 
   def reset(self) -> None:
-    self.ema_drel: float | None = None
-    self.ema_vego: float | None = None   # v_ego smoothed to the closing's lag (for ego-matched, unbiased speed)
-    self.samples: deque[float] = deque(maxlen=11)   # position-derived ABSOLUTE lead-speed samples
-    self.v_abs: float | None = None      # smoothed position-derived lead speed
+    self.model = self._new_branch()      # model dRel branch (always-available fallback)
+    self.cam = self._new_branch()        # camera leadDistance branch
     self.v_corr: float | None = None
     self.miss = 0             # consecutive dropout frames
 
-  def correct(self, lead: dict[str, Any], v_ego: float, v_std: float, freeze: bool = False) -> dict[str, Any]:
-    # freeze: a lead re-range (cut-in) is in progress (see CutInDetector) -- the model's dRel is
-    # jumping between vehicles, so its derivative is a fabricated closing rate that would otherwise
-    # be turned into phantom braking. Pass the model's own vLead through and re-init, so the filter
-    # re-engages cleanly on the settled lead once the re-range is done.
-    if lead.get('radar', False) or freeze:  # cut-in/radar lead: don't correct, drop the smoothing state
+  @staticmethod
+  def _new_branch() -> dict[str, Any]:
+    return {'ema_drel': None, 'ema_vego': None, 'samples': deque(maxlen=11), 'v_abs': None}
+
+  def _branch_speed(self, br: dict[str, Any], pos: float, v_ego: float, v_model: float,
+                    drel_tau: float, gap_tau: float, med_n: int) -> float:
+    # ABSOLUTE lead speed = ego + closing, ego folded in BEFORE smoothing so ego accel can't bias it.
+    # A position step beyond JUMP_REJECT is a re-range -- snap to it, emit no closing.
+    if br['ema_drel'] is None:
+      br['ema_drel'] = pos
+      br['ema_vego'] = v_ego
+      br['v_abs'] = v_model
+    br['ema_vego'] += (self.dt / (drel_tau + self.dt)) * (v_ego - br['ema_vego'])
+    prev = br['ema_drel']
+    if abs(pos - prev) > self.JUMP_REJECT:
+      br['ema_drel'] = pos
+      br['samples'].append(br['v_abs'])
+    else:
+      br['ema_drel'] += (self.dt / (drel_tau + self.dt)) * (pos - prev)
+      closing = min(max((br['ema_drel'] - prev) / self.dt, self.CLOSE_CLIP[0]), self.CLOSE_CLIP[1])
+      br['samples'].append(br['ema_vego'] + closing)
+    s = list(br['samples'])[-med_n:]
+    br['v_abs'] += (self.dt / (gap_tau + self.dt)) * (sorted(s)[len(s) // 2] - br['v_abs'])
+    return br['v_abs']
+
+  def _cam_weight(self, lead_distance: float, lead_valid: bool) -> float:
+    # camera blend weight (1 = camera, 0 = model): 0 unless leadValid and in the mid-far band
+    if not lead_valid:
+      return 0.0
+    lo, hi = self.CAM_BAND_LO, self.CAM_BAND_HI
+    up = min(max((lead_distance - lo[0]) / (lo[1] - lo[0]), 0.0), 1.0)
+    down = min(max((hi[1] - lead_distance) / (hi[1] - hi[0]), 0.0), 1.0)
+    return up * down
+
+  def correct(self, lead: dict[str, Any], v_ego: float, v_std: float, lead_distance: float,
+              lead_valid: bool, freeze: bool = False) -> dict[str, Any]:
+    # cut-in re-range (CutInDetector) or radar lead: dRel derivative is a fabricated closing rate --
+    # pass vLead through and re-init.
+    if lead.get('radar', False) or freeze:
       self.reset()
       return lead
-    # brief lead dropouts: hold internal state so we don't re-init (and spike) on reacquisition
+    # brief dropouts: hold state so we don't re-init (and spike) on reacquisition
     if not lead['status']:
       self.miss += 1
       if self.miss > self.DROP_HOLD:
@@ -214,34 +244,24 @@ class VisionLeadSpeedFilter:
       return lead
     self.miss = 0
     dt = self.dt
-    d_rel = lead['dRel']
     v_model = lead['vLead']
-    if self.ema_drel is None:
-      self.ema_drel = d_rel
-      self.ema_vego = v_ego
-      self.v_abs = v_model
+    if self.v_corr is None:
       self.v_corr = v_model
 
-    # Position-derived ABSOLUTE lead speed = ego speed + closing rate, with ego folded in *before* the
-    # smoothing so an ego accel/decel can't bias the estimate -- smoothing the closing alone and adding
-    # the current v_ego would leave a (v_ego_now - v_ego_lagged) ~ aEgo*tau error. v_ego is smoothed to
-    # the closing's lag for the match. An implausible dRel step (re-range/dropout spike, common for a
-    # distant lead) is not motion -- snap to it and hold the estimate so it can't leak through the
-    # median as a phantom-brake spike.
-    self.ema_vego += (dt / (self.DREL_TAU + dt)) * (v_ego - self.ema_vego)
-    prev = self.ema_drel
-    if abs(d_rel - prev) > self.JUMP_REJECT:
-      self.ema_drel = d_rel
-      self.samples.append(self.v_abs)
+    # model branch (always-available fallback) + camera branch (only while it reports a lead; reset
+    # when it can't, so it re-inits cleanly on reacquisition), fused by k_cam.
+    v_abs_model = self._branch_speed(self.model, lead['dRel'], v_ego, v_model, *self.MODEL_TAU, self.MODEL_MED)
+    k_cam = self._cam_weight(lead_distance, lead_valid)
+    if lead_valid:
+      v_abs_cam = self._branch_speed(self.cam, lead_distance, v_ego, v_model, *self.CAM_TAU, self.CAM_MED)
     else:
-      self.ema_drel += (dt / (self.DREL_TAU + dt)) * (d_rel - prev)
-      closing = min(max((self.ema_drel - prev) / dt, self.CLOSE_CLIP[0]), self.CLOSE_CLIP[1])
-      self.samples.append(self.ema_vego + closing)
-    self.v_abs += (dt / (self.GAP_TAU + dt)) * (sorted(self.samples)[len(self.samples) // 2] - self.v_abs)
+      self.cam = self._new_branch()
+      v_abs_cam = v_abs_model
+    v_abs = k_cam * v_abs_cam + (1.0 - k_cam) * v_abs_model
 
-    # vStd-weighted blend, downward-only, eased
+    # vStd-weighted blend (model velocity vs position-derived), downward-only, eased
     w = min(max((v_std - self.W_VSTD[0]) / (self.W_VSTD[1] - self.W_VSTD[0]), 0.0), 1.0)
-    target = min(v_model, (1.0 - w) * v_model + w * self.v_abs)
+    target = min(v_model, (1.0 - w) * v_model + w * v_abs)
     step = self.V_RATE * dt
     self.v_corr += min(max(target - self.v_corr, -step), step)
     v_new = min(self.v_corr, v_model)
@@ -254,24 +274,15 @@ class VisionLeadSpeedFilter:
 
 
 class CutInDetector:
-  """Detect a lead re-range (cut-in) on radarless cars using the stock camera's lead track.
+  """Detect a lead re-range (cut-in) on radarless cars using the stock LKAS camera's lead.
 
-  The model's leadOne can smoothly re-range from a far lead onto a nearer car that cuts in. That
-  looks like a hard-decelerating lead (dRel collapsing ~100->40 m in ~1 s) even though nothing
-  actually decelerated -- it fabricates a closing rate that VisionLeadSpeedFilter would turn into
-  phantom braking. The stock forward camera reports a designated lead (cameraObjectTracksSP:
-  leadDistance/leadValid, finer and less range-compressed than the slot-0 object track) alongside
-  identity-stable object tracks; the camera's lead distance holds steady while the model re-ranges,
-  so a cut-in shows up as either:
-
-    * the model's leadOne closing much faster than the camera's in-path lead actually is, or
-    * the camera lead's objectId changing.
-
-  Either flags a re-range; while flagged the speed filter is frozen. The camera only sees to
-  ~100 m, so when it has no in-path lead (lead beyond range, or only adjacent-lane cars) it can't
-  corroborate and never flags -- leaving the filter free to do its job on distant leads. The
-  camera's lateral is curve-compensated, so the in-path test holds on bends. (slot 0 == camera
-  TRACK_INDEX 1; the in-path gate guards the case where it parks on an adjacent car.)
+  The model's leadOne can re-range from a far lead onto a nearer cut-in car -- a fabricated closing
+  rate (~100->40 m in ~1 s) that VisionLeadSpeedFilter would turn into phantom braking. The camera's
+  designated lead (leadDistance/leadValid) holds steady through this, so a cut-in shows up as either
+  the model closing much faster than the camera lead, or the camera lead's objectId changing. Either
+  freezes the speed filter (~1 s). With no in-path camera lead it can't corroborate and never flags,
+  leaving the filter free on distant leads. slot 0 supplies objectId + (curve-compensated) yRel for
+  the in-path gate; leadDistance supplies the distance.
   """
   Y_INPATH = 1.8       # m, |yRel| within this is in the ego path (vs an adjacent-lane car)
   DIV_ENGAGE = 8.0     # m/s, model closing this much faster than the camera lead -> re-range
@@ -300,17 +311,14 @@ class CutInDetector:
       self.reset()
       return False
 
-    # The camera's designated lead: leadValid is the authoritative presence and leadDistance the
-    # distance (finer and less range-compressed than the slot-0 object track). slot 0 supplies the
-    # identity (objectId) and lateral (yRel) that leadDistance lacks; only trust it when in-path.
+    # camera lead: leadValid = presence, leadDistance = distance; slot 0 = objectId + yRel (in-path)
     cam = cam_tracks[0] if len(cam_tracks) else None
     cam_inpath = lead_valid and cam is not None and cam.valid and abs(cam.yRel) < self.Y_INPATH
 
     id_changed = False
     if cam_inpath:
-      # a leadDistance step beyond JUMP_REJECT is a camera re-range, not motion -- snap to it and emit
-      # no closing (else it fabricates a closing spike -> phantom divergence). An objectId change is a
-      # re-range that ALSO arms the trigger (a different car became the lead).
+      # a leadDistance jump is a camera re-range -- snap, emit no closing; an objectId change is a
+      # re-range that also arms the trigger
       rerange = self.ema_cam is not None and abs(lead_distance - self.ema_cam) > self.JUMP_REJECT
       if self.prev_id is not None and cam.objectId != self.prev_id:
         id_changed = True
@@ -458,8 +466,10 @@ class RadarD:
         freeze = self.cut_in_detector.update(cam_tracks, cot.leadDistance, cot_valid and cot.leadValid, lead_one)
         v_std0 = leads_v3[0].vStd[0] if len(leads_v3[0].vStd) else 0.0
         v_std1 = leads_v3[1].vStd[0] if len(leads_v3[1].vStd) else 0.0
-        lead_one = self.lead_one_speed_filter.correct(lead_one, self.v_ego, v_std0, freeze=freeze)
-        lead_two = self.lead_two_speed_filter.correct(lead_two, self.v_ego, v_std1, freeze=freeze)
+        cam_lead_valid = cot_valid and cot.leadValid
+        # leadOne is the camera's designated in-path lead -> fuse leadDistance; leadTwo has no camera lead -> model only
+        lead_one = self.lead_one_speed_filter.correct(lead_one, self.v_ego, v_std0, cot.leadDistance, cam_lead_valid, freeze=freeze)
+        lead_two = self.lead_two_speed_filter.correct(lead_two, self.v_ego, v_std1, 0.0, False, freeze=freeze)
       self.radar_state.leadOne = lead_one
       self.radar_state.leadTwo = lead_two
 
