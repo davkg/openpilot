@@ -19,6 +19,7 @@ struct LoggerdState {
   std::atomic<int> ready_to_rotate{0};  // count of encoders ready to rotate
   int max_waiting = 0;
   double last_rotate_tms = 0.;      // last rotate time in ms
+  uint64_t road_start_mono = 0;     // qcamera's first-frame timestampSof = route t=0 (audio head-align anchor)
 };
 
 void logger_rotate(LoggerdState *s) {
@@ -120,6 +121,12 @@ int handle_encoder_msg(LoggerdState *s, Message *msg, std::string &name, struct 
   auto event = cmsg.getRoot<cereal::Event>();
   auto edata = (event.*(encoder_info.get_encode_data_func))();
   auto idx = edata.getIdx();
+
+  // Anchor the route's t=0 to qcamera's first frame (same field/clock ingest uses
+  // for video_start_mono). Used to head-align the audio file — see the audio path.
+  if (s->road_start_mono == 0 && name == "qRoadEncodeData") {
+    s->road_start_mono = idx.getTimestampSof();
+  }
 
   // encoderd can have started long before loggerd
   if (!re.seen_first_packet) {
@@ -301,6 +308,22 @@ void loggerd_thread() {
             if (!audio_writer) {
               audio_writer.reset(new VideoWriter(s.logger.segmentPath().c_str(), QAUDIO_FILE,
                                                  true, 0, 0, 0, cereal::EncodeIndex::Type::QCAMERA_H264, true));
+              // The mic (portaudio) usually finishes initializing after the cameras,
+              // by a boot-dependent amount (observed ~0.05-2s), leaving the route's
+              // first audio file missing its head — otherwise the qaudio.aac rendition
+              // sits ahead of the video for the whole route. Prepend silence for the
+              // gap between route t=0 (qcamera's first frame, same clock) and the first
+              // audio sample so audio aligns per segment. If the mic instead leads the
+              // cameras, the guards below (anchor unset, or first sample at/before it)
+              // skip padding — there's no head gap to fill.
+              if (s.road_start_mono != 0 && event.getLogMonoTime() > s.road_start_mono) {
+                int64_t head_us = (event.getLogMonoTime() - s.road_start_mono) / 1000;
+                if (head_us > 0 && head_us < SEGMENT_LENGTH * 1000000LL) {
+                  std::vector<int16_t> silence((head_us * sample_rate) / 1000000, 0);
+                  audio_writer->write_audio((uint8_t*)silence.data(), silence.size() * sizeof(int16_t),
+                                            s.road_start_mono / 1000, sample_rate);
+                }
+              }
             } else {
               audio_writer->rotate_audio_file(s.logger.segmentPath().c_str(), QAUDIO_FILE);
             }
