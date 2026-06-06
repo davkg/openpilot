@@ -16,10 +16,14 @@ def lead(dRel, status=True):
 
 
 def run(det, frames):
-  """frames: list of (cam_tracks, model_lead). Returns whether it flagged at any point."""
+  """frames: list of (cam_tracks, model_lead). Returns whether it flagged at any point.
+  leadDistance/leadValid derive from slot 0 here (in these mocks the camera lead == slot 0)."""
   flagged = False
   for cam_tracks, model_lead in frames:
-    flagged = det.update(cam_tracks, model_lead) or flagged
+    cam = cam_tracks[0] if cam_tracks else None
+    lead_distance = cam.dRel if cam else 0.0
+    lead_valid = cam.valid if cam else False
+    flagged = det.update(cam_tracks, lead_distance, lead_valid, model_lead) or flagged
   return flagged
 
 
@@ -78,9 +82,21 @@ def test_flag_releases_after_rerange():
   md = 108.0
   for _ in range(30):
     md = max(38.0, md - 2.5)
-    det.update([MockTrack(objectId=2, dRel=77.0, yRel=0.0)], lead(md))
+    det.update([MockTrack(objectId=2, dRel=77.0, yRel=0.0)], 77.0, True, lead(md))
   assert det.flagged
   # settled: camera lead is now the cut-in car at a steady distance matching the model
   for _ in range(60):
-    det.update([MockTrack(objectId=12, dRel=38.0, yRel=0.0)], lead(38.0))
+    det.update([MockTrack(objectId=12, dRel=38.0, yRel=0.0)], 38.0, True, lead(38.0))
   assert not det.flagged
+
+
+def test_no_leadvalid_never_flags():
+  # leadValid False (camera reports no designated lead) blocks flagging even with an in-path slot-0
+  # track and a re-ranging model -- without camera corroboration the filter must stay free
+  det = CutInDetector(DT)
+  md = 108.0
+  flagged = False
+  for _ in range(40):
+    md = max(38.0, md - 2.3)
+    flagged = det.update([MockTrack(objectId=2, dRel=77.0, yRel=0.0)], 77.0, False, lead(md)) or flagged
+  assert not flagged
