@@ -163,73 +163,34 @@ def get_RadarState_from_vision(lead_msg: capnp._DynamicStructReader, v_ego: floa
 class VisionLeadSpeedFilter:
   """Correct the model's over-estimated distant-lead speed on radarless cars.
 
-  The model over-reports a distant lead's speed (biased toward ego speed), so the planner brakes late.
-  Position is more reliable than the model's velocity, so a position-derived speed (v_ego + d(dist)/dt)
-  recovers it. Position fuses two sources by k_cam, the camera's blend weight (1 = LKAS camera, 0 =
-  model): the model's dRel (always available, noisy -> heavy smoothing) and the LKAS camera's
-  leadDistance (cleaner in ~55-110 m -> light smoothing). k_cam -> 0 when the camera can't see (no
-  leadValid / out of band), so the estimate falls back to the model.
-  The result blends into vLead by the model's velocity uncertainty (vStd: trust the model close), is
-  ego-matched before smoothing (so ego accel can't bias it), downward-only and rate-limited. aLeadK is
-  untouched (a speed estimate, not a deceleration). Tuned on daytime routes; revisit leadValid in rain.
+  The model over-reports distant (>~70m) lead speed, causing late braking. Position is more
+  reliable, so we derive speed from d(distance)/dt using the LKAS camera's leadDistance
+  (less noisy), falling back to the model's dRel when not available (e.g. due to poor
+  visibility or the model seeing the lead first). The result blends into vLead using the
+  model's velocity uncertainty (vStd: high trust nearby, low trust distant), is downward-only
+  and rate-limited. aLeadK is untouched.
   """
   W_VSTD = (1.0, 1.6)        # vStd blend window: weight ramps 0->1 (off below ~60 m, where the model is confident)
-  CLOSE_OPEN_MAX = 8.0       # m/s -- max opening rate (caps upward re-range spikes)
-  CLOSE_MARGIN = 2.0         # m/s -- closing capped at -(vEgo+margin), so vLead can't read below ~0 (a stopped lead reads 0, not vEgo-12)
+  OPEN_MAX = 8.0             # m/s -- max opening rate (caps upward re-range spikes)
+  CLOSE_MARGIN = 2.0         # m/s -- closing capped at -(vEgo+margin); floors vLead at ~-margin
   V_RATE = 5.0               # m/s^2 -- max rate the corrected speed eases
-  JUMP_REJECT = 8.0          # m -- a position step beyond this is a re-range, not motion
+  JUMP_MARGIN = 8.0          # m -- re-range margin; threshold = v_ego*(drel_tau+dt) + this (so fast steady closing isn't a re-range)
   DROP_HOLD = 5              # frames to hold state through a brief lead dropout
-  MODEL_TAU = (0.3, 0.6)     # s -- (dRel EMA, gap EMA), noisy model branch
-  MODEL_MED = 11             # median window, model branch
-  CAM_TAU = (0.15, 0.25)     # s -- lighter smoothing, clean leadDistance branch
-  CAM_MED = 5
-  CAM_BAND_LO = (55.0, 65.0)   # m -- camera weight ramps 0->1 (half at the ~60 m model edge)
-  CAM_BAND_HI = (90.0, 110.0)  # m -- ramps 1->0 near the camera's ~100 m limit
+  MODEL_TAU = (0.4, 0.7)     # s -- (dRel EMA, speed EMA), heavy smoothing, source is pretty noisy
+  CAM_TAU = (0.15, 0.25)     # s -- lighter smoothing for the clean lkas camera leadDistance source
 
   def __init__(self, dt: float):
     self.dt = dt
     self.reset()
 
   def reset(self) -> None:
-    self.model = self._new_branch()      # model dRel branch (always-available fallback)
-    self.cam = self._new_branch()        # camera leadDistance branch
-    self.v_corr: float | None = None
-    self.miss = 0             # consecutive dropout frames
-
-  @staticmethod
-  def _new_branch() -> dict[str, Any]:
-    return {'ema_drel': None, 'ema_vego': None, 'samples': deque(maxlen=11), 'v_abs': None}
-
-  def _branch_speed(self, br: dict[str, Any], pos: float, v_ego: float, v_model: float,
-                    drel_tau: float, gap_tau: float, med_n: int) -> float:
-    # ABSOLUTE lead speed = ego + closing, ego folded in BEFORE smoothing so ego accel can't bias it.
-    # A position step beyond JUMP_REJECT is a re-range -- snap to it, emit no closing.
-    if br['ema_drel'] is None:
-      br['ema_drel'] = pos
-      br['ema_vego'] = v_ego
-      br['v_abs'] = v_model
-    br['ema_vego'] += (self.dt / (drel_tau + self.dt)) * (v_ego - br['ema_vego'])
-    prev = br['ema_drel']
-    if abs(pos - prev) > self.JUMP_REJECT:
-      br['ema_drel'] = pos
-      br['samples'].append(br['v_abs'])
-    else:
-      br['ema_drel'] += (self.dt / (drel_tau + self.dt)) * (pos - prev)
-      lo = -(br['ema_vego'] + self.CLOSE_MARGIN)   # vEgo-relative floor: a lead can't move backward, so vLead >= ~0
-      closing = min(max((br['ema_drel'] - prev) / self.dt, lo), self.CLOSE_OPEN_MAX)
-      br['samples'].append(br['ema_vego'] + closing)
-    s = list(br['samples'])[-med_n:]
-    br['v_abs'] += (self.dt / (gap_tau + self.dt)) * (sorted(s)[len(s) // 2] - br['v_abs'])
-    return br['v_abs']
-
-  def _cam_weight(self, lead_distance: float, lead_valid: bool) -> float:
-    # camera blend weight (1 = camera, 0 = model): 0 unless leadValid and in the mid-far band
-    if not lead_valid:
-      return 0.0
-    lo, hi = self.CAM_BAND_LO, self.CAM_BAND_HI
-    up = min(max((lead_distance - lo[0]) / (lo[1] - lo[0]), 0.0), 1.0)
-    down = min(max((hi[1] - lead_distance) / (hi[1] - hi[0]), 0.0), 1.0)
-    return up * down
+    self.ready = False                    # state initialized on the first valid frame
+    self.ema_drel = 0.0                   # smoothed position of the active source (dRel or leadDistance)
+    self.ema_vego = 0.0                   # v_ego smoothed to the closing's lag (ego-matched, unbiased)
+    self.v_abs = 0.0                      # smoothed position-derived lead speed
+    self.v_corr = 0.0                     # rate-limited corrected speed
+    self.miss = 0                         # consecutive dropout frames
+    self.src_cam: bool | None = None      # last active source (True = camera); snap on a switch
 
   def correct(self, lead: dict[str, Any], v_ego: float, v_std: float, lead_distance: float,
               lead_valid: bool, freeze: bool = False) -> dict[str, Any]:
@@ -247,23 +208,40 @@ class VisionLeadSpeedFilter:
     self.miss = 0
     dt = self.dt
     v_model = lead['vLead']
-    if self.v_corr is None:
+
+    # Pick the position source: the LKAS camera's leadDistance whenever it's valid (clean across its
+    # whole range; the vStd blend below already fades the correction out close-in where the model is
+    # confident, so no distance floor is needed), else the model's dRel. Smoothing is matched to source.
+    use_cam = lead_valid
+    pos = lead_distance if use_cam else lead['dRel']
+    drel_tau, gap_tau = self.CAM_TAU if use_cam else self.MODEL_TAU
+    if not self.ready:
+      self.ready = True
+      self.ema_drel = pos
+      self.ema_vego = v_ego
+      self.v_abs = v_model
       self.v_corr = v_model
 
-    # model branch (always-available fallback) + camera branch (only while it reports a lead; reset
-    # when it can't, so it re-inits cleanly on reacquisition), fused by k_cam.
-    v_abs_model = self._branch_speed(self.model, lead['dRel'], v_ego, v_model, *self.MODEL_TAU, self.MODEL_MED)
-    k_cam = self._cam_weight(lead_distance, lead_valid)
-    if lead_valid:
-      v_abs_cam = self._branch_speed(self.cam, lead_distance, v_ego, v_model, *self.CAM_TAU, self.CAM_MED)
+    # ABSOLUTE lead speed = ego + closing, ego folded in BEFORE smoothing (so ego accel can't bias it).
+    # Snap (no closing) on a source switch (the two sources have a distance offset) or a re-range; the
+    # re-range threshold is vEgo-relative (~v_ego*(drel_tau+dt)) so a fast approach to a stopped/slow
+    # lead isn't mistaken for one.
+    self.ema_vego += (dt / (drel_tau + dt)) * (v_ego - self.ema_vego)
+    prev = self.ema_drel
+    if use_cam != self.src_cam or abs(pos - prev) > v_ego * (drel_tau + dt) + self.JUMP_MARGIN:
+      self.ema_drel = pos
+      sample = self.v_abs
     else:
-      self.cam = self._new_branch()
-      v_abs_cam = v_abs_model
-    v_abs = k_cam * v_abs_cam + (1.0 - k_cam) * v_abs_model
+      self.ema_drel += (dt / (drel_tau + dt)) * (pos - prev)
+      lo = -(self.ema_vego + self.CLOSE_MARGIN)   # a lead can't move backward, so vLead >= ~0
+      closing = min(max((self.ema_drel - prev) / dt, lo), self.OPEN_MAX)
+      sample = self.ema_vego + closing
+    self.src_cam = use_cam
+    self.v_abs += (dt / (gap_tau + dt)) * (sample - self.v_abs)
 
     # vStd-weighted blend (model velocity vs position-derived), downward-only, eased
     w = min(max((v_std - self.W_VSTD[0]) / (self.W_VSTD[1] - self.W_VSTD[0]), 0.0), 1.0)
-    target = min(v_model, (1.0 - w) * v_model + w * v_abs)
+    target = min(v_model, (1.0 - w) * v_model + w * self.v_abs)
     step = self.V_RATE * dt
     self.v_corr += min(max(target - self.v_corr, -step), step)
     v_new = min(self.v_corr, v_model)
