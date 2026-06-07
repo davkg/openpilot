@@ -174,7 +174,8 @@ class VisionLeadSpeedFilter:
   untouched (a speed estimate, not a deceleration). Tuned on daytime routes; revisit leadValid in rain.
   """
   W_VSTD = (1.0, 1.6)        # vStd blend window: weight ramps 0->1 (off below ~60 m, where the model is confident)
-  CLOSE_CLIP = (-12.0, 8.0)  # m/s -- plausible closing-rate bound
+  CLOSE_OPEN_MAX = 8.0       # m/s -- max opening rate (caps upward re-range spikes)
+  CLOSE_MARGIN = 2.0         # m/s -- closing capped at -(vEgo+margin), so vLead can't read below ~0 (a stopped lead reads 0, not vEgo-12)
   V_RATE = 5.0               # m/s^2 -- max rate the corrected speed eases
   JUMP_REJECT = 8.0          # m -- a position step beyond this is a re-range, not motion
   DROP_HOLD = 5              # frames to hold state through a brief lead dropout
@@ -214,7 +215,8 @@ class VisionLeadSpeedFilter:
       br['samples'].append(br['v_abs'])
     else:
       br['ema_drel'] += (self.dt / (drel_tau + self.dt)) * (pos - prev)
-      closing = min(max((br['ema_drel'] - prev) / self.dt, self.CLOSE_CLIP[0]), self.CLOSE_CLIP[1])
+      lo = -(br['ema_vego'] + self.CLOSE_MARGIN)   # vEgo-relative floor: a lead can't move backward, so vLead >= ~0
+      closing = min(max((br['ema_drel'] - prev) / self.dt, lo), self.CLOSE_OPEN_MAX)
       br['samples'].append(br['ema_vego'] + closing)
     s = list(br['samples'])[-med_n:]
     br['v_abs'] += (self.dt / (gap_tau + self.dt)) * (sorted(s)[len(s) // 2] - br['v_abs'])
