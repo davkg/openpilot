@@ -193,10 +193,9 @@ class VisionLeadSpeedFilter:
     self.src_cam: bool | None = None      # last active source (True = camera); snap on a switch
 
   def correct(self, lead: dict[str, Any], v_ego: float, v_std: float, lead_distance: float,
-              lead_valid: bool, freeze: bool = False) -> dict[str, Any]:
-    # cut-in re-range (CutInDetector) or radar lead: dRel derivative is a fabricated closing rate --
-    # pass vLead through and re-init.
-    if lead.get('radar', False) or freeze:
+              lead_valid: bool) -> dict[str, Any]:
+    # radar lead: dRel is already a good measurement, not the model's over-estimate -- pass through.
+    if lead.get('radar', False):
       self.reset()
       return lead
     # brief dropouts: hold state so we don't re-init (and spike) on reacquisition
@@ -251,86 +250,6 @@ class VisionLeadSpeedFilter:
       lead['vLeadK'] = float(v_new)
       lead['vRel'] = float(v_new - v_ego)
     return lead
-
-
-class CutInDetector:
-  """Detect a lead re-range (cut-in) on radarless cars using the stock LKAS camera's lead.
-
-  The model's leadOne can re-range from a far lead onto a nearer cut-in car -- a fabricated closing
-  rate (~100->40 m in ~1 s) that VisionLeadSpeedFilter would turn into phantom braking. The camera's
-  designated lead (leadDistance/leadValid) holds steady through this, so a cut-in shows up as either
-  the model closing much faster than the camera lead, or the camera lead's objectId changing. Either
-  freezes the speed filter (~1 s). With no in-path camera lead it can't corroborate and never flags,
-  leaving the filter free on distant leads. slot 0 supplies objectId + (curve-compensated) yRel for
-  the in-path gate; leadDistance supplies the distance.
-  """
-  Y_INPATH = 1.8       # m, |yRel| within this is in the ego path (vs an adjacent-lane car)
-  DIV_ENGAGE = 8.0     # m/s, model closing this much faster than the camera lead -> re-range
-  TAU = 0.3            # s, smoothing for dRel and the closing-rate estimates
-  JUMP_REJECT = 8.0    # m, a leadDistance step beyond this is a camera re-range, not real motion
-
-  def __init__(self, dt: float):
-    self.dt = dt
-    self.hold_frames = int(round(1.0 / dt))  # keep the flag up through the ~1 s re-range
-    self.reset()
-
-  def reset(self) -> None:
-    self.prev_id: int | None = None
-    self.ema_cam: float | None = None
-    self.ema_model: float | None = None
-    self.cam_closing = 0.0
-    self.model_closing = 0.0
-    self.flagged = False
-    self.hold = 0
-
-  def _ema(self, prev: float | None, x: float) -> float:
-    return x if prev is None else prev + (self.dt / (self.TAU + self.dt)) * (x - prev)
-
-  def update(self, cam_tracks, lead_distance: float, lead_valid: bool, model_lead: dict[str, Any]) -> bool:
-    if not model_lead['status']:
-      self.reset()
-      return False
-
-    # camera lead: leadValid = presence, leadDistance = distance; slot 0 = objectId + yRel (in-path)
-    cam = cam_tracks[0] if len(cam_tracks) else None
-    cam_inpath = lead_valid and cam is not None and cam.valid and abs(cam.yRel) < self.Y_INPATH
-
-    id_changed = False
-    if cam_inpath:
-      # a leadDistance jump is a camera re-range -- snap, emit no closing; an objectId change is a
-      # re-range that also arms the trigger
-      rerange = self.ema_cam is not None and abs(lead_distance - self.ema_cam) > self.JUMP_REJECT
-      if self.prev_id is not None and cam.objectId != self.prev_id:
-        id_changed = True
-      if id_changed or rerange:
-        self.ema_cam = lead_distance
-      else:
-        prev = self.ema_cam
-        self.ema_cam = self._ema(self.ema_cam, lead_distance)
-        if prev is not None:
-          self.cam_closing = self._ema(self.cam_closing, -(self.ema_cam - prev) / self.dt)
-      self.prev_id = cam.objectId
-    else:
-      self.prev_id = None
-      self.ema_cam = None
-      self.cam_closing = 0.0
-
-    prev_m = self.ema_model
-    self.ema_model = self._ema(self.ema_model, float(model_lead['dRel']))
-    if prev_m is not None:
-      self.model_closing = self._ema(self.model_closing, -(self.ema_model - prev_m) / self.dt)
-
-    divergence = self.model_closing - self.cam_closing
-    trigger = cam_inpath and (id_changed or divergence > self.DIV_ENGAGE)
-    if trigger:
-      self.flagged = True
-      self.hold = self.hold_frames
-    elif self.flagged:
-      if self.hold <= 0:
-        self.flagged = False
-      else:
-        self.hold -= 1
-    return self.flagged
 
 
 def get_lead(v_ego: float, ready: bool, tracks: dict[int, Track], lead_msg: capnp._DynamicStructReader,
@@ -392,9 +311,6 @@ class RadarD:
     # Correct the model's over-estimated distant-lead speed on radarless cars (see class docstring)
     self.lead_one_speed_filter = VisionLeadSpeedFilter(DT_MDL)
     self.lead_two_speed_filter = VisionLeadSpeedFilter(DT_MDL)
-    # Freeze the speed filter during a lead re-range / cut-in so a model lead swap isn't turned
-    # into phantom braking (uses the stock camera's object tracks; see CutInDetector)
-    self.cut_in_detector = CutInDetector(DT_MDL)
 
   def update(self, sm: messaging.SubMaster, rr: car.RadarData):
     self.ready = sm.seen['modelV2']
@@ -451,16 +367,12 @@ class RadarD:
                           self.lead_prob_filters[1].x, low_speed_override=False)
       if self.CP.radarUnavailable:  # vision-only lead speed is over-estimated at distance; correct it
         cs_sp = sm['carStateSP']
-        cs_sp_valid = sm.valid['carStateSP']
-        cam_tracks = cs_sp.cameraTracks if cs_sp_valid else []
-        # lead re-range (cut-in) in progress? distance/presence from CAMERA_LEAD, identity/lateral from slot 0
-        freeze = self.cut_in_detector.update(cam_tracks, cs_sp.cameraLeadDistance, cs_sp_valid and cs_sp.cameraLeadValid, lead_one)
+        cam_lead_valid = sm.valid['carStateSP'] and cs_sp.cameraLeadValid
         v_std0 = leads_v3[0].vStd[0] if len(leads_v3[0].vStd) else 0.0
         v_std1 = leads_v3[1].vStd[0] if len(leads_v3[1].vStd) else 0.0
-        cam_lead_valid = cs_sp_valid and cs_sp.cameraLeadValid
         # leadOne is the camera's designated in-path lead -> fuse leadDistance; leadTwo has no camera lead -> model only
-        lead_one = self.lead_one_speed_filter.correct(lead_one, self.v_ego, v_std0, cs_sp.cameraLeadDistance, cam_lead_valid, freeze=freeze)
-        lead_two = self.lead_two_speed_filter.correct(lead_two, self.v_ego, v_std1, 0.0, False, freeze=freeze)
+        lead_one = self.lead_one_speed_filter.correct(lead_one, self.v_ego, v_std0, cs_sp.cameraLeadDistance, cam_lead_valid)
+        lead_two = self.lead_two_speed_filter.correct(lead_two, self.v_ego, v_std1, 0.0, False)
       self.radar_state.leadOne = lead_one
       self.radar_state.leadTwo = lead_two
 
