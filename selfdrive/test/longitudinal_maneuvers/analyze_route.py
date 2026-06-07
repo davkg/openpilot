@@ -64,12 +64,11 @@ def build_sm(r):
   car_state_sp = messaging.new_message('carStateSP')
   live_map_data_sp = messaging.new_message('liveMapDataSP')
   gps = messaging.new_message('gpsLocation')
-  cot = messaging.new_message('cameraObjectTracksSP')
 
   # optional camera object tracks: r['cam_tracks'] = list of (objectId, dRel, yRel, valid) per slot
   ct = r.get('cam_tracks')
   if ct:
-    tl = cot.cameraObjectTracksSP.init('tracks', len(ct))
+    tl = car_state_sp.carStateSP.init('cameraTracks', len(ct))
     for i, (oid, dr, yr, v) in enumerate(ct):
       tl[i].slot = i
       tl[i].objectId = int(oid)
@@ -98,8 +97,7 @@ def build_sm(r):
           'carControl': car_control.carControl, 'controlsState': control.controlsState,
           'selfdriveState': ss.selfdriveState, 'liveParameters': lp.liveParameters,
           'modelV2': model.modelV2, 'carStateSP': car_state_sp.carStateSP,
-          'liveMapDataSP': live_map_data_sp.liveMapDataSP, 'gpsLocation': gps.gpsLocation,
-          'cameraObjectTracksSP': cot.cameraObjectTracksSP}
+          'liveMapDataSP': live_map_data_sp.liveMapDataSP, 'gpsLocation': gps.gpsLocation}
 
 
 def replay(frames):

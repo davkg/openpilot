@@ -64,7 +64,7 @@ class ModelRendererSP:
         f.update(0.0)
       return
 
-    tracks = sm['cameraObjectTracksSP'].tracks
+    tracks = sm['carStateSP'].cameraTracks
     seen = [False] * NUM_OBJECT_SLOTS
     for t in tracks:
       if 0 <= t.slot < NUM_OBJECT_SLOTS:

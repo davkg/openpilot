@@ -450,16 +450,16 @@ class RadarD:
       lead_two = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[1], model_v_ego, self.CP, self.CP_SP,
                           self.lead_prob_filters[1].x, low_speed_override=False)
       if self.CP.radarUnavailable:  # vision-only lead speed is over-estimated at distance; correct it
-        cot = sm['cameraObjectTracksSP']
-        cot_valid = sm.valid['cameraObjectTracksSP']
-        cam_tracks = cot.tracks if cot_valid else []
+        cs_sp = sm['carStateSP']
+        cs_sp_valid = sm.valid['carStateSP']
+        cam_tracks = cs_sp.cameraTracks if cs_sp_valid else []
         # lead re-range (cut-in) in progress? distance/presence from CAMERA_LEAD, identity/lateral from slot 0
-        freeze = self.cut_in_detector.update(cam_tracks, cot.leadDistance, cot_valid and cot.leadValid, lead_one)
+        freeze = self.cut_in_detector.update(cam_tracks, cs_sp.cameraLeadDistance, cs_sp_valid and cs_sp.cameraLeadValid, lead_one)
         v_std0 = leads_v3[0].vStd[0] if len(leads_v3[0].vStd) else 0.0
         v_std1 = leads_v3[1].vStd[0] if len(leads_v3[1].vStd) else 0.0
-        cam_lead_valid = cot_valid and cot.leadValid
+        cam_lead_valid = cs_sp_valid and cs_sp.cameraLeadValid
         # leadOne is the camera's designated in-path lead -> fuse leadDistance; leadTwo has no camera lead -> model only
-        lead_one = self.lead_one_speed_filter.correct(lead_one, self.v_ego, v_std0, cot.leadDistance, cam_lead_valid, freeze=freeze)
+        lead_one = self.lead_one_speed_filter.correct(lead_one, self.v_ego, v_std0, cs_sp.cameraLeadDistance, cam_lead_valid, freeze=freeze)
         lead_two = self.lead_two_speed_filter.correct(lead_two, self.v_ego, v_std1, 0.0, False, freeze=freeze)
       self.radar_state.leadOne = lead_one
       self.radar_state.leadTwo = lead_two
@@ -487,7 +487,7 @@ def main() -> None:
   cloudlog.info("radard got CarParamsSP")
 
   # *** setup messaging
-  sm = messaging.SubMaster(['modelV2', 'carState', 'liveTracks', 'cameraObjectTracksSP'], poll='modelV2')
+  sm = messaging.SubMaster(['modelV2', 'carState', 'liveTracks', 'carStateSP'], poll='modelV2')
   pm = messaging.PubMaster(['radarState'])
 
   RD = RadarD(CP, CP_SP, CP.radarDelay)
