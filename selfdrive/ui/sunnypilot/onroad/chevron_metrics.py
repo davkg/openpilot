@@ -37,7 +37,7 @@ class ChevronMetrics:
     """Check if dev UI should be rendered"""
     return ui_state.chevron_metrics != ChevronOptions.OFF and self._lead_status_alpha > 0.0
 
-  def _draw_lead(self, lead_data, lead_vehicle, v_ego: float, rect: rl.Rectangle):
+  def _draw_lead(self, lead_data, lead_vehicle, v_ego: float, rect: rl.Rectangle, cam_d_rel: float = 0.0):
     """Draw lead vehicle status information (distance, speed, TTC)"""
     if not self.should_render():
       return
@@ -52,21 +52,24 @@ class ChevronMetrics:
     chevron_y = lead_vehicle.chevron[1][1]
     sz = np.clip((25 * 30) / (d_rel / 3 + 30), 15.0, 30.0) * 2.35
 
-    text_lines = self._build_text_lines(d_rel, v_rel, v_ego)
+    text_lines = self._build_text_lines(d_rel, v_rel, v_ego, cam_d_rel)
     if not text_lines:
       return
 
     self._render_text_lines(text_lines, chevron_x, chevron_y, sz, rect)
 
   @staticmethod
-  def _build_text_lines(d_rel: float, v_rel: float, v_ego: float) -> list[str]:
+  def _build_text_lines(d_rel: float, v_rel: float, v_ego: float, cam_d_rel: float = 0.0) -> list[str]:
     """Build text lines based on chevron info setting"""
     text_lines = []
 
     # Distance — always shown in meters
     if ui_state.chevron_metrics == ChevronOptions.DISTANCE_ONLY or ui_state.chevron_metrics == ChevronOptions.ALL:
       val = max(0.0, d_rel)
-      text_lines.append(f"{val:.0f} m")
+      if cam_d_rel > 0:
+        text_lines.append(f"{val:.0f} m ({cam_d_rel:.0f} m)")
+      else:
+        text_lines.append(f"{val:.0f} m")
 
     # Speed
     if ui_state.chevron_metrics == ChevronOptions.SPEED_ONLY or ui_state.chevron_metrics == ChevronOptions.ALL:
@@ -134,11 +137,13 @@ class ChevronMetrics:
       return
 
     v_ego = sm['carState'].vEgo
+    # Single-lead distance from CAMERA_LEAD; 0 = no lead / out of range
+    cam_d_rel = sm['carStateSP'].cameraLeadDistance
 
     if has_lead_one and lead_vehicles[0].chevron:
-      self._draw_lead(lead_one, lead_vehicles[0], v_ego, rect)
+      self._draw_lead(lead_one, lead_vehicles[0], v_ego, rect, cam_d_rel)
 
     if has_lead_two and lead_vehicles[1].chevron:
       d_rel_diff = abs(lead_one.dRel - lead_two.dRel) if has_lead_one else float('inf')
       if d_rel_diff > 3.0:
-        self._draw_lead(lead_two, lead_vehicles[1], v_ego, rect)
+        self._draw_lead(lead_two, lead_vehicles[1], v_ego, rect, cam_d_rel)
