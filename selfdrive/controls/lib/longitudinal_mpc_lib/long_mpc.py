@@ -87,9 +87,9 @@ def get_jerk_factor(personality=log.LongitudinalPersonality.standard, v_ego=0.0)
 
 def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard, v_ego=0.0):
   if personality==log.LongitudinalPersonality.relaxed:
-    return 2.0
+    return 1.6
   elif personality==log.LongitudinalPersonality.standard:
-    return np.interp(v_ego, [0.0, 12.0, 20.0], [1.3, 1.6, 1.3])
+    return 1.3
   elif personality==log.LongitudinalPersonality.aggressive:
     return 1.0
   else:
