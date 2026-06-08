@@ -65,13 +65,6 @@ LEAD_ANTICIPATION_MARGIN_BP = [30.0, 100.0]  # m, lead distance
 LEAD_ANTICIPATION_MARGIN_V = [0.7, 1.5]      # m/s above a slower lead's speed
 LOW_SPEED_CAP_GATE = 7.0                     # m/s -- below this, skip lead-aware v_cruise
 
-# Follow-distance relaxation: when the lead pulls away hard, temporarily widen the follow
-# distance (bias t_follow up) so we don't gun to catch a surge only to brake when it closes
-# again -- damps speed oscillation in undulating traffic. Smoothly filtered (no step) and
-# decays back once the lead stops pulling away. Only widens the gap (never tightens it).
-T_FOLLOW_RELAX_VREL = 1.0    # m/s -- lead pulling away faster than this (vRel) arms the relaxation
-T_FOLLOW_RELAX_MAX = 0.2     # s -- max added to t_follow when fully relaxed
-T_FOLLOW_RELAX_TAU = 1.2     # s -- first-order rise/decay time constant
 
 def get_jerk_factor(personality=log.LongitudinalPersonality.standard, v_ego=0.0):
   # 3 m/s = 7 mph, 5 m/s = 11 mph, 12 m/s = 27 mph, 20 m/s = 45 mph
@@ -262,8 +255,6 @@ class LongitudinalMpc:
     self.reset()
     self.source = LongitudinalPlanSource.cruise
     self.t_follow_delta = 0.0  # additive bias from checkerboard staggering controller
-    self.t_follow_relax = 0.0  # transient bias when the lead pulls away hard (see T_FOLLOW_RELAX_*)
-    self.t_follow_relax_enabled = False  # disabled: too sensitive to noisy vision vRel in steady following
     # lead-aware v_cruise (suppress-accel) telemetry, refreshed each update()
     self.lead_aware_floor = 0.0
     self.lead_aware_margin = 0.0
@@ -368,13 +359,6 @@ class LongitudinalMpc:
     v_ego = self.x0[1]
     t_follow = get_T_FOLLOW(personality, v_ego)
     t_follow += self.t_follow_delta  # additive bias from checkerboard staggering
-
-    # Follow-distance relaxation: bias t_follow up while the lead pulls away quickly. Smoothly
-    # filtered so it eases in/out. Widens the desired gap -> gentler catch-up of the surge.
-    relax_target = T_FOLLOW_RELAX_MAX if (radarstate.leadOne.status and radarstate.leadOne.vRel > T_FOLLOW_RELAX_VREL) else 0.0
-    self.t_follow_relax += (relax_target - self.t_follow_relax) * (self.dt / T_FOLLOW_RELAX_TAU)
-    if self.t_follow_relax_enabled:
-      t_follow += self.t_follow_relax
 
     stop_distance = get_STOP_DISTANCE(personality)
     self.status = radarstate.leadOne.status or radarstate.leadTwo.status

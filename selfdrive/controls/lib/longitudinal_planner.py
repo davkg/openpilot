@@ -24,21 +24,11 @@ A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 ALLOW_THROTTLE_THRESHOLD_BP = [8.0, 25.0]   # m/s
 ALLOW_THROTTLE_THRESHOLD_V = [0.4, 0.4]     # gasPressProbs[1] threshold
-ALLOW_THROTTLE_HYSTERESIS = 0.             # prob must exceed threshold + this to resume throttle (anti-chatter)
+ALLOW_THROTTLE_HYSTERESIS = 0.              # prob must exceed threshold + this to resume throttle (anti-chatter)
 MIN_ALLOW_THROTTLE_SPEED = 2.5
 BLENDED_TRANSITION_JERK = 1.0               # m/s^3 -- ease-in rate for the extra braking blended adds over the MPC
 BLENDED_TRANSITION_HARD_A = -1.2            # m/s^2 -- below this the blended target is applied immediately (no ease-in)
 
-# Forward-looking e2e accel cap (EXPERIMENT): never accelerate harder than the model wants to.
-# The model produces a smooth, context-aware desiredAcceleration; capping the upper accel clip at
-# it lets the MPC still drive toward set speed / the lead, but bleeds off the MPC's over-eager
-# acceleration (e.g. rushing to set speed only to brake for a lead that later comes into view).
-# Continuous (no acc<->blended mode switch), smoothed by the existing accel-clip rate limit. No
-# lead/speed gate -- it caps whenever the model wants gentler accel than the MPC. Floored so a timid
-# model estimate can't fully sandbag acceleration; the FLOOR is the main knob (raise it if the car
-# feels lazy reaching set speed). Caveat: e2e_a can't be validated offline -- the logged model
-# output is conditioned on the speed actually driven (the model tends to accept the speed it's given).
-ACCEL_E2E_CAP_ENABLE = True
 ACCEL_E2E_CAP_FLOOR = 0.5        # m/s^2 -- never cap accel below this (main tuning knob)
 
 # Lookup table for turns
@@ -220,11 +210,9 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       rate_limited = max(output_a_target, self.prev_output_a_target - BLENDED_TRANSITION_JERK * self.dt)
       output_a_target = min(rate_limited, output_a_target_mpc)
 
-    # Forward-looking e2e accel cap (see constants): cap the upper accel clip at the model's
-    # desired accel, floored. Applies whenever the model wants gentler accel than the MPC
-    # (e.g. rushing to set speed). Never induces braking (only lowers the upper clip).
-    if ACCEL_E2E_CAP_ENABLE:
-      accel_clip[1] = min(accel_clip[1], max(output_a_target_e2e, ACCEL_E2E_CAP_FLOOR))
+    # Forward-looking e2e accel cap. Cap the upper accel clip at e2e's desire accel, floored
+    # so it never fully clips acceleration. Helps soften over-eager mpc accel.
+    accel_clip[1] = min(accel_clip[1], max(output_a_target_e2e, ACCEL_E2E_CAP_FLOOR))
 
     for idx in range(2):
       accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)
