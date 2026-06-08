@@ -26,8 +26,10 @@ ALLOW_THROTTLE_THRESHOLD_BP = [8.0, 25.0]   # m/s
 ALLOW_THROTTLE_THRESHOLD_V = [0.4, 0.4]     # gasPressProbs[1] threshold
 ALLOW_THROTTLE_HYSTERESIS = 0.              # prob must exceed threshold + this to resume throttle (anti-chatter)
 MIN_ALLOW_THROTTLE_SPEED = 2.5
-BLENDED_TRANSITION_JERK = 1.0               # m/s^3 -- ease-in rate for the extra braking blended adds over the MPC
-BLENDED_TRANSITION_HARD_A = -1.2            # m/s^2 -- below this the blended target is applied immediately (no ease-in)
+BLENDED_TRANSITION_JERK = 1.5               # m/s^3 -- max slew rate for the extra braking blended adds over the MPC
+BLENDED_TRANSITION_START_JERK = 0.25        # m/s^3 -- jerk applied on the first onset tick; ramps up to the max (one SNAP step)
+BLENDED_TRANSITION_SNAP = 5.0               # m/s^4 -- how fast the jerk climbs from start to max (~0.3s ease-in)
+BLENDED_TRANSITION_HARD_A = -1.5            # m/s^2 -- below this the blended target is applied immediately (no ease-in)
 
 ACCEL_E2E_CAP_FLOOR = 0.5        # m/s^2 -- never cap accel below this (main tuning knob)
 
@@ -76,6 +78,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.prev_accel_clip = [ACCEL_MIN, ACCEL_MAX]
     self.output_a_target = 0.0
     self.prev_output_a_target = 0.0
+    self.blended_jerk = BLENDED_TRANSITION_START_JERK  # current slew rate, ramps up over a transition
     self.output_should_stop = False
 
     self.v_desired_trajectory = np.zeros(CONTROL_N)
@@ -206,9 +209,17 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # Rate limit non-emergency deceleration to soften DEC transitions. acc->blended
     # can cause abrupt changes in decel. Higher decel targets are applied immediately.
     # Always allow MPC braking through immediately, this is no-op in acc mode.
-    if not reset_state and output_a_target >= BLENDED_TRANSITION_HARD_A:
-      rate_limited = max(output_a_target, self.prev_output_a_target - BLENDED_TRANSITION_JERK * self.dt)
+    # blended/e2e is adding braking beyond what the MPC (acc) wants
+    e2e_braking = self.is_e2e(sm) and output_a_target < output_a_target_mpc
+    if not reset_state and e2e_braking and output_a_target >= BLENDED_TRANSITION_HARD_A:
+      # Ease-in only the acc->blended handoff. blended_jerk is re-armed soft below while acc is
+      # dominant, ramps to max over the transition, then stays maxed for steady-state blended (so a
+      # mid-follow decel increase isn't re-blunted -- the slew there just caps jerk at the max).
+      rate_limited = max(output_a_target, self.prev_output_a_target - self.blended_jerk * self.dt)
       output_a_target = min(rate_limited, output_a_target_mpc)
+      self.blended_jerk = min(BLENDED_TRANSITION_JERK, self.blended_jerk + BLENDED_TRANSITION_SNAP * self.dt)
+    else:
+      self.blended_jerk = BLENDED_TRANSITION_START_JERK  # re-arm soft start while blended isn't braking-dominant
 
     # Forward-looking e2e accel cap. Cap the upper accel clip at e2e's desire accel, floored
     # so it never fully clips acceleration. Helps soften over-eager mpc accel.

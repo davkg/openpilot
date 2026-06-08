@@ -172,7 +172,7 @@ class DynamicExperimentalController:
     )
     self._has_lead_filtered = False
     self._has_close_lead = False
-    self._has_model_decel = False
+    self._has_e2e_decel = False
     self._e2e_accel = 0.0
     self._has_slow_down = False
     self._has_slowness = False
@@ -229,14 +229,14 @@ class DynamicExperimentalController:
     close_dist = interp(self._v_ego_kph, WMACConstants.LEAD_CLOSE_BP, WMACConstants.LEAD_CLOSE_DIST)
     self._has_close_lead = self._has_lead_filtered and 0.0 < lead_one.dRel < close_dist
 
-    # Model-decel trigger: the model's desiredAcceleration anticipates a slowdown earlier than the
+    # e2e-decel trigger: the e2e model's desiredAcceleration anticipates a slowdown earlier than the
     # trajectory-endpoint shortfall (e.g. a distant lead beyond ~100 m). Only applies with no close
-    # lead. Hysteresis: hold blended until the model is basically done decelerating.
+    # lead. Hysteresis: hold blended until the e2e model is basically done decelerating.
     self._e2e_accel = md.action.desiredAcceleration
-    if self._has_model_decel:
-      self._has_model_decel = self._e2e_accel < WMACConstants.MODEL_DECEL_RELEASE
+    if self._has_e2e_decel:
+      self._has_e2e_decel = self._e2e_accel < WMACConstants.E2E_DECEL_RELEASE
     else:
-      self._has_model_decel = self._e2e_accel < WMACConstants.MODEL_DECEL_ENGAGE
+      self._has_e2e_decel = self._e2e_accel < WMACConstants.E2E_DECEL_ENGAGE
 
     # MPC FCW detection
     fcw_filtered_value = self._mpc_fcw_filter.get_value() or 0.0
@@ -340,25 +340,25 @@ class DynamicExperimentalController:
       self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
       return
 
-    # Model decel (close lead): model anticipates a slowdown at speed with a lead car. At highway
+    # e2e decel (close lead): the e2e model anticipates a slowdown at speed with a lead car. At highway
     # speed, a lead coming to a stop can need more anticipatory braking than the reactive ACC
     # gives. Blended can react to highway slow down scenarios earlier than strict lead following.
     # Only engage when blended would add braking over ACC.
-    if (self._v_ego_kph > WMACConstants.MODEL_DECEL_OVERRIDE_MIN_SPEED and self._has_model_decel and
-        self._e2e_accel < self._mpc.a_solution[0] - WMACConstants.MODEL_DECEL_OVERRIDE_MARGIN):
+    if (self._v_ego_kph > WMACConstants.E2E_DECEL_OVERRIDE_MIN_SPEED and self._has_e2e_decel and
+        self._e2e_accel < self._mpc.a_solution[0] - WMACConstants.E2E_DECEL_OVERRIDE_MARGIN):
       self._mode_manager.request_mode('blended', confidence=1.0)
       return
 
     # Close lead: use ACC for responsive, predictable car-following / stop-n-go (above standstill
     # so heavy traffic stays ACC end-to-end). The trajectory-shortfall blended path below is thus
-    # reserved for the no-close-lead case (distant lead / red light / stop the model sees further).
+    # reserved for the no-close-lead case (distant lead / red light / stop the e2e model sees further).
     if self._has_close_lead:
       self._mode_manager.request_mode('acc', confidence=1.0)
       return
 
-    # Model decel (no close lead): Engage blended for the distant-lead / red-light approach. Below
+    # e2e decel (no close lead): Engage blended for the distant-lead / red-light approach. Below
     # the close-lead gate, so a gentle close-lead slowdown at low speed stays ACC.
-    if self._has_model_decel:
+    if self._has_e2e_decel:
       self._mode_manager.request_mode('blended', confidence=1.0)
       return
 

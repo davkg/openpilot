@@ -21,10 +21,10 @@ class WMACConstants:
   LEAD_CLOSE_BP = [0., 30., 60.]     # km/h
   LEAD_CLOSE_DIST = [70., 70., 90.]  # m
 
-  # Model-decel trigger: engage blended when the model's desiredAcceleration shows it wants to brake
+  # e2e-decel trigger: engage blended when the e2e model's desiredAcceleration shows it wants to brake
   # earlier than the trajectory-endpoint shortfall sees (distant-lead / red-light anticipation).
-  MODEL_DECEL_ENGAGE = -0.3   # m/s^2 -- desiredAcceleration at/below this -> blended
-  MODEL_DECEL_RELEASE = -0.1  # m/s^2 -- release once e2e rises above this (model basically done decelerating)
-  # Above this speed, model-decel anticipation engages blended even behind a close lead
-  MODEL_DECEL_OVERRIDE_MIN_SPEED = 54.0  # km/h (~15 m/s)
-  MODEL_DECEL_OVERRIDE_MARGIN = 0.1      # m/s^2
+  E2E_DECEL_ENGAGE = -0.3   # m/s^2 -- e2e desiredAcceleration at/below this -> blended
+  E2E_DECEL_RELEASE = -0.1  # m/s^2 -- release once e2e rises above this (e2e basically done decelerating)
+  # Above this speed, e2e-decel anticipation engages blended even behind a close lead
+  E2E_DECEL_OVERRIDE_MIN_SPEED = 40.0  # km/h (24.9 mph, 11.1 m/s)
+  E2E_DECEL_OVERRIDE_MARGIN = 0.1      # m/s^2
