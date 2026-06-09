@@ -125,7 +125,6 @@ class Soundd(QuietMode):
         ret[written_frames:written_frames+frames_to_write] = sound_data[current_sound_frame:current_sound_frame+frames_to_write]
         written_frames += frames_to_write
         self.current_sound_frame += frames_to_write
-
         current_sound_frame = self.current_sound_frame % len(sound_data)
         loops = self.current_sound_frame // len(sound_data)
 
@@ -182,10 +181,11 @@ class Soundd(QuietMode):
 
         self.load_param()
 
-        # Always update volume, even when alert is playing
+        # freeze volume during alerts to avoid mic feedback increasing volume
         if sm.updated['soundPressure']:
           self.spl_filter_weighted.update(sm["soundPressure"].soundPressureWeightedDb)
-          self.current_volume = self.calculate_volume(float(self.spl_filter_weighted.x))
+          if self.current_alert == AudibleAlert.none:
+            self.current_volume = self.calculate_volume(float(self.spl_filter_weighted.x))
 
         self.get_audible_alert(sm)
 
