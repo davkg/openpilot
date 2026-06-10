@@ -206,10 +206,22 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
     state @0 :DynamicExperimentalControlState;
     enabled @1 :Bool;
     active @2 :Bool;
+    source @3 :DynamicExperimentalControlSource;   # why the current mode was chosen this frame
 
     enum DynamicExperimentalControlState {
       acc @0;
       blended @1;
+    }
+
+    enum DynamicExperimentalControlSource {
+      none @0;          # default ACC, nothing triggered
+      mpcFcw @1;        # FCW emergency
+      closeLead @2;     # close lead -> ACC (radar mode: any detected lead)
+      upcomingTurn @3;  # predicted curvature ahead within the lookahead horizon
+      e2eDecel @4;      # e2e model anticipating a slowdown
+      slowDown @5;      # trajectory-endpoint shortfall (incl. high-urgency emergency)
+      standstill @6;    # stopped
+      slowness @7;      # driving below cruise speed -> ACC
     }
   }
 

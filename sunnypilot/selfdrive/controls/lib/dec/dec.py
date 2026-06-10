@@ -6,11 +6,14 @@ See the LICENSE.md file in the root directory for more details.
 """
 # Version = 2025-6-30
 
+import numpy as np
+
 from cereal import messaging
 from opendbc.car import structs
 from numpy import interp
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL
+from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.constants import WMACConstants
 from typing import Literal
 
@@ -18,8 +21,14 @@ from typing import Literal
 TRAJECTORY_SIZE = 33
 SET_MODE_TIMEOUT = 15
 
+# Number of model path points within the upcoming-turn lookahead horizon (path is non-uniform in time).
+TURN_LOOKAHEAD_N = sum(t <= WMACConstants.TURN_LOOKAHEAD_T for t in ModelConstants.T_IDXS)
+
 # Define the valid mode types
 ModeType = Literal['acc', 'blended']
+
+# Reason the current mode was chosen this frame (must match the cereal DynamicExperimentalControlSource enum)
+ModeReason = Literal['none', 'mpcFcw', 'closeLead', 'upcomingTurn', 'e2eDecel', 'slowDown', 'standstill', 'slowness']
 
 
 class SmoothKalmanFilter:
@@ -176,6 +185,8 @@ class DynamicExperimentalController:
     self._e2e_accel = 0.0
     self._has_slow_down = False
     self._has_slowness = False
+    self._has_turn = False
+    self._mode_reason: ModeReason = 'none'
     self._has_mpc_fcw = False
     self._v_ego_kph = 0.0
     self._v_cruise_kph = 0.0
@@ -193,6 +204,9 @@ class DynamicExperimentalController:
 
   def mode(self) -> str:
     return self._mode_manager.get_mode()
+
+  def reason(self) -> str:
+    return self._mode_reason
 
   def enabled(self) -> bool:
     return self._enabled
@@ -237,6 +251,16 @@ class DynamicExperimentalController:
       self._has_e2e_decel = self._e2e_accel < WMACConstants.E2E_DECEL_RELEASE
     else:
       self._has_e2e_decel = self._e2e_accel < WMACConstants.E2E_DECEL_ENGAGE
+
+    # Upcoming-turn detection: 97th-pct predicted lateral accel along the model path (the same signal
+    # SCC-V uses for its ENTERING cue). Leads the model's own decel request, so engaging blended on it
+    # starts the e2e curve easing earlier than the reactive e2e-decel trigger. Hysteresis on release.
+    rate_plan = np.abs(md.orientationRate.z)[:TURN_LOOKAHEAD_N]
+    vel_plan = np.array(md.velocity.x)[:TURN_LOOKAHEAD_N]
+    n = min(len(rate_plan), len(vel_plan))  # tolerate a short/empty path (e.g. orientationRate absent)
+    pred_lat_acc = float(np.percentile(rate_plan[:n] * vel_plan[:n], 97)) if n else 0.0
+    release = WMACConstants.TURN_LAT_ACC_RELEASE if self._has_turn else WMACConstants.TURN_LAT_ACC_ENGAGE
+    self._has_turn = pred_lat_acc > release
 
     # MPC FCW detection
     fcw_filtered_value = self._mpc_fcw_filter.get_value() or 0.0
@@ -329,6 +353,7 @@ class DynamicExperimentalController:
 
     # EMERGENCY: MPC FCW - immediate blended mode
     if self._has_mpc_fcw:
+      self._mode_reason = 'mpcFcw'
       self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
       return
 
@@ -337,6 +362,7 @@ class DynamicExperimentalController:
     # which over-fired blended in undulating traffic; ACC handles close leads. Reserved here for
     # the distant-lead / invisible-lead hard stop the model sees beyond the close-lead range.
     if self._has_slow_down and self._urgency > 0.7 and not self._has_close_lead:
+      self._mode_reason = 'slowDown'
       self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
       return
 
@@ -346,6 +372,7 @@ class DynamicExperimentalController:
     # Only engage when blended would add braking over ACC.
     if (self._v_ego_kph > WMACConstants.E2E_DECEL_OVERRIDE_MIN_SPEED and self._has_e2e_decel and
         self._e2e_accel < self._mpc.a_solution[0] - WMACConstants.E2E_DECEL_OVERRIDE_MARGIN):
+      self._mode_reason = 'e2eDecel'
       self._mode_manager.request_mode('blended', confidence=1.0)
       return
 
@@ -353,32 +380,46 @@ class DynamicExperimentalController:
     # so heavy traffic stays ACC end-to-end). The trajectory-shortfall blended path below is thus
     # reserved for the no-close-lead case (distant lead / red light / stop the e2e model sees further).
     if self._has_close_lead:
+      self._mode_reason = 'closeLead'
       self._mode_manager.request_mode('acc', confidence=1.0)
+      return
+
+    # Upcoming turn (no close lead): predicted curvature ahead is sharp enough to warrant easing.
+    # Engage blended early so the e2e model's curve easing starts before the reactive e2e-decel
+    # trigger below. Released via hysteresis as the curve clears, then falls through to ACC.
+    if self._has_turn:
+      self._mode_reason = 'upcomingTurn'
+      self._mode_manager.request_mode('blended', confidence=1.0)
       return
 
     # e2e decel (no close lead): Engage blended for the distant-lead / red-light approach. Below
     # the close-lead gate, so a gentle close-lead slowdown at low speed stays ACC.
     if self._has_e2e_decel:
+      self._mode_reason = 'e2eDecel'
       self._mode_manager.request_mode('blended', confidence=1.0)
       return
 
     # Standstill: use blended
     if self._standstill_count > 3:
+      self._mode_reason = 'standstill'
       self._mode_manager.request_mode('blended', confidence=0.9)
       return
 
     # Slow down scenarios: lower urgency, normal blended (high urgency handled above the close lead gate)
     if self._has_slow_down:
       confidence = min(1.0, self._urgency * 1.5)
+      self._mode_reason = 'slowDown'
       self._mode_manager.request_mode('blended', confidence=confidence)
       return
 
     # Driving slow: use ACC (but not if actively slowing down)
     if self._has_slowness and not self._has_slow_down:
+      self._mode_reason = 'slowness'
       self._mode_manager.request_mode('acc', confidence=0.8)
       return
 
     # Default: ACC
+    self._mode_reason = 'none'
     self._mode_manager.request_mode('acc', confidence=0.7)
 
   def _radar_mode(self) -> None:
@@ -386,16 +427,26 @@ class DynamicExperimentalController:
 
     # EMERGENCY: MPC FCW - immediate blended mode
     if self._has_mpc_fcw:
+      self._mode_reason = 'mpcFcw'
       self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
       return
 
     # If lead detected and not in standstill: always use ACC
     if self._has_lead_filtered and not (self._standstill_count > 3):
+      self._mode_reason = 'closeLead'
       self._mode_manager.request_mode('acc', confidence=1.0)
+      return
+
+    # Upcoming turn (no lead): predicted curvature ahead is sharp enough to warrant easing. Engage
+    # blended early so the e2e model's curve easing starts ahead of the reactive slow-down trigger.
+    if self._has_turn:
+      self._mode_reason = 'upcomingTurn'
+      self._mode_manager.request_mode('blended', confidence=1.0)
       return
 
     # Slow down scenarios: emergency for high urgency, normal for lower urgency
     if self._has_slow_down:
+      self._mode_reason = 'slowDown'
       if self._urgency > 0.7:
         # Emergency: immediate blended mode for high urgency stops
         self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
@@ -407,15 +458,18 @@ class DynamicExperimentalController:
 
     # Standstill: use blended
     if self._standstill_count > 3:
+      self._mode_reason = 'standstill'
       self._mode_manager.request_mode('blended', confidence=0.9)
       return
 
     # Driving slow: use ACC (but not if actively slowing down)
     if self._has_slowness and not self._has_slow_down:
+      self._mode_reason = 'slowness'
       self._mode_manager.request_mode('acc', confidence=0.8)
       return
 
     # Default: ACC
+    self._mode_reason = 'none'
     self._mode_manager.request_mode('acc', confidence=0.7)
 
   def update(self, sm: messaging.SubMaster) -> None:

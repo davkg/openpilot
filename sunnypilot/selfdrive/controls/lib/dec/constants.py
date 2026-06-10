@@ -21,8 +21,13 @@ class WMACConstants:
   LEAD_CLOSE_BP = [0., 30., 60.]     # km/h
   LEAD_CLOSE_DIST = [70., 70., 90.]  # m
 
-  # e2e-decel trigger: engage blended when the e2e model's desiredAcceleration shows it wants to brake
-  # earlier than the trajectory-endpoint shortfall sees (distant-lead / red-light anticipation).
+  # Upcoming-turn anticipation (same 97th-pct predicted-lat-accel signal SCC-V uses for its ENTERING cue).
+  # Engages blended early so the e2e model's curve easing starts before the reactive e2e-decel trigger.
+  TURN_LAT_ACC_ENGAGE = 1.5   # m/s^2 predicted lat accel ahead -> engage blended for curve easing
+  TURN_LAT_ACC_RELEASE = 1.2  # m/s^2 release once the predicted curve clears (hysteresis)
+  TURN_LOOKAHEAD_T = 5.0      # s -- only scan the model path within this horizon (full path spans ~10s)
+
+  # e2e-decel trigger
   E2E_DECEL_ENGAGE = -0.3   # m/s^2 -- e2e desiredAcceleration at/below this -> blended
   E2E_DECEL_RELEASE = -0.1  # m/s^2 -- release once e2e rises above this (e2e basically done decelerating)
   # Above this speed, e2e-decel anticipation engages blended even behind a close lead

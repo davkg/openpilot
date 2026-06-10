@@ -18,11 +18,14 @@ class MockCarState:
     self.standstill = standstill
 
 class MockModelData:
-  def __init__(self, valid=True, desired_accel=0.0):
+  def __init__(self, valid=True, desired_accel=0.0, orientation_rate_z=0.0, velocity_x=0.0):
     size = 33 if valid else 10  # incomplete if invalid
     self.position = type("Pos", (), {"x": [0.0] * size})()
     self.orientation = type("Ori", (), {"x": [0.0] * size})()
     self.action = type("Action", (), {"desiredAcceleration": desired_accel})()
+    # orientationRate.z * velocity.x -> predicted lateral accel along the path (turn detection)
+    self.orientationRate = type("OriRate", (), {"z": [orientation_rate_z] * size})()
+    self.velocity = type("Vel", (), {"x": [velocity_x] * size})()
 
 class MockSelfDriveState:
   def __init__(self, experimentalMode=False):
@@ -234,3 +237,44 @@ def test_radarless_distant_lead_allows_blended(mock_cp, mock_mpc, default_sm):
     controller.update(default_sm)
 
   assert controller.mode() == "blended"
+
+
+def test_radarless_upcoming_turn_triggers_blended(mock_cp, mock_mpc, default_sm):
+  # A sharp curve ahead (predicted lat accel > TURN_LAT_ACC_ENGAGE) engages blended early so the
+  # e2e model's curve easing leads the reactive e2e-decel trigger. No lead, no e2e decel.
+  mock_cp.radarUnavailable = True
+  controller = DynamicExperimentalController(mock_cp, mock_mpc, params=MockParams())
+
+  default_sm['carState'].vEgo = 20.0
+  default_sm['radarState'] = MockRadarState(status=0.0)   # no lead
+  controller._slow_down_filter = FakeKalman(value=0.0)    # no slow-down trigger
+  # 20 m/s * 0.1 rad/s = 2.0 m/s^2 predicted lat accel (> 1.5 engage)
+  default_sm['modelV2'] = MockModelData(valid=True, desired_accel=0.0, orientation_rate_z=0.1, velocity_x=20.0)
+
+  for _ in range(12):
+    controller.update(default_sm)
+
+  assert controller.mode() == "blended"
+  assert controller.reason() == "upcomingTurn"
+
+
+def test_radarless_turn_clears_returns_to_acc(mock_cp, mock_mpc, default_sm):
+  # Once the predicted curve clears (lat accel below TURN_LAT_ACC_RELEASE) and nothing else requests
+  # blended, DEC falls back to ACC.
+  mock_cp.radarUnavailable = True
+  controller = DynamicExperimentalController(mock_cp, mock_mpc, params=MockParams())
+
+  default_sm['carState'].vEgo = 20.0
+  default_sm['radarState'] = MockRadarState(status=0.0)
+  controller._slow_down_filter = FakeKalman(value=0.0)
+  default_sm['modelV2'] = MockModelData(valid=True, orientation_rate_z=0.1, velocity_x=20.0)
+  for _ in range(12):
+    controller.update(default_sm)
+  assert controller.mode() == "blended"
+
+  # Straighten out: predicted lat accel ~0 -> turn releases, mode returns to ACC
+  default_sm['modelV2'] = MockModelData(valid=True, orientation_rate_z=0.0, velocity_x=20.0)
+  for _ in range(20):
+    controller.update(default_sm)
+  assert controller.mode() == "acc"
+  assert controller.reason() == "none"
