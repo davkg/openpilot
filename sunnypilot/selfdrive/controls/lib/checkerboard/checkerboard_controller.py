@@ -22,13 +22,14 @@ EGO_LANE_HALF_W = 2.0
 ADJACENT_LANE_OUTER = 4.5
 
 # Forward window (m, d_rel) for tracks to enter pacing logic
-LONG_WINDOW_MIN = -5.0
-LONG_WINDOW_MAX = 60.0
+LONG_WINDOW_MIN = -10.0
+LONG_WINDOW_MAX = 70.0
 
 # Pacing zone (m, d_rel) — longitudinal range where ego is "door-to-door"-ish with an adjacent car.
-# +6 m roughly = ego's front bumper aligned with adjacent car's rear bumper (empirical, 2026-05-21).
-PACING_ZONE_MIN = -3.0
-PACING_ZONE_MAX = 6.0
+# +3 m roughly = ego's front bumper aligned with adjacent car's rear bumper (empirical at the corrected
+# LONG_DIST scale 0.209/-16.9; measured on route 000000cf seg20 ~16s / PlotJuggler 1216s, 2026-06-11).
+PACING_ZONE_MIN = -5.0
+PACING_ZONE_MAX = 3.0
 
 # Hysteresis on pacing-zone occupancy
 ENTER_TICKS = 3   # consecutive ticks in zone to engage
@@ -36,8 +37,8 @@ EXIT_TICKS = 8    # consecutive ticks out of zone to disengage
 
 # Traffic density gate — in dense traffic there's no room to checkerboard, so suppress engagement.
 # Counts valid adjacent-lane tracks (both sides) within the density window. >= threshold → crowded.
-DENSITY_WINDOW_MIN = -10.0
-DENSITY_WINDOW_MAX = 40.0
+DENSITY_WINDOW_MIN = -15.0
+DENSITY_WINDOW_MAX = 50.0
 DENSITY_THRESHOLD = 3
 
 # Relative-motion gate — suppress engagement when an adjacent car is actively passing
