@@ -22,6 +22,23 @@ CRUISE_STEP_EVENTS = {
 }
 
 
+def next_experimental_dec_state(experimental_mode: bool, dec: bool) -> tuple[bool, bool]:
+  """Advance the 3-state mode cycle on a mode-button hold (LKAS/distance) or on-screen tap.
+
+  The state is the (ExperimentalMode, DynamicExperimentalControl) param pair:
+    acc (chill)            : (False, *)     -> next: experimental, DEC off
+    experimental, DEC off  : (True, False)  -> next: experimental, DEC on
+    experimental, DEC on   : (True, True)   -> next: acc (chill)
+  Returns the (ExperimentalMode, DynamicExperimentalControl) values for the next state. Returning
+  to acc also clears DEC so the settings toggle reflects the inactive state rather than showing on.
+  """
+  if not experimental_mode:
+    return True, False
+  if not dec:
+    return True, True
+  return False, False
+
+
 class CruiseHelper:
   def __init__(self, CP: structs.CarParams):
     self.CP = CP
@@ -59,8 +76,10 @@ class CruiseHelper:
     gap_adjust_long_pressed = self.button_frame_counts[ButtonType.gapAdjustCruise] >= DISTANCE_LONG_PRESS
 
     if (lkas_long_pressed or gap_adjust_long_pressed) and not self.experimental_mode_switched:
-      self._experimental_mode = not experimental_mode
+      dec = self.params.get_bool("DynamicExperimentalControl")
+      self._experimental_mode, new_dec = next_experimental_dec_state(experimental_mode, dec)
       self.params.put_bool_nonblocking("ExperimentalMode", self._experimental_mode)
+      self.params.put_bool_nonblocking("DynamicExperimentalControl", new_dec)
       events.add(EventNameSP.experimentalModeSwitched)
       self.experimental_mode_switched = True
 

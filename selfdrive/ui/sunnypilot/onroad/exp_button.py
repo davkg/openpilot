@@ -1,8 +1,11 @@
+import time
+
 import pyray as rl
 
 from cereal import custom
 from openpilot.selfdrive.ui.onroad.exp_button import ExpButton
 from openpilot.selfdrive.ui.ui_state import ui_state
+from openpilot.sunnypilot.selfdrive.car.cruise_helpers import next_experimental_dec_state
 
 DecState = custom.LongitudinalPlanSP.DynamicExperimentalControl.DynamicExperimentalControlState
 
@@ -34,6 +37,18 @@ class ExpButtonSP(ExpButton):
     dec = ui_state.sm["longitudinalPlanSP"].dec
     self._dec_active = dec.active
     self._dec_blended = dec.state == DecState.blended
+
+  def _toggle_mode(self) -> None:
+    # Tap cycles the 3 modes (acc -> experimental DEC-off -> experimental DEC-on -> acc), mirroring
+    # the LKAS/distance button hold (see cruise_helpers.next_experimental_dec_state).
+    dec = self._params.get_bool("DynamicExperimentalControl")
+    new_mode, new_dec = next_experimental_dec_state(self._experimental_mode, dec)
+    self._params.put_bool("ExperimentalMode", new_mode)
+    self._params.put_bool("DynamicExperimentalControl", new_dec)
+
+    # Hold new state temporarily (matches upstream tap feedback)
+    self._held_mode = new_mode
+    self._hold_end_time = time.monotonic() + self._hold_duration
 
   def _held_or_actual_mode(self) -> bool:
     base = super()._held_or_actual_mode()  # resolves tap-hold and clears expired holds
