@@ -426,8 +426,9 @@ struct CarControlSP @0xa5cd762cd951a455 {
   dashPath @6 :DashPath;           # OP's lane center for rendering on the dash (Honda Bosch radarless LANE_PATH)
 
   struct DashPath {
-    valid @0 :Bool;                # model path is fresh/usable
+    valid @0 :Bool;                # model path is fresh/usable (held through brief dropouts, false once faded out)
     poly @1 :List(Float32);        # cubic coeffs [c0, c1, c2, c3]; y = c0 + c1*x + c2*x^2 + c3*x^3 (m, +left, x ahead)
+    reach @2 :Float32;             # rendered-length fraction 0..1: 1 = full, shrinks to 0 to retract the lane on dropout
   }
 
   struct Param {
