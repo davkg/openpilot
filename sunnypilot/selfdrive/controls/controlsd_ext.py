@@ -15,7 +15,7 @@ from cereal import log, custom
 # (mean of the two ego lane lines) shows the car's position WITHIN the lane -- off-center shows up as a
 # near offset -- plus the lane curvature ahead. (modelV2.position is the trajectory from the car origin,
 # so it can't show in-lane position; that's why we use the lane lines here.)
-DASH_PATH_FIT_MAX = 90.0       # m, fit domain (covers the dash look-ahead)
+DASH_PATH_FIT_MAX = 110.0      # m, cubic fit domain -- must stay > lane_path.D_MAX (100 m) so the far points are interpolated, not extrapolated
 # Hysteresis + hold + fade so the rendered lane doesn't flicker when ego-lane-line confidence chatters
 # (the right line often hovers ~0.3, so a single 0.3 gate toggled ~1/s and blanked the dash).
 DASH_PATH_PROB_ENGAGE = 0.40   # (re)start showing the lane only above this confidence
