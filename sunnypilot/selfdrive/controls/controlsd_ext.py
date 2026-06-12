@@ -6,8 +6,17 @@ See the LICENSE.md file in the root directory for more details.
 """
 import time
 
+import numpy as np
+
 import cereal.messaging as messaging
 from cereal import log, custom
+
+# OP lane-center fit for dash rendering (consumed by Honda Bosch radarless LANE_PATH). The lane center
+# (mean of the two ego lane lines) shows the car's position WITHIN the lane -- off-center shows up as a
+# near offset -- plus the lane curvature ahead. (modelV2.position is the trajectory from the car origin,
+# so it can't show in-lane position; that's why we use the lane lines here.)
+DASH_PATH_FIT_MAX = 90.0   # m, fit domain (covers the dash look-ahead)
+DASH_PATH_MIN_PROB = 0.3   # both ego lane lines must be at least this confident
 
 from opendbc.car import structs
 from openpilot.common.params import Params
@@ -87,6 +96,22 @@ class ControlsExt(ModelStateBase):
       "radarTrackId": ld.radarTrackId,
     }
 
+  @staticmethod
+  def get_dash_path(model: log.ModelDataV2, model_valid: bool) -> dict:
+    """Fit OP's lane center (mean of the two ego lane lines) to a cubic for dash rendering. Shows the
+    car's position within the lane (off-center -> near offset) plus the lane curvature ahead. Empty
+    (invalid) when there's no fresh model data or the ego lane lines aren't confident."""
+    lls = model.laneLines
+    probs = model.laneLineProbs
+    if model_valid and len(lls) >= 3 and len(probs) >= 3 and probs[1] >= DASH_PATH_MIN_PROB and probs[2] >= DASH_PATH_MIN_PROB:
+      x = np.array(lls[1].x)
+      yc = (np.array(lls[1].y) + np.array(lls[2].y)) / 2.0
+      m = x <= DASH_PATH_FIT_MAX
+      if m.sum() >= 4:
+        poly = np.polyfit(x[m], yc[m], 3)[::-1]  # [c0, c1, c2, c3]
+        return {"valid": True, "poly": [float(v) for v in poly]}
+    return {"valid": False, "poly": []}
+
   def state_control_ext(self, sm: messaging.SubMaster) -> custom.CarControlSP:
     CC_SP = custom.CarControlSP.new_message()
 
@@ -98,6 +123,9 @@ class ControlsExt(ModelStateBase):
 
     CC_SP.intelligentCruiseButtonManagement = sm['selfdriveStateSP'].intelligentCruiseButtonManagement
     CC_SP.speedLimit = sm['selfdriveStateSP'].speedLimit
+
+    # OP lane center for dash rendering (Honda Bosch radarless LANE_PATH)
+    CC_SP.dashPath = self.get_dash_path(sm['modelV2'], sm.valid['modelV2'])
 
     return CC_SP
 
