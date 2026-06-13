@@ -33,8 +33,14 @@ DASH_PATH_CROSS_HOLD_T = 2.5   # s
 # LKAS_HUD_2 frame, so no edge/latch/de-bounce is needed (a noisy re-index re-asserting it for a frame is harmless).
 DASH_PATH_CROSS_NEAR_X = 4.0   # m, look-ahead at which the ego lines are measured for crossing detection
 DASH_PATH_CROSS_LINE_EPS = 0.4 # m, an ego line this close to the car center = a line is under the car (crossing)
+# Draw length (LKAS_HUD_2 LANE_LENGTH). The stock dash draws the lane out to roughly how far it's usable ahead,
+# NOT the full extrapolated path (whose far end is least confident). Two stock behaviours, taken as the LONGER
+# of the two so the lane is never shorter than the lead.
+DASH_PATH_FULL_LEN_SPEED = 27.0  # m/s at which the lane reaches full draw length (~60 mph)
+DASH_PATH_LEAD_FULL_DIST = 70.0  # m lead distance at which the lane reaches full length
 
 from opendbc.car import structs
+from opendbc.sunnypilot.car.honda.lane_path import LANE_LENGTH_MAX_VALUE
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot import PARAMS_UPDATE_PERIOD
@@ -134,7 +140,8 @@ class ControlsExt(ModelStateBase):
     crossing_y = near_lines[0] if abs(near_lines[0]) < abs(near_lines[1]) else near_lines[1]
     return 1 if crossing_y > 0 else -1
 
-  def get_dash_path(self, model: log.ModelDataV2, model_valid: bool, left_blinker: bool, right_blinker: bool) -> dict:
+  def get_dash_path(self, model: log.ModelDataV2, model_valid: bool, left_blinker: bool, right_blinker: bool,
+                    v_ego: float, lead_d: float) -> dict:
     """Fit OP's lane center (mean of the two ego lane lines) to a cubic for dash rendering. Shows the car's
     position within the lane (off-center -> near offset) plus the lane curvature ahead, and renders lane
     changes: the model re-indexes its ego lines as the car crosses, so the lane-center fit naturally swings
@@ -143,9 +150,11 @@ class ControlsExt(ModelStateBase):
 
     Hysteresis: PROB_ENGAGE to (re)start, PROB_MAINTAIN to stay "confident". Below MAINTAIN we keep rendering
     the LIVE fit (the geometry stays smooth even as the model craters its confidence mid-cross) for
-    CROSS_HOLD_T after the last confident frame, then shrink reach 1->0 over FADE_T and blank. A separate,
-    engagement-independent geometry detector pulses laneCross when an ego line passes under the car, for the
-    LKAS_HUD_2 LEFT/RIGHT_LANE_CROSSED flag.
+    CROSS_HOLD_T after the last confident frame, then fade out over FADE_T and blank. The rendered length
+    (reach) is the longer of a speed term (FULL_LEN_SPEED) and a lead term (lead_d / LEAD_FULL_DIST), so the
+    dash shortens the lane at low speed but still extends it out to a lead -- never shorter than the lead car.
+    A separate, engagement-independent geometry detector pulses laneCross when an ego line passes under the
+    car, for the LKAS_HUD_2 LEFT/RIGHT_LANE_CROSSED flag.
     """
     now = time.monotonic()
 
@@ -178,16 +187,26 @@ class ControlsExt(ModelStateBase):
     if not self._dash_on:
       return {"valid": False, "poly": [], "reach": 0.0, "laneCross": 0}
 
+    # dropout fade: full reach while fresh, then retract far->near over FADE_T, then blank
     elapsed = now - self._dash_good_t
     if elapsed <= DASH_PATH_CROSS_HOLD_T:
-      reach = 1.0
+      fade = 1.0
     elif elapsed <= DASH_PATH_CROSS_HOLD_T + DASH_PATH_FADE_T:
-      reach = 1.0 - (elapsed - DASH_PATH_CROSS_HOLD_T) / DASH_PATH_FADE_T  # retract far->near
+      fade = 1.0 - (elapsed - DASH_PATH_CROSS_HOLD_T) / DASH_PATH_FADE_T
     else:
       self._dash_on = False
       return {"valid": False, "poly": [], "reach": 0.0, "laneCross": 0}
 
-    return {"valid": True, "poly": self._dash_poly, "reach": float(reach), "laneCross": int(lane_cross)}
+    # draw length = longer of the speed term and the lead term (lane never shorter than the lead), times the
+    # dropout fade. When nothing is drawn (standstill, no lead, or fully faded) blank LANE_PATH too (valid False)
+    # so both messages agree -- matching the camera's standstill frame.
+    speed_reach = v_ego / DASH_PATH_FULL_LEN_SPEED
+    lead_reach = lead_d / DASH_PATH_LEAD_FULL_DIST   # lead_d == 0 when no lead -> no extension
+    reach = fade * float(np.clip(max(speed_reach, lead_reach), 0.0, 1.0))
+    if round(reach * LANE_LENGTH_MAX_VALUE) <= 0:
+      return {"valid": False, "poly": [], "reach": 0.0, "laneCross": 0}
+
+    return {"valid": True, "poly": self._dash_poly, "reach": reach, "laneCross": int(lane_cross)}
 
   def state_control_ext(self, sm: messaging.SubMaster) -> custom.CarControlSP:
     CC_SP = custom.CarControlSP.new_message()
@@ -203,7 +222,9 @@ class ControlsExt(ModelStateBase):
 
     # OP lane center for dash rendering (Honda Bosch radarless LANE_PATH)
     cs = sm['carState']
-    CC_SP.dashPath = self.get_dash_path(sm['modelV2'], sm.valid['modelV2'], cs.leftBlinker, cs.rightBlinker)
+    lead = sm['radarState'].leadOne
+    lead_d = lead.dRel if lead.status else 0.0   # extend the lane out to the lead (0 = no lead)
+    CC_SP.dashPath = self.get_dash_path(sm['modelV2'], sm.valid['modelV2'], cs.leftBlinker, cs.rightBlinker, cs.vEgo, lead_d)
 
     return CC_SP
 
