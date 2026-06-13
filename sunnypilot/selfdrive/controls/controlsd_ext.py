@@ -19,9 +19,20 @@ DASH_PATH_FIT_MAX = 110.0      # m, cubic fit domain -- must stay > lane_path.D_
 # Hysteresis + hold + fade so the rendered lane doesn't flicker when ego-lane-line confidence chatters
 # (the right line often hovers ~0.3, so a single 0.3 gate toggled ~1/s and blanked the dash).
 DASH_PATH_PROB_ENGAGE = 0.40   # (re)start showing the lane only above this confidence
-DASH_PATH_PROB_MAINTAIN = 0.20 # once showing, frames above this keep it alive (low hysteresis rail)
-DASH_PATH_HOLD_T = 0.6         # s: hold the last good path at full reach this long after the last good frame
-DASH_PATH_FADE_T = 0.5         # s: then shrink reach 1->0 over this long (retract far->near) before blanking
+DASH_PATH_PROB_MAINTAIN = 0.20 # once showing, frames above this keep it "confident" (low hysteresis rail)
+DASH_PATH_FADE_T = 0.5         # s: shrink reach 1->0 over this long (retract far->near) before blanking
+# Lane-change rendering. During a cross the model craters laneLineProbs[1,2] to ~0 for ~2 s while the ego
+# lines re-index across the line, but the lane-center geometry stays smooth -- so below MAINTAIN we keep
+# rendering the LIVE fit (not a frozen one) for this long after the last confident frame, which carries the
+# crossing instead of blanking it. (Replaces the old 0.6 s hold.) A genuine model dropout has no fresh fit,
+# so it just holds the last poly for this long, then fades.
+DASH_PATH_CROSS_HOLD_T = 2.5   # s
+# Lane-cross flag (pure model geometry, so it works regardless of OP engagement / desire): set while an ego lane
+# line is within CROSS_LINE_EPS of the car center at CROSS_NEAR_X -- i.e. a line is under the car, so we're
+# crossing it. Stateless: the line is only this close for ~0.3-0.5 s as it passes, which already lands on a 5 Hz
+# LKAS_HUD_2 frame, so no edge/latch/de-bounce is needed (a noisy re-index re-asserting it for a frame is harmless).
+DASH_PATH_CROSS_NEAR_X = 4.0   # m, look-ahead at which the ego lines are measured for crossing detection
+DASH_PATH_CROSS_LINE_EPS = 0.4 # m, an ego line this close to the car center = a line is under the car (crossing)
 
 from opendbc.car import structs
 from openpilot.common.params import Params
@@ -106,17 +117,39 @@ class ControlsExt(ModelStateBase):
       "radarTrackId": ld.radarTrackId,
     }
 
-  def get_dash_path(self, model: log.ModelDataV2, model_valid: bool) -> dict:
-    """Fit OP's lane center (mean of the two ego lane lines) to a cubic for dash rendering, with
-    hysteresis + hold + fade so a chattering lane-line confidence doesn't flicker the dash. Shows the
-    car's position within the lane (off-center -> near offset) plus the lane curvature ahead.
+  @staticmethod
+  def _dash_cross_direction(model: log.ModelDataV2, left_blinker: bool, right_blinker: bool, near_lines: tuple) -> int:
+    """Side being crossed: +1 right, -1 left. Prefer OP's commanded direction (engaged explicit lane change),
+    then the blinker (manual cross), then geometry -- the ego line passing under the car, whose sign gives the
+    side (observed on route 000000e9 seg21: the +y ego line crossing under = a right change)."""
+    d = str(model.meta.laneChangeDirection)
+    if d == 'left':
+      return -1
+    if d == 'right':
+      return 1
+    if right_blinker:
+      return 1
+    if left_blinker:
+      return -1
+    crossing_y = near_lines[0] if abs(near_lines[0]) < abs(near_lines[1]) else near_lines[1]
+    return 1 if crossing_y > 0 else -1
 
-    While shown, the last good fit is held through brief dropouts; after HOLD_T with no good frame the
-    rendered length (reach) shrinks 1->0 over FADE_T to retract the lane far->near, then it blanks.
+  def get_dash_path(self, model: log.ModelDataV2, model_valid: bool, left_blinker: bool, right_blinker: bool) -> dict:
+    """Fit OP's lane center (mean of the two ego lane lines) to a cubic for dash rendering. Shows the car's
+    position within the lane (off-center -> near offset) plus the lane curvature ahead, and renders lane
+    changes: the model re-indexes its ego lines as the car crosses, so the lane-center fit naturally swings
+    into the new pair of lines (the boundary line stays under the car; the far line swaps) -- exactly how the
+    stock dash animates a cross.
+
+    Hysteresis: PROB_ENGAGE to (re)start, PROB_MAINTAIN to stay "confident". Below MAINTAIN we keep rendering
+    the LIVE fit (the geometry stays smooth even as the model craters its confidence mid-cross) for
+    CROSS_HOLD_T after the last confident frame, then shrink reach 1->0 over FADE_T and blank. A separate,
+    engagement-independent geometry detector pulses laneCross when an ego line passes under the car, for the
+    LKAS_HUD_2 LEFT/RIGHT_LANE_CROSSED flag.
     """
     now = time.monotonic()
 
-    fresh_prob, fresh_poly = -1.0, None
+    fresh_prob, fresh_poly, near_lines = -1.0, None, None
     if model_valid:
       lls, probs = model.laneLines, model.laneLineProbs
       if len(lls) >= 3 and len(probs) >= 3:
@@ -126,26 +159,35 @@ class ControlsExt(ModelStateBase):
         if m.sum() >= 4:
           fresh_prob = min(probs[1], probs[2])
           fresh_poly = [float(v) for v in np.polyfit(x[m], yc[m], 3)[::-1]]  # [c0, c1, c2, c3]
+          near_lines = (float(np.interp(DASH_PATH_CROSS_NEAR_X, lls[1].x, lls[1].y)),
+                        float(np.interp(DASH_PATH_CROSS_NEAR_X, lls[2].x, lls[2].y)))
 
-    # hysteresis: need PROB_ENGAGE to (re)start, only PROB_MAINTAIN to stay alive (refreshing the geometry)
+    # confident frame refreshes both the geometry and the hold clock; an unconfident frame with geometry still
+    # refreshes the geometry (so a crossing renders live) but not the clock.
     if fresh_poly is not None and fresh_prob >= (DASH_PATH_PROB_MAINTAIN if self._dash_on else DASH_PATH_PROB_ENGAGE):
       self._dash_on = True
-      self._dash_poly = fresh_poly
       self._dash_good_t = now
+    if fresh_poly is not None and self._dash_on:
+      self._dash_poly = fresh_poly
+
+    # lane-cross flag: set while an ego line is under the car (a line within CROSS_LINE_EPS of the car center)
+    lane_cross = 0
+    if near_lines is not None and self._dash_on and min(abs(near_lines[0]), abs(near_lines[1])) < DASH_PATH_CROSS_LINE_EPS:
+      lane_cross = self._dash_cross_direction(model, left_blinker, right_blinker, near_lines)
 
     if not self._dash_on:
-      return {"valid": False, "poly": [], "reach": 0.0}
+      return {"valid": False, "poly": [], "reach": 0.0, "laneCross": 0}
 
     elapsed = now - self._dash_good_t
-    if elapsed <= DASH_PATH_HOLD_T:
+    if elapsed <= DASH_PATH_CROSS_HOLD_T:
       reach = 1.0
-    elif elapsed <= DASH_PATH_HOLD_T + DASH_PATH_FADE_T:
-      reach = 1.0 - (elapsed - DASH_PATH_HOLD_T) / DASH_PATH_FADE_T  # retract far->near
+    elif elapsed <= DASH_PATH_CROSS_HOLD_T + DASH_PATH_FADE_T:
+      reach = 1.0 - (elapsed - DASH_PATH_CROSS_HOLD_T) / DASH_PATH_FADE_T  # retract far->near
     else:
       self._dash_on = False
-      return {"valid": False, "poly": [], "reach": 0.0}
+      return {"valid": False, "poly": [], "reach": 0.0, "laneCross": 0}
 
-    return {"valid": True, "poly": self._dash_poly, "reach": float(reach)}
+    return {"valid": True, "poly": self._dash_poly, "reach": float(reach), "laneCross": int(lane_cross)}
 
   def state_control_ext(self, sm: messaging.SubMaster) -> custom.CarControlSP:
     CC_SP = custom.CarControlSP.new_message()
@@ -160,7 +202,8 @@ class ControlsExt(ModelStateBase):
     CC_SP.speedLimit = sm['selfdriveStateSP'].speedLimit
 
     # OP lane center for dash rendering (Honda Bosch radarless LANE_PATH)
-    CC_SP.dashPath = self.get_dash_path(sm['modelV2'], sm.valid['modelV2'])
+    cs = sm['carState']
+    CC_SP.dashPath = self.get_dash_path(sm['modelV2'], sm.valid['modelV2'], cs.leftBlinker, cs.rightBlinker)
 
     return CC_SP
 
