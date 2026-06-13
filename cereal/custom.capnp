@@ -510,6 +510,7 @@ struct CarStateSP @0xb86e6369214c01c8 {
     dRel @2 :Float32;        # longitudinal distance from ego (m), positive ahead
     yRel @3 :Float32;        # lateral position (m), positive = left of ego
     valid @4 :Bool;          # slot currently carries a real track
+    isLeadCar @5 :Bool;      # camera tags this track as the lead car (slot 0 when present)
   }
 }
 
