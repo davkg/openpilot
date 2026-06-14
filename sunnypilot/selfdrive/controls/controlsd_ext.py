@@ -11,15 +11,19 @@ import numpy as np
 import cereal.messaging as messaging
 from cereal import log, custom
 
-# OP lane-center fit for dash rendering (consumed by Honda Bosch radarless LANE_PATH). The lane center
-# (mean of the two ego lane lines) shows the car's position WITHIN the lane -- off-center shows up as a
-# near offset -- plus the lane curvature ahead. (modelV2.position is the trajectory from the car origin,
-# so it can't show in-lane position; that's why we use the lane lines here.)
+# OP lane render for the Honda Bosch radarless dash
 DASH_PATH_FIT_MAX = 110.0      # m, cubic fit domain -- must stay > lane_path.D_MAX (100 m) so the far points are interpolated, not extrapolated
-# Hysteresis + hold + fade so the rendered lane doesn't flicker when ego-lane-line confidence chatters
-# (the right line often hovers ~0.3, so a single 0.3 gate toggled ~1/s and blanked the dash).
-DASH_PATH_PROB_ENGAGE = 0.40   # (re)start showing the lane only above this confidence
-DASH_PATH_PROB_MAINTAIN = 0.20 # once showing, frames above this keep it "confident" (low hysteresis rail)
+# Per-side line trust, from both the existence prob and the positional std
+DASH_PATH_PROB_ON = 0.45       # prob >= this to start drawing a line
+DASH_PATH_PROB_OFF = 0.20      # prob below this drops it (low hysteresis rail)
+DASH_PATH_STD_ON = 0.40        # m, positional std <= this to start drawing a line
+DASH_PATH_STD_OFF = 0.70       # m, std above this drops it
+# When only one ego line is trusted, shift the center. Tied to LANE_WIDTH_MAYBE=32
+DASH_HALF_OFFSET = 1.65        # m, dash's lateral line offset from the center path
+# Laneless fallback: center a default-width lane on the road-edge midpoint when both edges are present and a sane
+# road width apart. The midpoint is stable even when the per-edge std is high (the two edges' errors cancel).
+DASH_EDGE_SEP_MIN = 2.0        # m, min plausible road-edge separation to trust the midpoint
+DASH_EDGE_SEP_MAX = 12.0       # m, max plausible separation
 DASH_PATH_FADE_T = 0.5         # s: shrink reach 1->0 over this long (retract far->near) before blanking
 # Lane-change rendering. During a cross the model craters laneLineProbs[1,2] to ~0 for ~2 s while the ego
 # lines re-index across the line, but the lane-center geometry stays smooth -- so below MAINTAIN we keep
@@ -50,6 +54,57 @@ from openpilot.sunnypilot.selfdrive.controls.lib.blinker_pause_lateral import Bl
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v0 import LatControlTorque as LatControlTorqueV0
 
 
+def _line_trusted(prob: float, std: float, was_on: bool) -> bool:
+  """A line is drawable only if it both exists (prob) and is well-localized (std). Hysteresis via ON/OFF rails."""
+  if was_on:
+    return prob >= DASH_PATH_PROB_OFF and std <= DASH_PATH_STD_OFF
+  return prob >= DASH_PATH_PROB_ON and std <= DASH_PATH_STD_ON
+
+
+def _fit_cubic(x: np.ndarray, y: np.ndarray) -> list[float] | None:
+  """Cubic coeffs [c0, c1, c2, c3] fit over x <= DASH_PATH_FIT_MAX; None if too few points in range."""
+  m = x <= DASH_PATH_FIT_MAX
+  if m.sum() < 4:
+    return None
+  return [float(v) for v in np.polyfit(x[m], y[m], 3)[::-1]]
+
+
+def select_lane_render(model: log.ModelDataV2, prev_left: bool, prev_right: bool) -> tuple[list[float] | None, bool, bool]:
+  """Choose the dash center cubic + which ego lines to draw, from per-side model confidence (stateless).
+
+  Returns (center_poly, left_on, right_on); center_poly is None when nothing is usable this frame (the caller
+  then holds/fades the last render). Cases:
+    both ego lines trusted -> center = mean(ego lines), both lines on (shows in-lane position + curvature)
+    one trusted            -> center = that line -+ DASH_HALF_OFFSET so the dash draws it where the model sees it
+    neither, road edges ok -> center = road-edge midpoint, both lines on (laneless / parking-lot fallback)
+    neither, no edges      -> None
+  """
+  lls, probs, stds = model.laneLines, model.laneLineProbs, model.laneLineStds
+  if len(lls) < 3 or len(probs) < 3 or len(stds) < 3 or len(lls[1].x) == 0:
+    return None, False, False
+
+  left = _line_trusted(probs[1], stds[1], prev_left)
+  right = _line_trusted(probs[2], stds[2], prev_right)
+  x = np.array(lls[1].x)
+  yl, yr = np.array(lls[1].y), np.array(lls[2].y)
+  if left and right:
+    poly = _fit_cubic(x, (yl + yr) / 2.0)
+  elif right:
+    poly = _fit_cubic(x, yr - DASH_HALF_OFFSET)
+  elif left:
+    poly = _fit_cubic(x, yl + DASH_HALF_OFFSET)
+  else:
+    edges = model.roadEdges
+    if len(edges) >= 2 and len(edges[0].x) and len(edges[1].x):
+      ex = np.array(edges[0].x)
+      ey_l, ey_r = np.array(edges[0].y), np.array(edges[1].y)
+      if DASH_EDGE_SEP_MIN <= abs(ey_r[0] - ey_l[0]) <= DASH_EDGE_SEP_MAX:
+        poly = _fit_cubic(ex, (ey_l + ey_r) / 2.0)
+        return poly, poly is not None, poly is not None
+    return None, False, False
+  return (poly, left, right) if poly is not None else (None, False, False)
+
+
 class ControlsExt(ModelStateBase):
   def __init__(self, CP: structs.CarParams, params: Params):
     ModelStateBase.__init__(self)
@@ -58,10 +113,12 @@ class ControlsExt(ModelStateBase):
     self._param_update_time: float = 0.0
     self.blinker_pause_lateral = BlinkerPauseLateral()
 
-    # dash lane render (LANE_PATH) hold/fade state
+    # dash lane render (LANE_PATH) hold/fade + per-side state
     self._dash_on = False
     self._dash_poly: list[float] = []
     self._dash_good_t = 0.0
+    self._left_on = False
+    self._right_on = False
 
     cloudlog.info("controlsd_ext is waiting for CarParamsSP")
     self.CP_SP = messaging.log_from_bytes(params.get("CarParamsSP", block=True), custom.CarParamsSP)
@@ -142,42 +199,29 @@ class ControlsExt(ModelStateBase):
 
   def get_dash_path(self, model: log.ModelDataV2, model_valid: bool, left_blinker: bool, right_blinker: bool,
                     v_ego: float, lead_d: float) -> dict:
-    """Fit OP's lane center (mean of the two ego lane lines) to a cubic for dash rendering. Shows the car's
-    position within the lane (off-center -> near offset) plus the lane curvature ahead, and renders lane
-    changes: the model re-indexes its ego lines as the car crosses, so the lane-center fit naturally swings
-    into the new pair of lines (the boundary line stays under the car; the far line swaps) -- exactly how the
-    stock dash animates a cross.
-
-    Hysteresis: PROB_ENGAGE to (re)start, PROB_MAINTAIN to stay "confident". Below MAINTAIN we keep rendering
-    the LIVE fit (the geometry stays smooth even as the model craters its confidence mid-cross) for
-    CROSS_HOLD_T after the last confident frame, then fade out over FADE_T and blank. The rendered length
-    (reach) is the longer of a speed term (FULL_LEN_SPEED) and a lead term (lead_d / LEAD_FULL_DIST), so the
-    dash shortens the lane at low speed but still extends it out to a lead -- never shorter than the lead car.
-    A separate, engagement-independent geometry detector pulses laneCross when an ego line passes under the
-    car, for the LKAS_HUD_2 LEFT/RIGHT_LANE_CROSSED flag.
+    """Pick the dash center cubic + which ego lines to draw (select_lane_render: per-side prob+std, with a
+    road-edge midpoint fallback when neither line is trusted), then apply the temporal machinery. Renders lane
+    changes for free: the model re-indexes its ego lines as the car crosses, so the lane-center fit swings into
+    the new pair of lines -- exactly how the stock dash animates a cross.
     """
     now = time.monotonic()
+    blank = {"valid": False, "poly": [], "reach": 0.0, "laneCross": 0, "leftLine": False, "rightLine": False}
 
-    fresh_prob, fresh_poly, near_lines = -1.0, None, None
+    poly, left_on, right_on, near_lines = None, False, False, None
     if model_valid:
-      lls, probs = model.laneLines, model.laneLineProbs
-      if len(lls) >= 3 and len(probs) >= 3:
-        x = np.array(lls[1].x)
-        yc = (np.array(lls[1].y) + np.array(lls[2].y)) / 2.0
-        m = x <= DASH_PATH_FIT_MAX
-        if m.sum() >= 4:
-          fresh_prob = min(probs[1], probs[2])
-          fresh_poly = [float(v) for v in np.polyfit(x[m], yc[m], 3)[::-1]]  # [c0, c1, c2, c3]
-          near_lines = (float(np.interp(DASH_PATH_CROSS_NEAR_X, lls[1].x, lls[1].y)),
-                        float(np.interp(DASH_PATH_CROSS_NEAR_X, lls[2].x, lls[2].y)))
+      poly, left_on, right_on = select_lane_render(model, self._left_on, self._right_on)
+      lls = model.laneLines  # near ego-line positions for the cross flag (independent of which lines we draw)
+      if len(lls) >= 3 and len(lls[1].x):
+        near_lines = (float(np.interp(DASH_PATH_CROSS_NEAR_X, lls[1].x, lls[1].y)),
+                      float(np.interp(DASH_PATH_CROSS_NEAR_X, lls[2].x, lls[2].y)))
 
-    # confident frame refreshes both the geometry and the hold clock; an unconfident frame with geometry still
-    # refreshes the geometry (so a crossing renders live) but not the clock.
-    if fresh_poly is not None and fresh_prob >= (DASH_PATH_PROB_MAINTAIN if self._dash_on else DASH_PATH_PROB_ENGAGE):
+    # a usable render refreshes the geometry, the per-side state, and the hold clock; otherwise hold the last good
+    # render (carries a lane change, where the model briefly craters all confidence) until it fades.
+    if poly is not None:
       self._dash_on = True
       self._dash_good_t = now
-    if fresh_poly is not None and self._dash_on:
-      self._dash_poly = fresh_poly
+      self._dash_poly = poly
+      self._left_on, self._right_on = left_on, right_on
 
     # lane-cross flag: set while an ego line is under the car (a line within CROSS_LINE_EPS of the car center)
     lane_cross = 0
@@ -185,7 +229,7 @@ class ControlsExt(ModelStateBase):
       lane_cross = self._dash_cross_direction(model, left_blinker, right_blinker, near_lines)
 
     if not self._dash_on:
-      return {"valid": False, "poly": [], "reach": 0.0, "laneCross": 0}
+      return blank
 
     # dropout fade: full reach while fresh, then retract far->near over FADE_T, then blank
     elapsed = now - self._dash_good_t
@@ -195,7 +239,7 @@ class ControlsExt(ModelStateBase):
       fade = 1.0 - (elapsed - DASH_PATH_CROSS_HOLD_T) / DASH_PATH_FADE_T
     else:
       self._dash_on = False
-      return {"valid": False, "poly": [], "reach": 0.0, "laneCross": 0}
+      return blank
 
     # draw length = longer of the speed term and the lead term (lane never shorter than the lead), times the
     # dropout fade. When nothing is drawn (standstill, no lead, or fully faded) blank LANE_PATH too (valid False)
@@ -204,9 +248,10 @@ class ControlsExt(ModelStateBase):
     lead_reach = lead_d / DASH_PATH_LEAD_FULL_DIST   # lead_d == 0 when no lead -> no extension
     reach = fade * float(np.clip(max(speed_reach, lead_reach), 0.0, 1.0))
     if round(reach * LANE_LENGTH_MAX_VALUE) <= 0:
-      return {"valid": False, "poly": [], "reach": 0.0, "laneCross": 0}
+      return blank
 
-    return {"valid": True, "poly": self._dash_poly, "reach": reach, "laneCross": int(lane_cross)}
+    return {"valid": True, "poly": self._dash_poly, "reach": reach, "laneCross": int(lane_cross),
+            "leftLine": self._left_on, "rightLine": self._right_on}
 
   def state_control_ext(self, sm: messaging.SubMaster) -> custom.CarControlSP:
     CC_SP = custom.CarControlSP.new_message()
