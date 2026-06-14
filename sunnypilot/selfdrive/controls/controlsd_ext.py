@@ -13,13 +13,8 @@ from cereal import log, custom
 
 # OP lane render for the Honda Bosch radarless dash
 DASH_PATH_FIT_MAX = 110.0      # m, cubic fit domain -- must stay > lane_path.D_MAX (100 m) so the far points are interpolated, not extrapolated
-# Per-side line trust from the existence prob, matched to OP's HUD: it fades a line in by alpha=prob with no hard
-# cutoff (and treats <0.25 as not-really-a-line), so we gate on prob alone at a low threshold rather than a
-# confident-only bar -- a faint line the HUD would show still shows on the dash.
 DASH_PATH_PROB_ON = 0.25       # prob >= this to start drawing a line
 DASH_PATH_PROB_OFF = 0.10      # prob below this drops it (low hysteresis rail)
-DASH_PATH_STD_MAX = 1.2        # m, loose positional-std guard -- drop only a line we genuinely can't place (well
-                               # above a normal weak line's ~0.6-1.0 m, so it doesn't fight the low prob gate)
 # When only one ego line is trusted, shift the center so the dash draws that line where the model sees it.
 # Tied to LANE_WIDTH_MAYBE=32; calibrate on-device.
 DASH_HALF_OFFSET = 1.65        # m, dash's lateral line offset from the center path
@@ -36,11 +31,10 @@ DASH_PATH_CROSS_HOLD_T = 2.5   # s
 # LKAS_HUD_2 frame, so no edge/latch/de-bounce is needed (a noisy re-index re-asserting it for a frame is harmless).
 DASH_PATH_CROSS_NEAR_X = 4.0   # m, look-ahead at which the ego lines are measured for crossing detection
 DASH_PATH_CROSS_LINE_EPS = 0.4 # m, an ego line this close to the car center = a line is under the car (crossing)
-# Draw length (LKAS_HUD_2 LANE_LENGTH). The stock dash draws the lane out to roughly how far it's usable ahead,
-# NOT the full extrapolated path (whose far end is least confident). Two stock behaviours, taken as the LONGER
-# of the two so the lane is never shorter than the lead.
+# Limit how far to draw lane. Drawing too long can show inaccurate lanes on the far end.
 DASH_PATH_FULL_LEN_SPEED = 27.0  # m/s at which the lane reaches full draw length (~60 mph)
 DASH_PATH_LEAD_FULL_DIST = 70.0  # m lead distance at which the lane reaches full length
+DASH_PATH_MIN_REACH = 0.15
 
 from opendbc.car import structs
 from opendbc.sunnypilot.car.honda.lane_path import LANE_LENGTH_MAX_VALUE
@@ -53,10 +47,9 @@ from openpilot.sunnypilot.selfdrive.controls.lib.blinker_pause_lateral import Bl
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v0 import LatControlTorque as LatControlTorqueV0
 
 
-def _line_trusted(prob: float, std: float, was_on: bool) -> bool:
-  """Draw a line when its existence prob clears the rail (hysteresis: ON to start, OFF to keep) AND it's localized
-  enough to place (a loose std guard that only drops a genuinely unplaceable line)."""
-  return std <= DASH_PATH_STD_MAX and prob >= (DASH_PATH_PROB_OFF if was_on else DASH_PATH_PROB_ON)
+def _line_trusted(prob: float, was_on: bool) -> bool:
+  """Draw a line when its existence prob clears the rail (hysteresis: ON to start drawing, OFF to keep)."""
+  return prob >= (DASH_PATH_PROB_OFF if was_on else DASH_PATH_PROB_ON)
 
 
 def _fit_cubic(x: np.ndarray, y: np.ndarray) -> list[float] | None:
@@ -76,12 +69,12 @@ def select_lane_render(model: log.ModelDataV2, prev_left: bool, prev_right: bool
     one trusted            -> center = that line -+ DASH_HALF_OFFSET so the dash draws it where the model sees it
     neither                -> None
   """
-  lls, probs, stds = model.laneLines, model.laneLineProbs, model.laneLineStds
-  if len(lls) < 3 or len(probs) < 3 or len(stds) < 3 or len(lls[1].x) == 0:
+  lls, probs = model.laneLines, model.laneLineProbs
+  if len(lls) < 3 or len(probs) < 3 or len(lls[1].x) == 0:
     return None, False, False
 
-  left = _line_trusted(probs[1], stds[1], prev_left)
-  right = _line_trusted(probs[2], stds[2], prev_right)
+  left = _line_trusted(probs[1], prev_left)
+  right = _line_trusted(probs[2], prev_right)
   x = np.array(lls[1].x)
   yl, yr = np.array(lls[1].y), np.array(lls[2].y)
   if left and right:
@@ -231,12 +224,10 @@ class ControlsExt(ModelStateBase):
       self._dash_on = False
       return blank
 
-    # draw length = longer of the speed term and the lead term (lane never shorter than the lead), times the
-    # dropout fade. When nothing is drawn (standstill, no lead, or fully faded) blank LANE_PATH too (valid False)
-    # so both messages agree -- matching the camera's standstill frame.
+    # draw length = longest of the speed term, the lead term, and a min floor
     speed_reach = v_ego / DASH_PATH_FULL_LEN_SPEED
     lead_reach = lead_d / DASH_PATH_LEAD_FULL_DIST   # lead_d == 0 when no lead -> no extension
-    reach = fade * float(np.clip(max(speed_reach, lead_reach), 0.0, 1.0))
+    reach = fade * float(np.clip(max(speed_reach, lead_reach, DASH_PATH_MIN_REACH), 0.0, 1.0))
     if round(reach * LANE_LENGTH_MAX_VALUE) <= 0:
       return blank
 
