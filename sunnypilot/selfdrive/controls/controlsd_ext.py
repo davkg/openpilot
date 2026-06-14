@@ -13,17 +13,16 @@ from cereal import log, custom
 
 # OP lane render for the Honda Bosch radarless dash
 DASH_PATH_FIT_MAX = 110.0      # m, cubic fit domain -- must stay > lane_path.D_MAX (100 m) so the far points are interpolated, not extrapolated
-# Per-side line trust, from both the existence prob and the positional std
-DASH_PATH_PROB_ON = 0.45       # prob >= this to start drawing a line
-DASH_PATH_PROB_OFF = 0.20      # prob below this drops it (low hysteresis rail)
-DASH_PATH_STD_ON = 0.40        # m, positional std <= this to start drawing a line
-DASH_PATH_STD_OFF = 0.70       # m, std above this drops it
-# When only one ego line is trusted, shift the center. Tied to LANE_WIDTH_MAYBE=32
+# Per-side line trust from the existence prob, matched to OP's HUD: it fades a line in by alpha=prob with no hard
+# cutoff (and treats <0.25 as not-really-a-line), so we gate on prob alone at a low threshold rather than a
+# confident-only bar -- a faint line the HUD would show still shows on the dash.
+DASH_PATH_PROB_ON = 0.25       # prob >= this to start drawing a line
+DASH_PATH_PROB_OFF = 0.10      # prob below this drops it (low hysteresis rail)
+DASH_PATH_STD_MAX = 1.2        # m, loose positional-std guard -- drop only a line we genuinely can't place (well
+                               # above a normal weak line's ~0.6-1.0 m, so it doesn't fight the low prob gate)
+# When only one ego line is trusted, shift the center so the dash draws that line where the model sees it.
+# Tied to LANE_WIDTH_MAYBE=32; calibrate on-device.
 DASH_HALF_OFFSET = 1.65        # m, dash's lateral line offset from the center path
-# Laneless fallback: center a default-width lane on the road-edge midpoint when both edges are present and a sane
-# road width apart. The midpoint is stable even when the per-edge std is high (the two edges' errors cancel).
-DASH_EDGE_SEP_MIN = 2.0        # m, min plausible road-edge separation to trust the midpoint
-DASH_EDGE_SEP_MAX = 12.0       # m, max plausible separation
 DASH_PATH_FADE_T = 0.5         # s: shrink reach 1->0 over this long (retract far->near) before blanking
 # Lane-change rendering. During a cross the model craters laneLineProbs[1,2] to ~0 for ~2 s while the ego
 # lines re-index across the line, but the lane-center geometry stays smooth -- so below MAINTAIN we keep
@@ -55,10 +54,9 @@ from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v0 import Lat
 
 
 def _line_trusted(prob: float, std: float, was_on: bool) -> bool:
-  """A line is drawable only if it both exists (prob) and is well-localized (std). Hysteresis via ON/OFF rails."""
-  if was_on:
-    return prob >= DASH_PATH_PROB_OFF and std <= DASH_PATH_STD_OFF
-  return prob >= DASH_PATH_PROB_ON and std <= DASH_PATH_STD_ON
+  """Draw a line when its existence prob clears the rail (hysteresis: ON to start, OFF to keep) AND it's localized
+  enough to place (a loose std guard that only drops a genuinely unplaceable line)."""
+  return std <= DASH_PATH_STD_MAX and prob >= (DASH_PATH_PROB_OFF if was_on else DASH_PATH_PROB_ON)
 
 
 def _fit_cubic(x: np.ndarray, y: np.ndarray) -> list[float] | None:
@@ -72,12 +70,11 @@ def _fit_cubic(x: np.ndarray, y: np.ndarray) -> list[float] | None:
 def select_lane_render(model: log.ModelDataV2, prev_left: bool, prev_right: bool) -> tuple[list[float] | None, bool, bool]:
   """Choose the dash center cubic + which ego lines to draw, from per-side model confidence (stateless).
 
-  Returns (center_poly, left_on, right_on); center_poly is None when nothing is usable this frame (the caller
-  then holds/fades the last render). Cases:
+  Returns (center_poly, left_on, right_on); center_poly is None when neither ego line is trusted -- only detected
+  lanes are shown (the caller then holds/fades the last render, then blanks). Cases:
     both ego lines trusted -> center = mean(ego lines), both lines on (shows in-lane position + curvature)
     one trusted            -> center = that line -+ DASH_HALF_OFFSET so the dash draws it where the model sees it
-    neither, road edges ok -> center = road-edge midpoint, both lines on (laneless / parking-lot fallback)
-    neither, no edges      -> None
+    neither                -> None
   """
   lls, probs, stds = model.laneLines, model.laneLineProbs, model.laneLineStds
   if len(lls) < 3 or len(probs) < 3 or len(stds) < 3 or len(lls[1].x) == 0:
@@ -94,13 +91,6 @@ def select_lane_render(model: log.ModelDataV2, prev_left: bool, prev_right: bool
   elif left:
     poly = _fit_cubic(x, yl + DASH_HALF_OFFSET)
   else:
-    edges = model.roadEdges
-    if len(edges) >= 2 and len(edges[0].x) and len(edges[1].x):
-      ex = np.array(edges[0].x)
-      ey_l, ey_r = np.array(edges[0].y), np.array(edges[1].y)
-      if DASH_EDGE_SEP_MIN <= abs(ey_r[0] - ey_l[0]) <= DASH_EDGE_SEP_MAX:
-        poly = _fit_cubic(ex, (ey_l + ey_r) / 2.0)
-        return poly, poly is not None, poly is not None
     return None, False, False
   return (poly, left, right) if poly is not None else (None, False, False)
 
