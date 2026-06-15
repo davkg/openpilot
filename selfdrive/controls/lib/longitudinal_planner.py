@@ -26,9 +26,9 @@ ALLOW_THROTTLE_THRESHOLD_BP = [8.0, 25.0]   # m/s
 ALLOW_THROTTLE_THRESHOLD_V = [0.4, 0.4]     # gasPressProbs[1] threshold
 ALLOW_THROTTLE_HYSTERESIS = 0.              # prob must exceed threshold + this to resume throttle (anti-chatter)
 MIN_ALLOW_THROTTLE_SPEED = 2.5
-BLENDED_TRANSITION_JERK = 1.5               # m/s^3 -- max slew rate easing the output across a DEC acc<->blended handoff
-BLENDED_TRANSITION_START_JERK = 0.25        # m/s^3 -- jerk applied on the first handoff tick; ramps up to the max (one SNAP step)
-BLENDED_TRANSITION_SNAP = 5.0               # m/s^4 -- how fast the jerk climbs from start to max (~0.3s ease)
+BLENDED_TRANSITION_JERK = 0.7               # m/s^3 -- max slew rate easing the output across a DEC acc<->blended handoff
+BLENDED_TRANSITION_START_JERK = 0.25        # m/s^3 -- jerk applied on the first handoff tick; ramps up to the max
+BLENDED_TRANSITION_SNAP = 1.8               # m/s^4 -- jerk climb rate from start to max; matched to JERK for a ~0.25s ramp ((JERK-START_JERK)/0.25)
 BLENDED_TRANSITION_HARD_A = -1.5            # m/s^2 -- emergency-firm braking onsets below this bypass easing (applied immediately)
 
 ACCEL_E2E_CAP_FLOOR = 0.5        # m/s^2 -- never cap accel below this (main tuning knob)
@@ -79,7 +79,7 @@ class BlendedTransitioner:
     if not reset_state and not hard_onset and self.transitioning:
       step = self.jerk * self.dt
       eased = np.clip(raw_a_target, prev_a_target - step, prev_a_target + step)
-      out = float(min(eased, a_target_mpc))  # never brake less than the MPC wants
+      out = float(min(eased, a_target_mpc))  # critical: never brake less than the MPC wants
       if abs(raw_a_target - prev_a_target) <= step:
         self.transitioning = False  # caught up -> pass through from here
       else:

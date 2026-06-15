@@ -113,8 +113,8 @@ class ModeTransitionManager:
     if self.mode_duration < self.min_mode_duration and not self.emergency_override:
       return
 
-    # Hysteresis: higher threshold for mode changes
-    confidence_threshold = 0.6 if mode != self.current_mode else 0.3  # Lower threshold for faster response
+    # Uniform threshold so acc<->blended switches faster
+    confidence_threshold = 0.3
 
     if self.mode_confidence[mode] > confidence_threshold:
       if mode != self.current_mode and self.transition_timeout == 0:
