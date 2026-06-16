@@ -31,6 +31,7 @@ DASH_PATH_CROSS_NEAR_X = 4.0      # m, look-ahead at which the lane center is me
 DASH_PATH_CROSS_SWING = 2.0      # m, lane-center swing over the window that means a re-index
 DASH_PATH_CROSS_WINDOW = 0.8     # s, look-back window for the swing
 DASH_PATH_CROSS_REFRACTORY = 1.5 # s, collapse a crossing's swing into one pulse
+DASH_PATH_CROSS_LATCH = 0.25     # s, hold the pulse >= the 5 Hz LKAS_HUD_2 period so a dash frame reliably catches it
 # Limit how far to draw lane. Drawing too long can show inaccurate lanes on the far end.
 DASH_PATH_FULL_LEN_SPEED = 27.0  # m/s at which the lane reaches full draw length (~60 mph)
 DASH_PATH_LEAD_FULL_DIST = 70.0  # m lead distance at which the lane reaches full length
@@ -103,7 +104,8 @@ class ControlsExt(ModelStateBase):
     self._left_on = False
     self._right_on = False
     self._lane_hist: deque = deque()  # (t, near lane-center) over the last CROSS_WINDOW, for the lane-change swing
-    self._cross_t = 0.0               # last lane-cross pulse time (refractory)
+    self._cross_t = 0.0               # last lane-cross trigger time (refractory + latch window)
+    self._cross_dir = 0               # latched lane-cross direction held over CROSS_LATCH
 
     cloudlog.info("controlsd_ext is waiting for CarParamsSP")
     self.CP_SP = messaging.log_from_bytes(params.get("CarParamsSP", block=True), custom.CarParamsSP)
@@ -203,8 +205,10 @@ class ControlsExt(ModelStateBase):
         self._lane_hist.popleft()
       swing = lane_c - self._lane_hist[0][1]
       if abs(swing) > DASH_PATH_CROSS_SWING and now - self._cross_t > DASH_PATH_CROSS_REFRACTORY:
-        lane_cross = -1 if swing < 0 else 1
+        self._cross_dir = -1 if swing < 0 else 1
         self._cross_t = now
+      if now - self._cross_t < DASH_PATH_CROSS_LATCH:   # hold the pulse so a 5 Hz LKAS_HUD_2 frame catches it
+        lane_cross = self._cross_dir
 
     if not self._dash_on:
       return blank
