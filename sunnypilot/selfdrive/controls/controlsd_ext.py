@@ -5,7 +5,6 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 import time
-from collections import deque
 
 import numpy as np
 
@@ -19,19 +18,6 @@ DASH_PATH_PROB_OFF = 0.10      # prob below this drops it (low hysteresis rail)
 # When only one ego line is trusted, shift the center so the dash draws that line where the model sees it.
 # Tied to LANE_WIDTH_MAYBE=32; calibrate on-device.
 DASH_HALF_OFFSET = 1.65        # m, dash's lateral line offset from the center path
-DASH_PATH_FADE_T = 0.5         # s: shrink reach 1->0 over this long (retract far->near) before blanking
-# Lane-change rendering. During a cross the model craters laneLineProbs[1,2] to ~0 for ~2 s while the ego
-# lines re-index across the line, but the lane-center geometry stays smooth -- so below MAINTAIN we keep
-# rendering the LIVE fit (not a frozen one) for this long after the last confident frame, which carries the
-# crossing instead of blanking it. (Replaces the old 0.6 s hold.) A genuine model dropout has no fresh fit,
-# so it just holds the last poly for this long, then fades.
-DASH_PATH_CROSS_HOLD_T = 2.5   # s
-# Lane-cross pulse (LKAS_HUD_2 LEFT/RIGHT_LANE_CROSSED)
-DASH_PATH_CROSS_NEAR_X = 4.0      # m, look-ahead at which the lane center is measured
-DASH_PATH_CROSS_SWING = 2.0      # m, lane-center swing over the window that means a re-index
-DASH_PATH_CROSS_WINDOW = 0.8     # s, look-back window for the swing
-DASH_PATH_CROSS_REFRACTORY = 1.5 # s, collapse a crossing's swing into one pulse
-DASH_PATH_CROSS_LATCH = 0.25     # s, hold the pulse >= the 5 Hz LKAS_HUD_2 period so a dash frame reliably catches it
 # Limit how far to draw lane. Drawing too long can show inaccurate lanes on the far end.
 DASH_PATH_FULL_LEN_SPEED = 27.0  # m/s at which the lane reaches full draw length (~60 mph)
 DASH_PATH_LEAD_FULL_DIST = 70.0  # m lead distance at which the lane reaches full length
@@ -65,7 +51,7 @@ def select_lane_render(model: log.ModelDataV2, prev_left: bool, prev_right: bool
   """Choose the dash center cubic + which ego lines to draw, from per-side model confidence (stateless).
 
   Returns (center_poly, left_on, right_on); center_poly is None when neither ego line is trusted -- only detected
-  lanes are shown (the caller then holds/fades the last render, then blanks). Cases:
+  lanes are shown (the caller then blanks). Cases:
     both ego lines trusted -> center = mean(ego lines), both lines on (shows in-lane position + curvature)
     one trusted            -> center = that line -+ DASH_HALF_OFFSET so the dash draws it where the model sees it
     neither                -> None
@@ -97,15 +83,8 @@ class ControlsExt(ModelStateBase):
     self._param_update_time: float = 0.0
     self.blinker_pause_lateral = BlinkerPauseLateral()
 
-    # dash lane render (LANE_PATH) hold/fade + per-side state
-    self._dash_on = False
-    self._dash_poly: list[float] = []
-    self._dash_good_t = 0.0
     self._left_on = False
     self._right_on = False
-    self._lane_hist: deque = deque()  # (t, near lane-center) over the last CROSS_WINDOW, for the lane-change swing
-    self._cross_t = 0.0               # last lane-cross trigger time (refractory + latch window)
-    self._cross_dir = 0               # latched lane-cross direction held over CROSS_LATCH
 
     cloudlog.info("controlsd_ext is waiting for CarParamsSP")
     self.CP_SP = messaging.log_from_bytes(params.get("CarParamsSP", block=True), custom.CarParamsSP)
@@ -168,70 +147,34 @@ class ControlsExt(ModelStateBase):
     }
 
   def get_dash_path(self, model: log.ModelDataV2, model_valid: bool, v_ego: float, lead_d: float) -> dict:
-    """Pick the dash center cubic + which ego lines to draw (select_lane_render: per-side prob+std, with a
-    road-edge midpoint fallback when neither line is trusted), then apply the temporal machinery. Renders lane
-    changes for free: the model re-indexes its ego lines as the car crosses, so the lane-center fit swings into
-    the new pair of lines -- exactly how the stock dash animates a cross.
+    """Build the dash lane-render payload (DashPath) for the Honda Bosch radarless cluster.
+
+    Call once per control cycle with the current modelV2, its validity, ego speed (m/s), and lead distance
+    (m; 0 when there is no lead). Returns a dict matching the DashPath struct:
+      valid     -- whether to draw a lane this frame; when False the rest is blank and the dash shows nothing
+      poly      -- lane-center cubic [c0..c3] in model frame (x ahead, y +right); [] when not valid
+      reach     -- 0..1 fraction of the max draw length (grows with speed and a farther lead)
+      leftLine,
+      rightLine -- which ego lane line to draw, each offset DASH_HALF_OFFSET from the center
+      laneCross -- lane-cross side hint (-1 left / 0 / +1 right); currently always 0
+    Only a confident lane renders; low model confidence or an invalid model yields a blank (the consumer
+    draws nothing), so e.g. a lane change blanks naturally while the model re-indexes its ego lines.
     """
-    now = time.monotonic()
     blank = {"valid": False, "poly": [], "reach": 0.0, "laneCross": 0, "leftLine": False, "rightLine": False}
 
-    poly, left_on, right_on, near_lines = None, False, False, None
+    poly, left_on, right_on = (None, False, False)
     if model_valid:
       poly, left_on, right_on = select_lane_render(model, self._left_on, self._right_on)
-      lls = model.laneLines  # near ego-line positions for the cross flag (independent of which lines we draw)
-      if len(lls) >= 3 and len(lls[1].x):
-        near_lines = (float(np.interp(DASH_PATH_CROSS_NEAR_X, lls[1].x, lls[1].y)),
-                      float(np.interp(DASH_PATH_CROSS_NEAR_X, lls[2].x, lls[2].y)))
-
-    # A fresh render refreshes the geometry + hold clock; otherwise hold through the crater of a lane change (the
-    # model briefly craters both ego-line probs as it re-indexes across the line) and keep BOTH lines on -- like
-    # the stock camera -- so a one-frame per-side prob asymmetry isn't frozen into a spurious line drop for the hold.
-    if poly is not None:
-      self._dash_on = True
-      self._dash_good_t = now
-      self._dash_poly = poly
-      self._left_on, self._right_on = left_on, right_on
-    elif self._dash_on:
-      self._left_on = self._right_on = True
-
-    # lane-cross: a lane change re-indexes the ego pair, swinging the near lane-center ~a lane width through the
-    # car. Fire ONE pulse when that swing exceeds CROSS_SWING within CROSS_WINDOW; the swing sign is the side.
-    lane_cross = 0
-    if near_lines is not None and self._dash_on:
-      lane_c = (near_lines[0] + near_lines[1]) / 2.0
-      self._lane_hist.append((now, lane_c))
-      while self._lane_hist[0][0] < now - DASH_PATH_CROSS_WINDOW:
-        self._lane_hist.popleft()
-      swing = lane_c - self._lane_hist[0][1]
-      if abs(swing) > DASH_PATH_CROSS_SWING and now - self._cross_t > DASH_PATH_CROSS_REFRACTORY:
-        self._cross_dir = -1 if swing < 0 else 1
-        self._cross_t = now
-      if now - self._cross_t < DASH_PATH_CROSS_LATCH:   # hold the pulse so a 5 Hz LKAS_HUD_2 frame catches it
-        lane_cross = self._cross_dir
-
-    if not self._dash_on:
+    if poly is None:
       return blank
+    self._left_on, self._right_on = left_on, right_on
 
-    # dropout fade: full reach while fresh, then retract far->near over FADE_T, then blank
-    elapsed = now - self._dash_good_t
-    if elapsed <= DASH_PATH_CROSS_HOLD_T:
-      fade = 1.0
-    elif elapsed <= DASH_PATH_CROSS_HOLD_T + DASH_PATH_FADE_T:
-      fade = 1.0 - (elapsed - DASH_PATH_CROSS_HOLD_T) / DASH_PATH_FADE_T
-    else:
-      self._dash_on = False
-      return blank
-
-    # draw length = longest of the speed term, the lead term, and a min floor
-    speed_reach = v_ego / DASH_PATH_FULL_LEN_SPEED
-    lead_reach = lead_d / DASH_PATH_LEAD_FULL_DIST   # lead_d == 0 when no lead -> no extension
-    reach = fade * float(np.clip(max(speed_reach, lead_reach, DASH_PATH_MIN_REACH), 0.0, 1.0))
+    # draw length = longest of speed, lead, and a min floor (a short stub when stopped behind a lead / low speed)
+    reach = float(np.clip(max(v_ego / DASH_PATH_FULL_LEN_SPEED, lead_d / DASH_PATH_LEAD_FULL_DIST, DASH_PATH_MIN_REACH), 0.0, 1.0))
     if round(reach * LANE_LENGTH_MAX_VALUE) <= 0:
       return blank
-
-    return {"valid": True, "poly": self._dash_poly, "reach": reach, "laneCross": int(lane_cross),
-            "leftLine": self._left_on, "rightLine": self._right_on}
+    return {"valid": True, "poly": poly, "reach": reach, "laneCross": 0,
+            "leftLine": left_on, "rightLine": right_on}
 
   def state_control_ext(self, sm: messaging.SubMaster) -> custom.CarControlSP:
     CC_SP = custom.CarControlSP.new_message()
