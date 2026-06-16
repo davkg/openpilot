@@ -15,7 +15,7 @@ from openpilot.system.ui.lib.application import FontWeight, gui_app
 
 CALIBRATED = log.LiveCalibrationData.Status.calibrated
 
-# CAMERA_OBJECT_TRACKS marker config
+# HUD_OBJECTS marker config
 NUM_OBJECT_SLOTS = 10
 # Device-frame z is positive-down in _map_to_screen, so negative values lift
 # the marker above the path. ~-0.8 m puts it around mid-rear of a sedan.
@@ -64,7 +64,7 @@ class ModelRendererSP:
         f.update(0.0)
       return
 
-    tracks = sm['carStateSP'].cameraTracks
+    tracks = sm['carStateSP'].hudObjects
     seen = [False] * NUM_OBJECT_SLOTS
     for t in tracks:
       if 0 <= t.slot < NUM_OBJECT_SLOTS:

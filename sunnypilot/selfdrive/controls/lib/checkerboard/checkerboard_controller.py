@@ -1,6 +1,6 @@
 """
-Checkerboard staggering — read adjacent-vehicle tracks from
-`carStateSP.cameraTracks` and propose a slow-only v_cruise bias to break
+Checkerboard staggering — read adjacent-vehicle objects from
+`carStateSP.hudObjects` and propose a slow-only v_cruise bias to break
 door-to-door pacing with an adjacent-lane car. The output participates in
 `LongitudinalPlannerSP.update_targets`' min() arbitration like SCC/SLA.
 
@@ -217,7 +217,7 @@ class CheckerboardController:
       self.is_active = False
       return
 
-    tracks = sm['carStateSP'].cameraTracks
+    tracks = sm['carStateSP'].hudObjects
 
     # ── Outer gates (whole-scene, not per-track) ──────────────────────────────────────
     # Ego must be cruising, not actively accelerating/braking.

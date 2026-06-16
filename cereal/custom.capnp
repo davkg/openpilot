@@ -500,19 +500,19 @@ struct CarStateSP @0xb86e6369214c01c8 {
   # one-shot flag: true on the frame VCruiseHelper applied the (vEgo+10) decel jump
   decelJumpFired @1 :Bool;
 
-  # Stock forward-camera lead + adjacent-vehicle tracks (currently Honda Bosch radarless), parsed from
-  # CAMERA_LEAD / CAMERA_OBJECT_TRACKS on the CAN bus
+  # Stock forward-camera lead + adjacent-vehicle objects (currently Honda Bosch radarless), parsed from
+  # CAMERA_LEAD / HUD_OBJECTS on the CAN bus
   cameraLeadDistance @2 :Float32;       # m, single-lead distance from CAMERA_LEAD (0 = no lead / out of range)
   cameraLeadValid @3 :Bool;             # camera reports a visible lead
-  cameraTracks @4 :List(CameraTrack);   # up to 10 slots; consumers filter by .valid
+  hudObjects @4 :List(HudObject);       # up to 10 slots; consumers filter by .valid
 
-  struct CameraTrack {
+  struct HudObject {
     slot @0 :UInt8;          # 0..9 (camera's internal slot index)
-    objectId @1 :UInt8;      # persistent track id; 0 when slot is empty
+    objectId @1 :UInt8;      # persistent object id; 0 when slot is empty
     dRel @2 :Float32;        # longitudinal distance from ego (m), positive ahead
     yRel @3 :Float32;        # lateral position (m), positive = left of ego
-    valid @4 :Bool;          # slot currently carries a real track
-    isLeadCar @5 :Bool;      # camera tags this track as the lead car (slot 0 when present)
+    valid @4 :Bool;          # slot currently carries a real object
+    isLeadCar @5 :Bool;      # camera tags this object as the lead car (slot 0 when present)
   }
 }
 
