@@ -31,7 +31,9 @@ BLENDED_TRANSITION_START_JERK = 0.25        # m/s^3 -- jerk applied on the first
 BLENDED_TRANSITION_SNAP = 1.8               # m/s^4 -- jerk climb rate from start to max; matched to JERK for a ~0.25s ramp ((JERK-START_JERK)/0.25)
 BLENDED_TRANSITION_HARD_A = -1.5            # m/s^2 -- emergency-firm braking onsets below this bypass easing (applied immediately)
 
-ACCEL_E2E_CAP_FLOOR = 0.5        # m/s^2 -- never cap accel below this (main tuning knob)
+# Floor for the e2e accel cap floor, scaled on ego speed
+ACCEL_E2E_CAP_FLOOR_BP = [0., 10.]   # m/s -- ego speed
+ACCEL_E2E_CAP_FLOOR_V = [1.6, 0.5]   # m/s^2
 
 # Lookup table for turns
 _A_TOTAL_MAX_V = [1.7, 3.2]
@@ -246,7 +248,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     # Forward-looking e2e accel cap. Cap the upper accel clip at e2e's desire accel, floored
     # so it never fully clips acceleration. Helps soften over-eager mpc accel.
-    accel_clip[1] = min(accel_clip[1], max(output_a_target_e2e, ACCEL_E2E_CAP_FLOOR))
+    accel_e2e_cap_floor = np.interp(v_ego, ACCEL_E2E_CAP_FLOOR_BP, ACCEL_E2E_CAP_FLOOR_V)
+    accel_clip[1] = min(accel_clip[1], max(output_a_target_e2e, accel_e2e_cap_floor))
 
     for idx in range(2):
       accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)
