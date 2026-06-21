@@ -21,7 +21,7 @@ DASH_HALF_OFFSET = 1.65        # m, dash's lateral line offset from the center p
 # Limit how far to draw lane. Drawing too long can show inaccurate lanes on the far end.
 DASH_PATH_FULL_LEN_SPEED = 27.0  # m/s at which the lane reaches full draw length (~60 mph)
 DASH_PATH_LEAD_FULL_DIST = 70.0  # m lead distance at which the lane reaches full length
-DASH_PATH_MIN_REACH = 0.10
+DASH_PATH_MIN_REACH = 0.15
 
 from opendbc.car import structs
 from opendbc.sunnypilot.car.honda.lane_path import LANE_LENGTH_MAX_VALUE
