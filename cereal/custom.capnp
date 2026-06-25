@@ -422,17 +422,6 @@ struct CarControlSP @0xa5cd762cd951a455 {
   leadOne @2 :LeadData;
   leadTwo @3 :LeadData;
   intelligentCruiseButtonManagement @4 :IntelligentCruiseButtonManagement;
-  speedLimit @5 :Float32;
-  dashPath @6 :DashPath;           # OP's lane center for rendering on the dash (Honda Bosch radarless LANE_PATH)
-
-  struct DashPath {
-    valid @0 :Bool;                # model path is fresh/usable (held through brief dropouts, false once faded out)
-    poly @1 :List(Float32);        # cubic coeffs [c0, c1, c2, c3]; y = c0 + c1*x + c2*x^2 + c3*x^3 (m, +left, x ahead)
-    reach @2 :Float32;             # rendered-length fraction: 1 = full, 0 = no lane
-    laneCross @3 :Int8;            # brief lane-cross pulse: 0 none, +1 right, -1 left
-    leftLine @4 :Bool;             # draw the left dash line
-    rightLine @5 :Bool;            # draw the right dash line
-  }
 
   struct Param {
     key @0 :Text;
