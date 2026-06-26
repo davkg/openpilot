@@ -55,7 +55,7 @@ FCW_IDXS = T_IDXS < 5.0
 T_DIFFS = np.diff(T_IDXS, prepend=[0.])
 COMFORT_BRAKE = 2.5
 CRUISE_MIN_ACCEL = -1.2
-CRUISE_MAX_ACCEL = 2.0
+CRUISE_MAX_ACCEL = 1.6
 MIN_X_LEAD_FACTOR = 0.5
 
 # Lead-anticipation speed cap (suppress-accel): when a slower lead is visible
