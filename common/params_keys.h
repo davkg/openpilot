@@ -231,6 +231,12 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"CheckerboardStaggeringEnabled", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"CheckerboardStaggeringAggression", {PERSISTENT | BACKUP, INT, "1"}},
 
+    // speed-dependent T_FOLLOW curves ("mph:seconds, ..." per personality)
+    {"LongTFollowCustomEnabled", {PERSISTENT | BACKUP, BOOL, "0"}},
+    {"LongTFollowCurveRelaxed", {PERSISTENT | BACKUP, STRING, "20:1.6, 40:1.6, 60:1.6"}},
+    {"LongTFollowCurveStandard", {PERSISTENT | BACKUP, STRING, "20:1.3, 40:1.3, 60:1.3"}},
+    {"LongTFollowCurveAggressive", {PERSISTENT | BACKUP, STRING, "20:1.0, 40:1.0, 60:1.0"}},
+
     // sunnypilot model params
     {"CameraOffset", {PERSISTENT | BACKUP, FLOAT, "0.0"}},
     {"LagdToggle", {PERSISTENT | BACKUP, BOOL, "1"}},

@@ -8,9 +8,15 @@ from enum import IntEnum
 
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise_sub_layouts.speed_limit_settings import SpeedLimitSettingsLayout
 from openpilot.selfdrive.ui.ui_state import ui_state
+from openpilot.sunnypilot.selfdrive.controls.lib.t_follow_curve import parse_t_follow_curve
+from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.multilang import tr, tr_noop
-from openpilot.system.ui.sunnypilot.widgets.list_view import toggle_item_sp, option_item_sp, simple_button_item_sp, multiple_button_item_sp
-from openpilot.system.ui.widgets import Widget
+from openpilot.system.ui.sunnypilot.widgets.input_dialog import InputDialogSP
+from openpilot.system.ui.sunnypilot.widgets.list_view import (
+  toggle_item_sp, option_item_sp, simple_button_item_sp, multiple_button_item_sp, button_item_sp,
+)
+from openpilot.system.ui.widgets import DialogResult, Widget
+from openpilot.system.ui.widgets.confirm_dialog import alert_dialog
 from openpilot.system.ui.widgets.scroller_tici import Scroller
 
 
@@ -101,9 +107,24 @@ class CruiseLayout(Widget):
       description=tr("Enable toggle to allow the model to determine when to use sunnypilot ACC or sunnypilot End to End Longitudinal."),
       param="DynamicExperimentalControl")
 
+    self.t_follow_toggle = toggle_item_sp(
+      title=tr("Custom Follow Distance (T_FOLLOW)"),
+      description=tr("Set a speed-dependent follow time per driving personality as \"mph:seconds\" pairs " +
+                     "(e.g. 20:1.3, 40:1.4, 60:1.6). When off, the stock follow distances are used."),
+      param="LongTFollowCustomEnabled",
+      callback=self._on_t_follow_toggle)
+
+    self.t_follow_rows = [
+      self._make_t_follow_row(tr("Relaxed"), "LongTFollowCurveRelaxed"),
+      self._make_t_follow_row(tr("Standard"), "LongTFollowCurveStandard"),
+      self._make_t_follow_row(tr("Aggressive"), "LongTFollowCurveAggressive"),
+    ]
+
     items = [
       self.icbm_toggle,
       self.dec_toggle,
+      self.t_follow_toggle,
+      *self.t_follow_rows,
       self.scc_v_toggle,
       self.scc_m_toggle,
       self.checkerboard_toggle,
@@ -164,17 +185,20 @@ class CruiseLayout(Widget):
         self.scc_v_toggle.action_item.set_enabled(True)
         self.scc_m_toggle.action_item.set_enabled(True)
         self.checkerboard_toggle.action_item.set_enabled(has_long)
+        self.t_follow_toggle.action_item.set_enabled(has_long)
       else:
         ui_state.params.remove("CustomAccIncrementsEnabled")
         ui_state.params.remove("DynamicExperimentalControl")
         ui_state.params.remove("SmartCruiseControlVision")
         ui_state.params.remove("SmartCruiseControlMap")
         ui_state.params.remove("CheckerboardStaggeringEnabled")
+        ui_state.params.remove("LongTFollowCustomEnabled")
         self.custom_acc_toggle.action_item.set_enabled(False)
         self.dec_toggle.action_item.set_enabled(False)
         self.scc_v_toggle.action_item.set_enabled(False)
         self.scc_m_toggle.action_item.set_enabled(False)
         self.checkerboard_toggle.action_item.set_enabled(False)
+        self.t_follow_toggle.action_item.set_enabled(False)
 
     else:
       has_icbm = has_long = False
@@ -207,6 +231,7 @@ class CruiseLayout(Widget):
 
     self.checkerboard_aggression.action_item.set_selected_button(ui_state.params.get("CheckerboardStaggeringAggression", return_default=True))
     self._on_checkerboard_toggle(self.checkerboard_toggle.action_item.get_state())
+    self._on_t_follow_toggle(self.t_follow_toggle.action_item.get_state())
 
   def _on_custom_acc_toggle(self, state):
     self.custom_acc_short_increment.set_visible(state)
@@ -217,3 +242,29 @@ class CruiseLayout(Widget):
   def _on_checkerboard_toggle(self, state):
     self.checkerboard_aggression.set_visible(bool(state))
     self.checkerboard_aggression.action_item.set_enabled(self.checkerboard_toggle.action_item.enabled)
+
+  def _make_t_follow_row(self, label, param):
+    return button_item_sp(
+      title=lambda: f"{label}: {ui_state.params.get(param, return_default=True)}",
+      button_text=tr("Edit"),
+      callback=lambda: self._edit_t_follow(label, param))
+
+  def _edit_t_follow(self, label, param):
+    def _on_confirm(result, text):
+      if result != DialogResult.CONFIRM:
+        return
+      if parse_t_follow_curve(text) is None:
+        gui_app.push_widget(alert_dialog(tr("Invalid curve. Use \"mph:seconds\" pairs with increasing speeds and 0.8-3.0s")))
+      else:
+        ui_state.params.put(param, text)
+
+    dialog = InputDialogSP(
+      title=f"{label} - T_FOLLOW",
+      sub_title=tr("mph:seconds pairs, e.g. 20:1.3, 40:1.4, 60:1.6"),
+      current_text=ui_state.params.get(param, return_default=True),
+      callback=_on_confirm)
+    dialog.show()
+
+  def _on_t_follow_toggle(self, state):
+    for row in self.t_follow_rows:
+      row.set_visible(bool(state))

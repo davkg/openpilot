@@ -8,6 +8,8 @@ See the LICENSE.md file in the root directory for more details.
 from cereal import messaging, custom
 from opendbc.car import structs
 from openpilot.common.constants import CV
+from openpilot.common.params import Params
+from openpilot.sunnypilot.selfdrive.controls.lib.t_follow_curve import load_t_follow_curves
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX
 from openpilot.sunnypilot.selfdrive.controls.lib.checkerboard.checkerboard_controller import CheckerboardController
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.dec import DynamicExperimentalController
@@ -32,6 +34,7 @@ class LongitudinalPlannerSP:
     self.sla = SpeedLimitAssist(CP, CP_SP)
     self.checkerboard = CheckerboardController()
     self.mpc = mpc  # used to apply T_FOLLOW delta from checkerboard
+    self.mpc.t_follow_curves = load_t_follow_curves(Params())
     self.generation = int(model_bundle.generation) if (model_bundle := get_active_bundle()) else None
     self.source = LongitudinalPlanSource.cruise
     self.e2e_alerts_helper = E2EAlertsHelper()

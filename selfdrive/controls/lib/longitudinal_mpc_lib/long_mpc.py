@@ -255,6 +255,7 @@ class LongitudinalMpc:
     self.reset()
     self.source = LongitudinalPlanSource.cruise
     self.t_follow_delta = 0.0  # additive bias from checkerboard staggering controller
+    self.t_follow_curves = None  # {personality: (bp_v, t_vals)}
     # lead-aware v_cruise (suppress-accel) telemetry, refreshed each update()
     self.lead_aware_floor = 0.0
     self.lead_aware_margin = 0.0
@@ -357,7 +358,11 @@ class LongitudinalMpc:
 
   def update(self, radarstate, v_cruise, personality=log.LongitudinalPersonality.standard):
     v_ego = self.x0[1]
-    t_follow = get_T_FOLLOW(personality, v_ego)
+    curve = None if self.t_follow_curves is None else self.t_follow_curves.get(personality)
+    if curve is not None:
+      t_follow = float(np.interp(v_ego, curve[0], curve[1]))
+    else:
+      t_follow = get_T_FOLLOW(personality, v_ego)
     t_follow += self.t_follow_delta  # additive bias from checkerboard staggering
 
     stop_distance = get_STOP_DISTANCE(personality)
