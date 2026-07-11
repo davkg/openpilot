@@ -7,19 +7,19 @@ parsed curves to the MPC, which interpolates them per frame.
 """
 import numpy as np
 
-from cereal import log
 from openpilot.common.constants import CV
 
 MIN_T_FOLLOW = 0.8  # s
 MAX_T_FOLLOW = 3.0  # s
 
-LongitudinalPersonality = log.LongitudinalPersonality
-
-# personality -> param holding its curve string
+# personality name -> param holding its curve string. Keyed by the enum's *name*
+# (not its int ordinal) because a capnp enum read off a message (_DynamicEnum, which
+# is what the planner passes to the MPC) hashes/compares equal to its name string, not
+# its int. Name-keying lets the MPC look the curve up with a plain curves.get(personality).
 _CURVE_PARAMS = {
-  int(LongitudinalPersonality.relaxed): "LongTFollowCurveRelaxed",
-  int(LongitudinalPersonality.standard): "LongTFollowCurveStandard",
-  int(LongitudinalPersonality.aggressive): "LongTFollowCurveAggressive",
+  "relaxed":    "LongTFollowCurveRelaxed",
+  "standard":   "LongTFollowCurveStandard",
+  "aggressive": "LongTFollowCurveAggressive",
 }
 
 
@@ -56,8 +56,9 @@ def parse_t_follow_curve(s: str) -> tuple[np.ndarray, np.ndarray] | None:
   return np.array(speeds_mph) * CV.MPH_TO_MS, np.array(t_vals)
 
 
-def load_t_follow_curves(params) -> dict[int, tuple[np.ndarray, np.ndarray]] | None:
-  """Load the per-personality T_FOLLOW curves, or None to use the stock get_T_FOLLOW path.
+def load_t_follow_curves(params) -> dict[str, tuple[np.ndarray, np.ndarray]] | None:
+  """Load the per-personality T_FOLLOW curves keyed by personality name, or None to use the
+  stock get_T_FOLLOW path.
 
   Returns None when the feature is disabled or no stored curve parses. A personality whose
   stored string fails to parse is omitted, so the planner falls back to stock for it.
@@ -65,10 +66,10 @@ def load_t_follow_curves(params) -> dict[int, tuple[np.ndarray, np.ndarray]] | N
   if not params.get_bool("LongTFollowCustomEnabled"):
     return None
 
-  curves: dict[int, tuple[np.ndarray, np.ndarray]] = {}
-  for personality, key in _CURVE_PARAMS.items():
+  curves: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+  for name, key in _CURVE_PARAMS.items():
     curve = parse_t_follow_curve(params.get(key, return_default=True))
     if curve is not None:
-      curves[personality] = curve
+      curves[name] = curve
 
   return curves or None

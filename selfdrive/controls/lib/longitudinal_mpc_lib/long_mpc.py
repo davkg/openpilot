@@ -88,6 +88,13 @@ def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard, v_ego=0.0):
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
+def get_T_FOLLOW_USER(curves, personality=log.LongitudinalPersonality.standard, v_ego=0.0):
+  if curves is not None:
+    curve = curves.get(personality)
+    if curve is not None:
+      return float(np.interp(v_ego, curve[0], curve[1]))
+  return get_T_FOLLOW(personality, v_ego)
+
 def get_STOP_DISTANCE(personality=log.LongitudinalPersonality.standard):
   if personality==log.LongitudinalPersonality.relaxed:
     return 6.5
@@ -255,7 +262,7 @@ class LongitudinalMpc:
     self.reset()
     self.source = LongitudinalPlanSource.cruise
     self.t_follow_delta = 0.0  # additive bias from checkerboard staggering controller
-    self.t_follow_curves = None  # {personality: (bp_v, t_vals)}
+    self.t_follow_curves = None  # {personality_name: (bp_v, t_vals)}
     # lead-aware v_cruise (suppress-accel) telemetry, refreshed each update()
     self.lead_aware_floor = 0.0
     self.lead_aware_margin = 0.0
@@ -358,11 +365,7 @@ class LongitudinalMpc:
 
   def update(self, radarstate, v_cruise, personality=log.LongitudinalPersonality.standard):
     v_ego = self.x0[1]
-    curve = None if self.t_follow_curves is None else self.t_follow_curves.get(personality)
-    if curve is not None:
-      t_follow = float(np.interp(v_ego, curve[0], curve[1]))
-    else:
-      t_follow = get_T_FOLLOW(personality, v_ego)
+    t_follow = get_T_FOLLOW_USER(self.t_follow_curves, personality, v_ego)
     t_follow += self.t_follow_delta  # additive bias from checkerboard staggering
 
     stop_distance = get_STOP_DISTANCE(personality)
