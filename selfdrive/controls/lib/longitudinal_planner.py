@@ -32,7 +32,7 @@ BLENDED_TRANSITION_SNAP = 1.8               # m/s^4 -- jerk climb rate from star
 BLENDED_TRANSITION_HARD_A = -1.5            # m/s^2 -- emergency-firm braking onsets below this bypass easing (applied immediately)
 
 # Floor for the e2e accel cap floor, scaled on ego speed
-ACCEL_E2E_CAP_FLOOR_BP = [0., 10.]   # m/s -- ego speed
+ACCEL_E2E_CAP_FLOOR_BP = [5., 15.]   # m/s -- ego speed
 ACCEL_E2E_CAP_FLOOR_V = [1.6, 0.5]   # m/s^2
 
 # Lookup table for turns
