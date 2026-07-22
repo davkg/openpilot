@@ -7,6 +7,14 @@
     "title": "Enable ADB",
     "description": ""
   },
+  "AdjacentVehicleMarkers": {
+    "title": "Adjacent Vehicle Markers",
+    "description": ""
+  },
+  "AdjacentVehicleMarkersDebug": {
+    "title": "Adjacent Vehicle Markers (Debug)",
+    "description": ""
+  },
   "AlphaLongitudinalEnabled": {
     "title": "Alpha Longitudinal",
     "description": ""
@@ -172,6 +180,14 @@
   },
   "CarPlatformBundle": {
     "title": "Car Platform Bundle",
+    "description": ""
+  },
+  "CheckerboardStaggeringAggression": {
+    "title": "Checkerboard Staggering Aggression",
+    "description": ""
+  },
+  "CheckerboardStaggeringEnabled": {
+    "title": "Checkerboard Staggering",
     "description": ""
   },
   "ChevronInfo": {
@@ -623,6 +639,38 @@
   "LocationFilterInitialState": {
     "title": "Location Filter Initial State",
     "description": ""
+  },
+  "LongTFollowCurveAggressive": {
+    "title": "Follow Curve (Aggressive)",
+    "description": "Advanced-mode speed-dependent follow curve (\"mph:seconds\" pairs) for the Aggressive personality."
+  },
+  "LongTFollowCurveRelaxed": {
+    "title": "Follow Curve (Relaxed)",
+    "description": "Advanced-mode speed-dependent follow curve (\"mph:seconds\" pairs) for the Relaxed personality."
+  },
+  "LongTFollowCurveStandard": {
+    "title": "Follow Curve (Standard)",
+    "description": "Advanced-mode speed-dependent follow curve (\"mph:seconds\" pairs) for the Standard personality."
+  },
+  "LongTFollowCustomEnabled": {
+    "title": "Custom Follow Distance",
+    "description": "Enable per-personality follow-time customization. When off, stock follow distances are used."
+  },
+  "LongTFollowMode": {
+    "title": "Follow Distance Mode",
+    "description": "Simple (single follow time per personality) or Advanced (speed-dependent curves)."
+  },
+  "LongTFollowSimpleAggressive": {
+    "title": "Follow Time (Aggressive)",
+    "description": "Follow time in seconds for the Aggressive personality."
+  },
+  "LongTFollowSimpleRelaxed": {
+    "title": "Follow Time (Relaxed)",
+    "description": "Follow time in seconds for the Relaxed personality."
+  },
+  "LongTFollowSimpleStandard": {
+    "title": "Follow Time (Standard)",
+    "description": "Follow time in seconds for the Standard personality."
   },
   "LongitudinalManeuverMode": {
     "title": "Longitudinal Maneuver Mode",
