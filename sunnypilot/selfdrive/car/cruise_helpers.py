@@ -44,7 +44,7 @@ class CruiseHelper:
     self.CP = CP
     self.params = Params()
 
-    self.button_frame_counts = {ButtonType.gapAdjustCruise: 0, ButtonType.lkas: 0,
+    self.button_frame_counts = {ButtonType.lkas: 0,
                                 ButtonType.accelCruise: 0, ButtonType.decelCruise: 0}
     self._experimental_mode = False
     self.experimental_mode_switched = False
@@ -54,7 +54,7 @@ class CruiseHelper:
       if CS.cruiseState.available:
         self.update_button_frame_counts(CS)
 
-        # toggle experimental mode once on distance button hold or on LKAS press
+        # toggle experimental mode once on LKAS button hold
         self.update_experimental_mode(CS, events, experimental_mode)
 
         # audible feedback on each set-speed step while holding inc/dec, plus
@@ -73,9 +73,8 @@ class CruiseHelper:
 
   def update_experimental_mode(self, CS, events, experimental_mode) -> None:
     lkas_long_pressed = self.button_frame_counts[ButtonType.lkas] >= DISTANCE_LONG_PRESS
-    gap_adjust_long_pressed = self.button_frame_counts[ButtonType.gapAdjustCruise] >= DISTANCE_LONG_PRESS
 
-    if (lkas_long_pressed or gap_adjust_long_pressed) and not self.experimental_mode_switched:
+    if lkas_long_pressed and not self.experimental_mode_switched:
       dec = self.params.get_bool("DynamicExperimentalControl")
       self._experimental_mode, new_dec = next_experimental_dec_state(experimental_mode, dec)
       self.params.put_bool_nonblocking("ExperimentalMode", self._experimental_mode)
@@ -84,8 +83,6 @@ class CruiseHelper:
       self.experimental_mode_switched = True
 
     if any(be.type == ButtonType.lkas and not be.pressed for be in CS.buttonEvents):
-      self.experimental_mode_switched = False
-    if any(be.type == ButtonType.gapAdjustCruise and not be.pressed for be in CS.buttonEvents):
       self.experimental_mode_switched = False
 
   def update_cruise_step_chime(self, CS_SP, events) -> None:

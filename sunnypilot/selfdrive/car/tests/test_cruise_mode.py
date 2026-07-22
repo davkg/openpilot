@@ -51,7 +51,7 @@ class TestCruiseHelper:
   def reset(self):
     for _ in range(2):
       CS = car.CarState(cruiseState={"available": False})
-      CS.buttonEvents = [ButtonEvent(type=ButtonType.gapAdjustCruise, pressed=False)]
+      CS.buttonEvents = [ButtonEvent(type=ButtonType.lkas, pressed=False)]
       self._set_state(False, False)
       self.cruise_helper.experimental_mode_switched = False
       self.cruise_helper.update(CS, _csp(), self.events, False)
@@ -70,47 +70,42 @@ class TestCruiseHelper:
 
   def test_button_hold_cycles_three_states(self) -> None:
     """Each hold advances acc -> experimental(DEC off) -> experimental(DEC on) -> acc, looping."""
-    for button in (ButtonType.lkas, ButtonType.gapAdjustCruise):
-      self.setup_method()
-      self.reset()
+    self.reset()
 
-      # (ExperimentalMode, DynamicExperimentalControl) after each successive hold, twice round
-      expected = [(True, False), (True, True), (False, False)] * 2
-      for exp_em, exp_dec in expected:
-        self._hold(button)
-        assert self.cruise_helper._experimental_mode is exp_em
-        assert self._dec is exp_dec
+    # (ExperimentalMode, DynamicExperimentalControl) after each successive hold, twice round
+    expected = [(True, False), (True, True), (False, False)] * 2
+    for exp_em, exp_dec in expected:
+      self._hold(ButtonType.lkas)
+      assert self.cruise_helper._experimental_mode is exp_em
+      assert self._dec is exp_dec
 
   def test_button_hold_continues_no_extra_toggle(self) -> None:
     """Continuing to hold past the first switch must not advance the cycle again."""
-    for button in (ButtonType.lkas, ButtonType.gapAdjustCruise):
-      self.setup_method()
-      self.reset()
+    self.reset()
 
-      for i in range(3 * DISTANCE_LONG_PRESS):
-        CS = car.CarState(cruiseState={"available": True})
-        CS.buttonEvents = [ButtonEvent(type=button, pressed=True)] if i == 0 else []
-        self.cruise_helper.update(CS, _csp(), self.events, self.cruise_helper._experimental_mode)
+    for i in range(3 * DISTANCE_LONG_PRESS):
+      CS = car.CarState(cruiseState={"available": True})
+      CS.buttonEvents = [ButtonEvent(type=ButtonType.lkas, pressed=True)] if i == 0 else []
+      self.cruise_helper.update(CS, _csp(), self.events, self.cruise_helper._experimental_mode)
 
-      # only the single acc -> experimental(DEC off) transition fired
-      assert self.cruise_helper._experimental_mode is True
-      assert self._dec is False
+    # only the single acc -> experimental(DEC off) transition fired
+    assert self.cruise_helper._experimental_mode is True
+    assert self._dec is False
 
   def test_button_short_press_no_toggle(self) -> None:
-    for button in (ButtonType.lkas, ButtonType.gapAdjustCruise):
-      for experimental_mode in (True, False):
-        self.setup_method()
-        self.reset()
-        self._set_state(experimental_mode, False)
+    for experimental_mode in (True, False):
+      self.setup_method()
+      self.reset()
+      self._set_state(experimental_mode, False)
 
-        for i in range(DISTANCE_LONG_PRESS - 1):
-          CS = car.CarState(cruiseState={"available": True})
-          CS.buttonEvents = [ButtonEvent(type=button, pressed=True)] if i == 0 else []
-          self.cruise_helper.update(CS, _csp(), self.events, experimental_mode)
+      for i in range(DISTANCE_LONG_PRESS - 1):
+        CS = car.CarState(cruiseState={"available": True})
+        CS.buttonEvents = [ButtonEvent(type=ButtonType.lkas, pressed=True)] if i == 0 else []
+        self.cruise_helper.update(CS, _csp(), self.events, experimental_mode)
 
-        assert self.cruise_helper._experimental_mode == experimental_mode
-        assert self._dec is False
-        assert self.cruise_helper.experimental_mode_switched is False
+      assert self.cruise_helper._experimental_mode == experimental_mode
+      assert self._dec is False
+      assert self.cruise_helper.experimental_mode_switched is False
 
   def test_release_allows_retoggle(self) -> None:
     """Release rearms the debounce so the next hold advances the cycle."""
