@@ -112,8 +112,25 @@ class CruiseLayout(Widget):
       description=tr("Set a speed-dependent follow time per driving personality as \"mph:seconds\" pairs " +
                      "(e.g. 20:1.3, 40:1.4, 60:1.6). When off, the stock follow distances are used."),
       param="LongTFollowCustomEnabled",
-      callback=self._on_t_follow_toggle)
+      callback=self._refresh_t_follow)
 
+    self.t_follow_mode = multiple_button_item_sp(
+      title=lambda: tr("Follow Distance Mode"),
+      description=lambda: tr("Simple: one follow time per personality. " +
+                             "Advanced: speed-dependent \"mph:seconds\" curves."),
+      buttons=[lambda: tr("Simple"), lambda: tr("Advanced")],
+      param="LongTFollowMode",
+      callback=self._refresh_t_follow,
+      inline=False)
+
+    # Simple mode: single follow-time slider per personality (matches sunnylink).
+    self.t_follow_simple_rows = [
+      self._make_t_follow_simple_row(tr("Relaxed"), "LongTFollowSimpleRelaxed"),
+      self._make_t_follow_simple_row(tr("Standard"), "LongTFollowSimpleStandard"),
+      self._make_t_follow_simple_row(tr("Aggressive"), "LongTFollowSimpleAggressive"),
+    ]
+
+    # Advanced mode: manual "mph:seconds" curve string per personality (3X only).
     self.t_follow_rows = [
       self._make_t_follow_row(tr("Relaxed"), "LongTFollowCurveRelaxed"),
       self._make_t_follow_row(tr("Standard"), "LongTFollowCurveStandard"),
@@ -124,6 +141,8 @@ class CruiseLayout(Widget):
       self.icbm_toggle,
       self.dec_toggle,
       self.t_follow_toggle,
+      self.t_follow_mode,
+      *self.t_follow_simple_rows,
       *self.t_follow_rows,
       self.scc_v_toggle,
       self.scc_m_toggle,
@@ -186,6 +205,9 @@ class CruiseLayout(Widget):
         self.scc_m_toggle.action_item.set_enabled(True)
         self.checkerboard_toggle.action_item.set_enabled(has_long)
         self.t_follow_toggle.action_item.set_enabled(has_long)
+        self.t_follow_mode.action_item.set_enabled(has_long)
+        for row in self.t_follow_simple_rows:
+          row.action_item.set_enabled(has_long)
       else:
         ui_state.params.remove("CustomAccIncrementsEnabled")
         ui_state.params.remove("DynamicExperimentalControl")
@@ -199,6 +221,9 @@ class CruiseLayout(Widget):
         self.scc_m_toggle.action_item.set_enabled(False)
         self.checkerboard_toggle.action_item.set_enabled(False)
         self.t_follow_toggle.action_item.set_enabled(False)
+        self.t_follow_mode.action_item.set_enabled(False)
+        for row in self.t_follow_simple_rows:
+          row.action_item.set_enabled(False)
 
     else:
       has_icbm = has_long = False
@@ -231,7 +256,7 @@ class CruiseLayout(Widget):
 
     self.checkerboard_aggression.action_item.set_selected_button(ui_state.params.get("CheckerboardStaggeringAggression", return_default=True))
     self._on_checkerboard_toggle(self.checkerboard_toggle.action_item.get_state())
-    self._on_t_follow_toggle(self.t_follow_toggle.action_item.get_state())
+    self._refresh_t_follow()
 
   def _on_custom_acc_toggle(self, state):
     self.custom_acc_short_increment.set_visible(state)
@@ -242,6 +267,17 @@ class CruiseLayout(Widget):
   def _on_checkerboard_toggle(self, state):
     self.checkerboard_aggression.set_visible(bool(state))
     self.checkerboard_aggression.action_item.set_enabled(self.checkerboard_toggle.action_item.enabled)
+
+  def _make_t_follow_simple_row(self, label, param):
+    # use_float_scaling stores the param as seconds ("1.30"); the control works in hundredths
+    # internally, so 0.80-3.00 s maps to 80-300 in steps of 10 (0.10 s).
+    return option_item_sp(
+      title=label,
+      param=param,
+      min_value=80, max_value=300, value_change_step=10,
+      use_float_scaling=True,
+      label_callback=lambda v: f"{v / 100:.2f}s",
+      inline=True)
 
   def _make_t_follow_row(self, label, param):
     return button_item_sp(
@@ -265,6 +301,11 @@ class CruiseLayout(Widget):
       callback=_on_confirm)
     dialog.show()
 
-  def _on_t_follow_toggle(self, state):
+  def _refresh_t_follow(self, *_):
+    enabled = bool(self.t_follow_toggle.action_item.get_state())
+    advanced = int(ui_state.params.get("LongTFollowMode", return_default=True)) == 1
+    self.t_follow_mode.set_visible(enabled)
+    for row in self.t_follow_simple_rows:
+      row.set_visible(enabled and not advanced)
     for row in self.t_follow_rows:
-      row.set_visible(bool(state))
+      row.set_visible(enabled and advanced)

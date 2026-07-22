@@ -22,6 +22,15 @@ _CURVE_PARAMS = {
   "aggressive": "LongTFollowCurveAggressive",
 }
 
+# Simple mode: single follow-time (s) per personality, editable via sunnylink / native sliders.
+_SIMPLE_PARAMS = {
+  "relaxed":    "LongTFollowSimpleRelaxed",
+  "standard":   "LongTFollowSimpleStandard",
+  "aggressive": "LongTFollowSimpleAggressive",
+}
+
+MODE_ADVANCED = 1  # LongTFollowMode: parse the per-personality curve strings (Simple = single flat follow-time)
+
 
 def parse_t_follow_curve(s: str) -> tuple[np.ndarray, np.ndarray] | None:
   """Parse a "mph:seconds, ..." string into (bp_v_ms, t_vals) for np.interp, or None if invalid.
@@ -60,16 +69,29 @@ def load_t_follow_curves(params) -> dict[str, tuple[np.ndarray, np.ndarray]] | N
   """Load the per-personality T_FOLLOW curves keyed by personality name, or None to use the
   stock get_T_FOLLOW path.
 
-  Returns None when the feature is disabled or no stored curve parses. A personality whose
-  stored string fails to parse is omitted, so the planner falls back to stock for it.
+  Advanced mode parses the per-personality "mph:seconds" curve strings; Simple mode (default)
+  builds a flat curve from a single follow-time slider per personality (sunnylink-editable).
+  Returns None when the feature is disabled or no stored value is usable. A personality whose
+  stored value is invalid is omitted, so the planner falls back to stock for it.
   """
   if not params.get_bool("LongTFollowCustomEnabled"):
     return None
 
+  advanced = int(params.get("LongTFollowMode", return_default=True)) == MODE_ADVANCED
+
   curves: dict[str, tuple[np.ndarray, np.ndarray]] = {}
-  for name, key in _CURVE_PARAMS.items():
-    curve = parse_t_follow_curve(params.get(key, return_default=True))
-    if curve is not None:
-      curves[name] = curve
+  if advanced:
+    for name, key in _CURVE_PARAMS.items():
+      curve = parse_t_follow_curve(params.get(key, return_default=True))
+      if curve is not None:
+        curves[name] = curve
+  else:
+    for name, key in _SIMPLE_PARAMS.items():
+      try:
+        sec = float(params.get(key, return_default=True))
+      except (TypeError, ValueError):
+        continue
+      if MIN_T_FOLLOW <= sec <= MAX_T_FOLLOW:
+        curves[name] = (np.array([0.0, 100.0]), np.array([sec, sec]))  # flat over ego speed
 
   return curves or None
