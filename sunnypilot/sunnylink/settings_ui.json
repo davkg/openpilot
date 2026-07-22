@@ -696,11 +696,6 @@
                   "type": "param",
                   "key": "LongTFollowCustomEnabled",
                   "equals": true
-                },
-                {
-                  "type": "param",
-                  "key": "LongTFollowMode",
-                  "equals": 0
                 }
               ],
               "enablement": [
@@ -725,11 +720,6 @@
                   "type": "param",
                   "key": "LongTFollowCustomEnabled",
                   "equals": true
-                },
-                {
-                  "type": "param",
-                  "key": "LongTFollowMode",
-                  "equals": 0
                 }
               ],
               "enablement": [
@@ -754,11 +744,6 @@
                   "type": "param",
                   "key": "LongTFollowCustomEnabled",
                   "equals": true
-                },
-                {
-                  "type": "param",
-                  "key": "LongTFollowMode",
-                  "equals": 0
                 }
               ],
               "enablement": [

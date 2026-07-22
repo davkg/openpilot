@@ -234,12 +234,12 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // speed-dependent T_FOLLOW curves ("mph:seconds, ..." per personality)
     {"LongTFollowCustomEnabled", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"LongTFollowMode", {PERSISTENT | BACKUP, INT, "0"}},  // 0=Simple, 1=Advanced (curve strings, 3X only)
-    {"LongTFollowCurveRelaxed", {PERSISTENT | BACKUP, STRING, "20:1.6, 40:1.6, 60:1.6"}},
-    {"LongTFollowCurveStandard", {PERSISTENT | BACKUP, STRING, "20:1.3, 40:1.3, 60:1.3"}},
-    {"LongTFollowCurveAggressive", {PERSISTENT | BACKUP, STRING, "20:1.0, 40:1.0, 60:1.0"}},
-    {"LongTFollowSimpleRelaxed", {PERSISTENT | BACKUP, FLOAT, "1.6"}},
-    {"LongTFollowSimpleStandard", {PERSISTENT | BACKUP, FLOAT, "1.3"}},
-    {"LongTFollowSimpleAggressive", {PERSISTENT | BACKUP, FLOAT, "1.0"}},
+    {"LongTFollowCurveRelaxed", {PERSISTENT | BACKUP, STRING, "20:1.75, 40:1.75, 60:1.75"}},
+    {"LongTFollowCurveStandard", {PERSISTENT | BACKUP, STRING, "20:1.45, 40:1.45, 60:1.45"}},
+    {"LongTFollowCurveAggressive", {PERSISTENT | BACKUP, STRING, "20:1.25, 40:1.25, 60:1.25"}},
+    {"LongTFollowSimpleRelaxed", {PERSISTENT | BACKUP, FLOAT, "1.75"}},
+    {"LongTFollowSimpleStandard", {PERSISTENT | BACKUP, FLOAT, "1.45"}},
+    {"LongTFollowSimpleAggressive", {PERSISTENT | BACKUP, FLOAT, "1.25"}},
 
     // sunnypilot model params
     {"CameraOffset", {PERSISTENT | BACKUP, FLOAT, "0.0"}},
