@@ -256,6 +256,11 @@ class CruiseLayout(Widget):
 
     self.checkerboard_aggression.action_item.set_selected_button(ui_state.params.get("CheckerboardStaggeringAggression", return_default=True))
     self._on_checkerboard_toggle(self.checkerboard_toggle.action_item.get_state())
+
+    # Re-sync t_follow widgets from params so remote (sunnylink) changes show without a UI restart
+    self.t_follow_toggle.action_item.set_state(ui_state.params.get_bool("LongTFollowCustomEnabled"))
+    for row in self.t_follow_simple_rows:
+      row.action_item.refresh_from_param()
     self._refresh_t_follow()
 
   def _on_custom_acc_toggle(self, state):

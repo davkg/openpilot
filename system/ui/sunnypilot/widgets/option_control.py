@@ -38,14 +38,7 @@ class OptionControlSP(ItemAction):
     self.use_float_scaling = use_float_scaling
     self.current_value = min_value
     self.label_callback = label_callback
-    if self.value_map:
-      for key in self.value_map:
-        if self.value_map[key] == self.params.get(self.param_key, return_default=True):
-          self.current_value = int(key)
-          break
-    else:
-      value = self.params.get(self.param_key, return_default=True)
-      self.current_value = int(float(value) * 100.0) if self.use_float_scaling else int(value)
+    self.refresh_from_param()
 
     # Initialize font and button styles
     self._font = gui_app.font(FontWeight.MEDIUM)
@@ -53,6 +46,17 @@ class OptionControlSP(ItemAction):
     # Layout rectangles for components
     self.minus_btn_rect = rl.Rectangle(0, 0, 0, 0)
     self.plus_btn_rect = rl.Rectangle(0, 0, 0, 0)
+
+  def refresh_from_param(self):
+    """Re-read current_value from the param store, picking up external/remote (e.g. sunnylink) changes."""
+    value = self.params.get(self.param_key, return_default=True)
+    if self.value_map:
+      for key in self.value_map:
+        if self.value_map[key] == value:
+          self.current_value = int(key)
+          break
+    else:
+      self.current_value = int(float(value) * 100.0) if self.use_float_scaling else int(value)
 
   def get_value(self) -> int:
     """Get the current value of the control"""
