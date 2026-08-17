@@ -11,7 +11,6 @@ class ExpButton(Widget):
     super().__init__()
     self._params = Params()
     self._experimental_mode: bool = False
-    self._engageable: bool = False
 
     # State hold mechanism
     self._hold_duration = 2.0  # seconds
@@ -30,23 +29,25 @@ class ExpButton(Widget):
   def _update_state(self) -> None:
     selfdrive_state = ui_state.sm["selfdriveState"]
     self._experimental_mode = selfdrive_state.experimentalMode
-    self._engageable = selfdrive_state.engageable or selfdrive_state.enabled
 
   def _handle_mouse_release(self, _):
     super()._handle_mouse_release(_)
     if self._is_toggle_allowed():
-      new_mode = not self._experimental_mode
-      self._params.put_bool("ExperimentalMode", new_mode)
+      self._toggle_mode()
 
-      # Hold new state temporarily
-      self._held_mode = new_mode
-      self._hold_end_time = time.monotonic() + self._hold_duration
+  def _toggle_mode(self) -> None:
+    new_mode = not self._experimental_mode
+    self._params.put_bool("ExperimentalMode", new_mode)
+
+    # Hold new state temporarily
+    self._held_mode = new_mode
+    self._hold_end_time = time.monotonic() + self._hold_duration
 
   def _render(self, rect: rl.Rectangle) -> None:
     center_x = int(self._rect.x + self._rect.width // 2)
     center_y = int(self._rect.y + self._rect.height // 2)
 
-    self._white_color.a = 180 if self.is_pressed or not self._engageable else 255
+    self._white_color.a = 180 if self.is_pressed else 255
 
     texture = self._txt_exp if self._held_or_actual_mode() else self._txt_wheel
     rl.draw_circle(center_x, center_y, self._rect.width / 2, self._black_bg)

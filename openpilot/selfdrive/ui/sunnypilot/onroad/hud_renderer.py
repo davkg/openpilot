@@ -15,6 +15,7 @@ from openpilot.selfdrive.ui.sunnypilot.onroad.speed_limit import SpeedLimitRende
 from openpilot.selfdrive.ui.sunnypilot.onroad.smart_cruise_control import SmartCruiseControlRenderer
 from openpilot.selfdrive.ui.sunnypilot.onroad.turn_signal import TurnSignalController
 from openpilot.selfdrive.ui.sunnypilot.onroad.circular_alerts import CircularAlertsRenderer
+from openpilot.selfdrive.ui.sunnypilot.onroad.exp_button import ExpButtonSP
 from openpilot.selfdrive.ui.sunnypilot.onroad.speed_renderer import SpeedRenderer
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
 from openpilot.selfdrive.ui.onroad.hud_renderer import HudRenderer, UI_CONFIG, FONT_SIZES, COLORS, CRUISE_DISABLED_CHAR
@@ -37,6 +38,7 @@ class HudRendererSP(HudRenderer):
     self.circular_alerts_renderer = CircularAlertsRenderer()
     self.speed_renderer = SpeedRenderer()
     self._torque_bar = TorqueBar(scale=3.0, always=True)
+    self._exp_button = ExpButtonSP(UI_CONFIG.button_size, UI_CONFIG.wheel_icon_size)
 
     self.pcm_cruise_speed: bool = True
     self.show_icbm_status: bool = False
