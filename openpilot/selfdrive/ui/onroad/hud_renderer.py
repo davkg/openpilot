@@ -27,8 +27,8 @@ class UIConfig:
 
 @dataclass(frozen=True)
 class FontSizes:
-  current_speed: int = 176
-  speed_unit: int = 66
+  current_speed: int = 90
+  speed_unit: int = 40
   max_speed: int = 40
   set_speed: int = 90
 
@@ -117,8 +117,9 @@ class HudRenderer(Widget):
 
     self._draw_current_speed(rect)
 
-    button_x = rect.x + rect.width - UI_CONFIG.border_size - UI_CONFIG.button_size
-    button_y = rect.y + UI_CONFIG.border_size
+    # mode button bottom-left; driver monitoring takes the bottom-right corner
+    button_x = rect.x + UI_CONFIG.border_size * 2
+    button_y = rect.y + rect.height - UI_CONFIG.border_size * 2 - UI_CONFIG.button_size
     self._exp_button.render(rl.Rectangle(button_x, button_y, UI_CONFIG.button_size, UI_CONFIG.button_size))
 
   def user_interacting(self) -> bool:

@@ -10,6 +10,7 @@ from openpilot.selfdrive.ui.onroad.hud_renderer import HudRenderer
 from openpilot.selfdrive.ui.onroad.model_renderer import ModelRenderer
 from openpilot.selfdrive.ui.onroad.cameraview import CameraView
 from openpilot.system.ui.lib.application import gui_app
+from openpilot.selfdrive.ui.onroad.constants import ONROAD_SCALE
 from openpilot.common.transformations.camera import DEVICE_CAMERAS, DeviceCameraConfig, view_frame_from_device_frame
 from openpilot.common.transformations.orientation import rot_from_euler
 
@@ -28,7 +29,7 @@ DEFAULT_DEVICE_CAMERA = DEVICE_CAMERAS["tici", "ar0231"]
 
 BORDER_COLORS = {
   UIStatus.DISENGAGED: rl.Color(0x12, 0x28, 0x39, 0xFF),  # Blue for disengaged state
-  UIStatus.OVERRIDE: rl.Color(0x89, 0x92, 0x8D, 0xFF),  # Gray for override state
+  UIStatus.OVERRIDE: rl.Color(0xCC, 0xB7, 0x1D, 0xFF),  # Yellow for override state
   UIStatus.ENGAGED: rl.Color(0x16, 0x7F, 0x40, 0xFF),  # Green for engaged state
   **BORDER_COLORS_SP,
 }
@@ -67,12 +68,16 @@ class AugmentedRoadView(CameraView, AugmentedRoadViewSP):
     # Update calibration before rendering
     self._update_calibration()
 
+    # Shrink the camera area into the bottom-left of rect; the HUD and alerts keep the full rect
+    scaled_h = rect.height * ONROAD_SCALE
+    scaled_rect = rl.Rectangle(rect.x, rect.y + rect.height - scaled_h, rect.width * ONROAD_SCALE, scaled_h)
+
     # Create inner content area with border padding
     self._content_rect = rl.Rectangle(
-      rect.x + UI_BORDER_SIZE,
-      rect.y + UI_BORDER_SIZE,
-      rect.width - 2 * UI_BORDER_SIZE,
-      rect.height - 2 * UI_BORDER_SIZE,
+      scaled_rect.x + UI_BORDER_SIZE,
+      scaled_rect.y + UI_BORDER_SIZE,
+      scaled_rect.width - 2 * UI_BORDER_SIZE,
+      scaled_rect.height - 2 * UI_BORDER_SIZE,
     )
 
     # Enable scissor mode to clip all rendering within content rectangle boundaries
@@ -89,9 +94,6 @@ class AugmentedRoadView(CameraView, AugmentedRoadViewSP):
 
     # Draw all UI overlays
     self.model_renderer.render(self._content_rect)
-    AugmentedRoadViewSP.update_fade_out_bottom_overlay(self, self._content_rect)
-    self._hud_renderer.render(self._content_rect)
-    self.alert_renderer.render(self._content_rect)
     self.driver_state_renderer.render(self._content_rect)
 
     # Custom UI extension point - add custom overlays here
@@ -101,7 +103,12 @@ class AugmentedRoadView(CameraView, AugmentedRoadViewSP):
     rl.end_scissor_mode()
 
     # Draw colored border based on driving state
-    self._draw_border(rect)
+    self._draw_border(scaled_rect)
+
+    # The HUD and alerts live outside the scaled camera area, so they render after the scissor
+    # region ends and against the full rect rather than the camera's content rect.
+    self._hud_renderer.render(rect)
+    self.alert_renderer.render(rect)
 
   def _handle_mouse_press(self, _):
     if not self._hud_renderer.user_interacting() and self._click_callback is not None:
