@@ -158,6 +158,11 @@ class VCruiseHelper(VCruiseHelperSP):
     if any(b.type in (ButtonType.accelCruise, ButtonType.resumeCruise) for b in CS.buttonEvents) and self.v_cruise_initialized:
       self.v_cruise_kph = self.v_cruise_kph_last
     else:
-      self.v_cruise_kph = int(round(np.clip(CS.vEgo * CV.MS_TO_KPH, initial, V_CRUISE_MAX)))
+      # Use the dash-aligned speed so the set speed lands on the same integer the cluster displays
+      # (HONDA_BOSCH_RADARLESS publishes ROUGH_CAR_SPEED_2 at 1-mph resolution; vEgo can drift within
+      # that window, causing the round-to-kph below to flip +/-1 mph in the UI). Fall back to vEgo
+      # when the cluster signal isn't published.
+      v_ego = CS.vEgoCluster if CS.vEgoCluster > 0 else CS.vEgo
+      self.v_cruise_kph = int(round(np.clip(v_ego * CV.MS_TO_KPH, initial, V_CRUISE_MAX)))
 
     self.v_cruise_cluster_kph = self.v_cruise_kph
