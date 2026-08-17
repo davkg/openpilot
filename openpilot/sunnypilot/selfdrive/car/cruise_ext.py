@@ -26,6 +26,8 @@ V_CRUISE_MIN = 8
 V_CRUISE_MAX = 145
 V_CRUISE_UNSET = 255
 
+DECEL_JUMP_MIN_SPEED = 25  # display units (mph/kph); the decel tap jump won't go below this
+
 
 def update_manual_button_timers(CS: car.CarState, button_timers: dict[car.CarState.ButtonEvent.Type, int]) -> None:
   # increment timer for buttons still pressed
@@ -48,6 +50,7 @@ class VCruiseHelperSP:
     self.params = Params()
     self.v_cruise_min = 0
     self.enabled_prev = False
+    self.decel_jump_fired = False  # one-shot per update_v_cruise; mirrored into CarStateSP
 
     self.custom_acc_enabled = self.params.get_bool("CustomAccIncrementsEnabled")
     self.short_increment = self.params.get("CustomAccShortPressIncrement", return_default=True)
@@ -84,6 +87,20 @@ class VCruiseHelperSP:
     v_cruise_delta = v_cruise_delta * actual_increment
 
     return round_to_nearest, v_cruise_delta
+
+  def get_decel_jump_target(self, v_ego: float, is_metric: bool) -> float | None:
+    # On a decel tap: jump set speed to (current speed + 10), rounded to the
+    # nearest 5 (display units) and floored at DECEL_JUMP_MIN_SPEED. Returns the new
+    # v_cruise_kph, or None when the jump would not lower the set speed (caller then
+    # uses the normal step).
+    to_display = CV.MS_TO_KPH if is_metric else CV.MS_TO_MPH
+    base_kph = 1.0 if is_metric else round(CV.MPH_TO_KPH, 1)  # matches IMPERIAL_INCREMENT
+    ego_display = v_ego * to_display
+    target_display = max(round((ego_display + 10.0) / 5.0) * 5.0, DECEL_JUMP_MIN_SPEED)
+    target_kph = target_display * base_kph
+    if target_kph >= self.v_cruise_kph:
+      return None
+    return target_kph
 
   def get_minimum_set_speed(self, is_metric: bool) -> None:
     if self.CP_SP.pcmCruiseSpeed:
