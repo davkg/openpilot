@@ -630,6 +630,9 @@ class SelfdriveD(CruiseHelper):
 
     self.button_state_tracker.publish(ss_sp)
 
+    # forwarded to the car so platforms that can render it show openpilot's speed limit on the dash
+    ss_sp.speedLimit = self.sm['longitudinalPlanSP'].speedLimit.resolver.speedLimit
+
     self.pm.send('selfdriveStateSP', ss_sp_msg)
 
     # onroadEventsSP - logged every second or on change

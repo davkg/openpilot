@@ -104,6 +104,8 @@ class ControlsExt(ModelStateBase):
     CC_SP.intelligentCruiseButtonManagement.sendButton = icbm_src.sendButton
     CC_SP.intelligentCruiseButtonManagement.vTarget = icbm_src.vTarget
 
+    CC_SP.speedLimit = sm['selfdriveStateSP'].speedLimit
+
     return CC_SP
 
   @staticmethod
