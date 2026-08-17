@@ -40,6 +40,8 @@ sound_list_sp: dict[int, tuple[str, int | None, float]] = {
   # AudibleAlertSP, file name, play count (none for infinite)
   AudibleAlertSP.promptSingleLow: ("prompt_single_low.wav", 1, MAX_VOLUME),
   AudibleAlertSP.promptSingleHigh: ("prompt_single_high.wav", 1, MAX_VOLUME),
+  AudibleAlertSP.cruiseStepUp: ("cruise_step_up.wav", 1, MAX_VOLUME),
+  AudibleAlertSP.cruiseStepDown: ("cruise_step_down.wav", 1, MAX_VOLUME),
 }
 
 sound_list: dict[int, tuple[str, int | None, float]] = {

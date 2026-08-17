@@ -12,3 +12,9 @@
 
 openpilot/selfdrive/car/tests/test_models_segs.txt filter=lfs diff=lfs merge=lfs -text
 openpilot/common/hardware/comma/updater filter=lfs diff=lfs merge=lfs -text
+
+# Cruise-step click sounds: kept as plain git blobs, NOT LFS.
+# This fork has no write access to the sunnypilot LFS server (.lfsconfig),
+# so these small files are stored directly in the repo instead.
+openpilot/selfdrive/assets/sounds/cruise_step_down.wav -filter -diff -merge -text
+openpilot/selfdrive/assets/sounds/cruise_step_up.wav -filter -diff -merge -text
