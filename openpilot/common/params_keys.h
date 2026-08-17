@@ -241,6 +241,8 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"LongTFollowSimpleStandard", {PERSISTENT | BACKUP, FLOAT, "1.45"}},
     {"LongTFollowSimpleAggressive", {PERSISTENT | BACKUP, FLOAT, "1.25"}},
     {"BlindSpot", {PERSISTENT | BACKUP, BOOL, "0"}},
+    {"AdjacentVehicleMarkers", {PERSISTENT | BACKUP, BOOL, "0"}},
+    {"AdjacentVehicleMarkersDebug", {PERSISTENT, BOOL, "0"}},
 
     // sunnypilot model params
     {"CameraOffset", {PERSISTENT | BACKUP, FLOAT, "0.0"}},

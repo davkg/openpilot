@@ -152,6 +152,8 @@ class UIStateSP:
     self._enforce_constraints()
     self.active_bundle = self.params.get("ModelManager_ActiveBundle")
     self.blindspot = self.params.get_bool("BlindSpot")
+    self.adjacent_vehicle_markers = self.params.get_bool("AdjacentVehicleMarkers")
+    self.adjacent_vehicle_markers_debug = self.params.get_bool("AdjacentVehicleMarkersDebug")
     self.chevron_metrics = self.params.get("ChevronInfo")
     self.custom_interactive_timeout = self.params.get("InteractivityTimeout", return_default=True)
     self.developer_ui = self.params.get("DevUIInfo")
