@@ -9,13 +9,15 @@ from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
 from openpilot.selfdrive.controls.radard import _LEAD_ACCEL_TAU
+from openpilot.selfdrive.test.longitudinal_maneuvers.lead_driver import MpcLead
 
 
 class Plant:
   messaging_initialized = False
 
   def __init__(self, lead_relevancy=False, speed=0.0, distance_lead=2.0,
-               enabled=True, only_lead2=False, only_radar=False, e2e=False, personality=0, force_decel=False):
+               enabled=True, only_lead2=False, only_radar=False, e2e=False, personality=0, force_decel=False,
+               mpc_lead=False, initial_lead_speed=0.0):
     self.rate = 1. / DT_MDL
 
     if not Plant.messaging_initialized:
@@ -42,6 +44,12 @@ class Plant:
     self.e2e = e2e
     self.personality = personality
     self.force_decel = force_decel
+
+    # Optional MPC-driven lead. When enabled, each step's incoming v_lead is
+    # treated as the lead's set-speed target; a separate MPC produces a
+    # jerk-limited velocity for the actual lead behavior.
+    self.mpc_lead_enabled = mpc_lead
+    self.lead_driver = MpcLead(v0=initial_lead_speed, x0=distance_lead) if mpc_lead else None
 
     self.rk = Ratekeeper(self.rate, print_delay_threshold=100.0)
     self.ts = 1. / self.rate
@@ -72,7 +80,17 @@ class Plant:
     car_state_sp = messaging.new_message('carStateSP')
     live_map_data_sp = messaging.new_message('liveMapDataSP')
     gps_data = messaging.new_message('gpsLocation')
-    a_lead = (v_lead - self.v_lead_prev)/self.ts
+    if self.mpc_lead_enabled:
+      # Treat the maneuver-supplied v_lead as the lead's set-speed target this
+      # step. The lead's actual v/a/x come from the lead driver, which was
+      # advanced to this step at the end of the previous step.
+      v_lead_target = float(v_lead)
+      v_lead = self.lead_driver.v
+      a_lead = self.lead_driver.a
+      self.distance_lead = self.lead_driver.x
+    else:
+      v_lead_target = None
+      a_lead = (v_lead - self.v_lead_prev)/self.ts
     self.v_lead_prev = v_lead
 
     if self.lead_relevancy:
@@ -149,7 +167,11 @@ class Plant:
     self.speed = self.speed + self.acceleration * self.ts
     self.should_stop = self.planner.output_should_stop
     fcw = self.planner.fcw
-    self.distance_lead = self.distance_lead + v_lead * self.ts
+    if self.mpc_lead_enabled:
+      self.lead_driver.step(v_lead_target)
+      self.distance_lead = self.lead_driver.x
+    else:
+      self.distance_lead = self.distance_lead + v_lead * self.ts
 
     # ******** run the car ********
     #print(self.distance, speed)

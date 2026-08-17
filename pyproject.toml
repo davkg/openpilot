@@ -60,6 +60,7 @@ docs = [
 
 dev = [
   "huggingface_hub",
+  "pandas",
 ]
 
 testing = [
