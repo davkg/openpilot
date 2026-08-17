@@ -19,7 +19,7 @@ from opendbc.car.fw_versions import ObdCallback
 from opendbc.car.car_helpers import get_car, interfaces
 from opendbc.car.interfaces import CarInterfaceBase, RadarInterfaceBase
 from openpilot.selfdrive.pandad import can_capnp_to_list, can_list_to_can_capnp
-from openpilot.selfdrive.car.cruise import VCruiseHelper
+from openpilot.selfdrive.car.cruise import VCruiseHelper, V_CRUISE_INITIAL_EXPERIMENTAL_MODE
 from openpilot.selfdrive.car.helpers import convert_carControlSP, convert_to_capnp
 
 from openpilot.sunnypilot.mads.helpers import set_alternative_experience, set_car_specific_params
@@ -182,6 +182,7 @@ class Car:
 
     self.is_metric = self.params.get_bool("IsMetric")
     self.experimental_mode = self.params.get_bool("ExperimentalMode")
+    self.experimental_mode_prev = self.experimental_mode
 
     # card is driven by can recv, expected at 100Hz
     self.rk = Ratekeeper(100, print_delay_threshold=None)
@@ -218,6 +219,15 @@ class Car:
     if self.sm['carControl'].enabled and not self.CC_prev.enabled:
       # Use CarState w/ buttons from the step selfdrived enables on
       self.v_cruise_helper.initialize_v_cruise(self.CS_prev, self.experimental_mode, self.dynamic_experimental_control)
+    if self.sm['carControl'].enabled and self.experimental_mode_prev and not self.experimental_mode:
+      # Experimental mode toggled off while cruise is active: reset set speed to current speed
+      self.v_cruise_helper.initialize_v_cruise(CS, self.experimental_mode, self.dynamic_experimental_control)
+    if (self.sm['carControl'].enabled and not self.experimental_mode_prev and self.experimental_mode
+        and not self.CP.pcmCruise and self.v_cruise_helper.v_cruise_kph < V_CRUISE_INITIAL_EXPERIMENTAL_MODE):
+      # Experimental mode toggled on while cruise is active: bump set speed to the experimental floor
+      self.v_cruise_helper.v_cruise_kph = V_CRUISE_INITIAL_EXPERIMENTAL_MODE
+      self.v_cruise_helper.v_cruise_cluster_kph = V_CRUISE_INITIAL_EXPERIMENTAL_MODE
+    self.experimental_mode_prev = self.experimental_mode
 
     # TODO: mirror the carState.cruiseState struct?
     CS.vCruise = float(self.v_cruise_helper.v_cruise_kph)
