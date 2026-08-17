@@ -1,3 +1,5 @@
+from typing import Any
+
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.dec import DynamicExperimentalController
 
@@ -55,7 +57,7 @@ class TestDynamicExperimentalController(OpenpilotTestCase):
 
     self.CP = CP()
     self.mpc = MPC()
-    self.sm = {
+    self.sm: dict[str, Any] = {
       'carState': MockCarState(vEgo=10.0, vCruise=20.0),
       'radarState': MockRadarState(present=1.0),
       'modelV2': MockModelData(valid=True),
@@ -89,7 +91,7 @@ class TestDynamicExperimentalController(OpenpilotTestCase):
 
   def test_radarless_slowdown_triggers_blended(self):
     controller = self._controller(radarless=True)
-    controller._slow_down_filter = FakeKalman(value=1.0)  # ty: ignore[invalid-assignment]
+    controller._slow_down_filter = FakeKalman(value=1.0)
     controller._v_ego_kph = 35.0
     self.sm['radarState'] = MockRadarState(present=0.0)  # no close lead
     self.sm['modelV2'] = MockModelData(valid=False)      # incomplete trajectory
@@ -104,7 +106,7 @@ class TestDynamicExperimentalController(OpenpilotTestCase):
     # Close lead: present and well within the close-lead distance (v_ego 10 m/s -> ~76 m gate)
     self.sm['radarState'] = MockRadarState(present=1.0, dRel=15.0)
     # Mild slowdown (urgency below the 0.7 emergency threshold) -> close-lead gate takes priority
-    controller._slow_down_filter = FakeKalman(value=0.5)  # ty: ignore[invalid-assignment]
+    controller._slow_down_filter = FakeKalman(value=0.5)
     self.sm['modelV2'] = MockModelData(valid=False)
     self._run(controller, 10)
     self.assertEqual(controller.mode(), "acc")
@@ -115,7 +117,7 @@ class TestDynamicExperimentalController(OpenpilotTestCase):
     # urgency emergency is gated on no-close-lead, so a close lead + high urgency stays ACC.
     controller = self._controller(radarless=True)
     self.sm['radarState'] = MockRadarState(present=1.0, dRel=15.0)
-    controller._slow_down_filter = FakeKalman(value=1.0)  # ty: ignore[invalid-assignment]
+    controller._slow_down_filter = FakeKalman(value=1.0)
     self.sm['modelV2'] = MockModelData(valid=False)
     self._run(controller, 10)
     self.assertEqual(controller.mode(), "acc")
@@ -124,7 +126,7 @@ class TestDynamicExperimentalController(OpenpilotTestCase):
     # A lead beyond the close-lead distance must NOT suppress blended (model sees further).
     controller = self._controller(radarless=True)
     self.sm['radarState'] = MockRadarState(present=1.0, dRel=140.0)
-    controller._slow_down_filter = FakeKalman(value=1.0)  # ty: ignore[invalid-assignment]
+    controller._slow_down_filter = FakeKalman(value=1.0)
     self.sm['modelV2'] = MockModelData(valid=False)
     self._run(controller, 3)
     self.assertEqual(controller.mode(), "blended")
@@ -137,7 +139,7 @@ class TestDynamicExperimentalController(OpenpilotTestCase):
     controller = self._controller(radarless=True)
     self.sm['carState'].vEgo = 15.0
     self.sm['radarState'] = MockRadarState(present=0.0)
-    controller._slow_down_filter = FakeKalman(value=0.0)  # ty: ignore[invalid-assignment]
+    controller._slow_down_filter = FakeKalman(value=0.0)
     self.sm['modelV2'] = MockModelData(valid=True, desired_accel=-0.5)  # e2e wants to brake
     self._run(controller)
     self.assertEqual(controller.mode(), "blended")
@@ -148,7 +150,7 @@ class TestDynamicExperimentalController(OpenpilotTestCase):
     controller = self._controller(radarless=True)
     self.sm['carState'].vEgo = 10.0  # below the override speed
     self.sm['radarState'] = MockRadarState(present=1.0, dRel=30.0)  # close lead
-    controller._slow_down_filter = FakeKalman(value=0.0)  # ty: ignore[invalid-assignment]
+    controller._slow_down_filter = FakeKalman(value=0.0)
     self.sm['modelV2'] = MockModelData(valid=True, desired_accel=-0.5)
     self._run(controller)
     self.assertEqual(controller.mode(), "acc")
@@ -159,7 +161,7 @@ class TestDynamicExperimentalController(OpenpilotTestCase):
     controller = self._controller(radarless=True)
     self.sm['carState'].vEgo = 20.0
     self.sm['radarState'] = MockRadarState(present=1.0, dRel=30.0)
-    controller._slow_down_filter = FakeKalman(value=0.0)  # ty: ignore[invalid-assignment]
+    controller._slow_down_filter = FakeKalman(value=0.0)
     self.sm['modelV2'] = MockModelData(valid=True, desired_accel=-0.5)  # e2e -0.5 << MPC (0.0)
     self._run(controller)
     self.assertEqual(controller.mode(), "blended")
@@ -171,7 +173,7 @@ class TestDynamicExperimentalController(OpenpilotTestCase):
     controller = self._controller(radarless=True)
     self.sm['carState'].vEgo = 20.0
     self.sm['radarState'] = MockRadarState(present=1.0, dRel=30.0)
-    controller._slow_down_filter = FakeKalman(value=0.0)  # ty: ignore[invalid-assignment]
+    controller._slow_down_filter = FakeKalman(value=0.0)
     self.sm['modelV2'] = MockModelData(valid=True, desired_accel=-0.5)
     self._run(controller)
     self.assertEqual(controller.mode(), "acc")
@@ -182,7 +184,7 @@ class TestDynamicExperimentalController(OpenpilotTestCase):
     controller = self._controller(radarless=True)
     self.sm['carState'].vEgo = 8.0
     self.sm['radarState'] = MockRadarState(present=0.0)
-    controller._slow_down_filter = FakeKalman(value=0.0)  # ty: ignore[invalid-assignment]
+    controller._slow_down_filter = FakeKalman(value=0.0)
     self.sm['modelV2'] = MockModelData(valid=True, desired_accel=-0.5)
     self._run(controller)
     self.assertEqual(controller.mode(), "blended")
@@ -195,7 +197,7 @@ class TestDynamicExperimentalController(OpenpilotTestCase):
     controller = self._controller(radarless=True)
     self.sm['carState'].vEgo = 20.0
     self.sm['radarState'] = MockRadarState(present=0.0)
-    controller._slow_down_filter = FakeKalman(value=0.0)  # ty: ignore[invalid-assignment]
+    controller._slow_down_filter = FakeKalman(value=0.0)
     # 20 m/s * 0.1 rad/s = 2.0 m/s^2 predicted lat accel (> 1.5 engage)
     self.sm['modelV2'] = MockModelData(valid=True, orientation_rate_z=0.1, velocity_x=20.0)
     self._run(controller)
@@ -208,7 +210,7 @@ class TestDynamicExperimentalController(OpenpilotTestCase):
     controller = self._controller(radarless=True)
     self.sm['carState'].vEgo = 20.0
     self.sm['radarState'] = MockRadarState(present=0.0)
-    controller._slow_down_filter = FakeKalman(value=0.0)  # ty: ignore[invalid-assignment]
+    controller._slow_down_filter = FakeKalman(value=0.0)
     self.sm['modelV2'] = MockModelData(valid=True, orientation_rate_z=0.1, velocity_x=20.0)
     self._run(controller)
     self.assertEqual(controller.mode(), "blended")

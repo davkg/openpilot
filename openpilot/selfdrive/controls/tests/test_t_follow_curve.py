@@ -15,12 +15,16 @@ Personality = log.LongitudinalPersonality
 
 class TestParseTFollowCurve(unittest.TestCase):
   def test_valid_multi_pair(self):
-    bp_v, t_vals = parse_t_follow_curve("20:1.3, 40:1.4, 60:1.6")
+    curve = parse_t_follow_curve("20:1.3, 40:1.4, 60:1.6")
+    assert curve is not None
+    bp_v, t_vals = curve
     np.testing.assert_allclose(bp_v, np.array([20.0, 40.0, 60.0]) * CV.MPH_TO_MS)
     np.testing.assert_allclose(t_vals, [1.3, 1.4, 1.6])
 
   def test_single_pair_is_valid(self):
-    bp_v, t_vals = parse_t_follow_curve("30:1.5")
+    curve = parse_t_follow_curve("30:1.5")
+    assert curve is not None
+    bp_v, t_vals = curve
     np.testing.assert_allclose(bp_v, [30.0 * CV.MPH_TO_MS])
     np.testing.assert_allclose(t_vals, [1.5])
 
@@ -85,7 +89,9 @@ class TestMpcUsesCurve(unittest.TestCase):
 
   def test_curve_interpolates(self):
     mpc = LongitudinalMpc()
-    bp_v, t_vals = parse_t_follow_curve("20:1.2, 40:1.6, 60:2.0")
+    curve = parse_t_follow_curve("20:1.2, 40:1.6, 60:2.0")
+    assert curve is not None
+    bp_v, t_vals = curve
     mpc.t_follow_curves = {"standard": (bp_v, t_vals)}
     personality = read_personality(Personality.standard)
     # at an anchor, below the range (flat hold), and between anchors
@@ -97,7 +103,9 @@ class TestMpcUsesCurve(unittest.TestCase):
 
   def test_missing_personality_falls_back_to_stock(self):
     mpc = LongitudinalMpc()
-    bp_v, t_vals = parse_t_follow_curve("20:1.2, 60:2.0")
+    curve = parse_t_follow_curve("20:1.2, 60:2.0")
+    assert curve is not None
+    bp_v, t_vals = curve
     mpc.t_follow_curves = {"standard": (bp_v, t_vals)}  # only standard configured
     personality = read_personality(Personality.aggressive)
     self.assertAlmostEqual(self._t_follow_after_update(mpc, 30.0, personality),
@@ -112,7 +120,9 @@ class TestMpcUsesCurve(unittest.TestCase):
     self.assertNotIsInstance(personality, int)
 
     mpc = LongitudinalMpc()
-    bp_v, t_vals = parse_t_follow_curve("20:1.2, 40:1.6, 60:2.0")
+    curve = parse_t_follow_curve("20:1.2, 40:1.6, 60:2.0")
+    assert curve is not None
+    bp_v, t_vals = curve
     mpc.t_follow_curves = {"standard": (bp_v, t_vals)}
     v_ego = 30.0 * CV.MPH_TO_MS
     expected = float(np.interp(v_ego, bp_v, t_vals))
@@ -148,6 +158,7 @@ class TestLoadCurves(unittest.TestCase):
       "LongTFollowCurveAggressive": "20:1.0, 60:1.4",
     })
     curves = load_t_follow_curves(params)
+    assert curves is not None
     self.assertEqual(set(curves), {"relaxed", "standard", "aggressive"})
     for val in (Personality.relaxed, Personality.standard, Personality.aggressive):
       self.assertIsNotNone(curves.get(read_personality(val)))
@@ -158,6 +169,7 @@ class TestLoadCurves(unittest.TestCase):
       "LongTFollowCurveRelaxed": "garbage",
     })
     curves = load_t_follow_curves(params)
+    assert curves is not None
     self.assertEqual(set(curves), {"standard"})
 
   def test_simple_mode_builds_flat_curves(self):
@@ -167,6 +179,7 @@ class TestLoadCurves(unittest.TestCase):
       "LongTFollowSimpleAggressive": "1.25",
     }, mode=0)
     curves = load_t_follow_curves(params)
+    assert curves is not None
     self.assertEqual(set(curves), {"relaxed", "standard", "aggressive"})
     bp_v, t_vals = curves["standard"]
     self.assertAlmostEqual(float(np.interp(5.0, bp_v, t_vals)), 1.45)

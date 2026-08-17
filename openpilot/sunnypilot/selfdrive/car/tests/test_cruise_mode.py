@@ -37,7 +37,7 @@ class TestCruiseHelper(OpenpilotTestCase):
   def setup_method(self):
     self.CP = car.CarParams(openpilotLongitudinalControl=self.openpilot_longitudinal)
     self.cruise_helper = CruiseHelper(self.CP)
-    self.cruise_helper.params = FakeParams()
+    self.cruise_helper.params = FakeParams()  # ty: ignore[invalid-assignment]
     self.cruise_helper.experimental_mode_switched = False
     self.events = Events()
 
@@ -98,7 +98,7 @@ class TestCruiseHelper(OpenpilotTestCase):
   def test_button_short_press_no_toggle(self) -> None:
     for experimental_mode in (True, False):
       self.cruise_helper = CruiseHelper(self.CP)
-      self.cruise_helper.params = FakeParams()
+      self.cruise_helper.params = FakeParams()  # ty: ignore[invalid-assignment]
       self.reset()
       self._set_state(experimental_mode, False)
 
@@ -142,7 +142,7 @@ class TestCruiseHelper(OpenpilotTestCase):
     for button, event, other in ((ButtonType.accelCruise, EventNameSP.cruiseStepUp, EventNameSP.cruiseStepDown),
                                  (ButtonType.decelCruise, EventNameSP.cruiseStepDown, EventNameSP.cruiseStepUp)):
       self.cruise_helper = CruiseHelper(self.CP)
-      self.cruise_helper.params = FakeParams()
+      self.cruise_helper.params = FakeParams()  # ty: ignore[invalid-assignment]
       self.reset()
 
       steps = 0
