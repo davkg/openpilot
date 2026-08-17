@@ -15,10 +15,13 @@ from openpilot.selfdrive.ui.sunnypilot.onroad.speed_limit import SpeedLimitRende
 from openpilot.selfdrive.ui.sunnypilot.onroad.smart_cruise_control import SmartCruiseControlRenderer
 from openpilot.selfdrive.ui.sunnypilot.onroad.turn_signal import TurnSignalController
 from openpilot.selfdrive.ui.sunnypilot.onroad.circular_alerts import CircularAlertsRenderer
+from openpilot.selfdrive.ui.sunnypilot.onroad.compass import CompassRenderer
 from openpilot.selfdrive.ui.sunnypilot.onroad.exp_button import ExpButtonSP
+from openpilot.selfdrive.ui.sunnypilot.onroad.follow_distance_indicator import FollowDistanceRenderer
 from openpilot.selfdrive.ui.sunnypilot.onroad.speed_renderer import SpeedRenderer
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
 from openpilot.selfdrive.ui.onroad.hud_renderer import HudRenderer, UI_CONFIG, FONT_SIZES, COLORS, CRUISE_DISABLED_CHAR
+from openpilot.selfdrive.ui.onroad.constants import ONROAD_SCALE
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.lib.text_measure import measure_text_cached
@@ -36,7 +39,9 @@ class HudRendererSP(HudRenderer):
     self.smart_cruise_control_renderer = SmartCruiseControlRenderer()
     self.turn_signal_controller = TurnSignalController()
     self.circular_alerts_renderer = CircularAlertsRenderer()
+    self.follow_distance_renderer = FollowDistanceRenderer()
     self.speed_renderer = SpeedRenderer()
+    self._compass = CompassRenderer()
     self._torque_bar = TorqueBar(scale=3.0, always=True)
     self._exp_button = ExpButtonSP(UI_CONFIG.button_size, UI_CONFIG.wheel_icon_size)
 
@@ -61,6 +66,7 @@ class HudRendererSP(HudRenderer):
     self.smart_cruise_control_renderer.update()
     self.turn_signal_controller.update()
     self.circular_alerts_renderer.update()
+    self.follow_distance_renderer.update()
     self.speed_renderer.update()
 
   def _get_icbm_status(self):
@@ -80,8 +86,10 @@ class HudRendererSP(HudRenderer):
     self._get_icbm_status()
 
     set_speed_width = UI_CONFIG.set_speed_width_metric if ui_state.is_metric else UI_CONFIG.set_speed_width_imperial
-    x = rect.x + 60 + (UI_CONFIG.set_speed_width_imperial - set_speed_width) // 2
-    y = rect.y + 45
+    # Bottom-right layout: set_speed on left, speed_limit sign on right.
+    # sign right edge = rect.right - 30.  ahead_info (170px below sign bottom) + 30px margin -> sign_bottom = rect.bottom - 200.
+    x = rect.x + rect.width - 30 - 2 * set_speed_width - 24
+    y = rect.y + rect.height - 410  # sign_top + 6 = (rect.bottom - 200 - 216) + 6
 
     set_speed_rect = rl.Rectangle(x, y, set_speed_width, UI_CONFIG.set_speed_height)
     rl.draw_rectangle_rounded(set_speed_rect, 0.35, 10, COLORS.BLACK_TRANSLUCENT)
@@ -134,10 +142,13 @@ class HudRendererSP(HudRenderer):
     super()._render(rect)
 
     if ui_state.torque_bar:
-      torque_rect = rect
+      # the camera area is ONROAD_SCALE of the full rect, so keep the bar over the camera
+      torque_rect = rl.Rectangle(rect.x, rect.y, rect.width * ONROAD_SCALE, rect.height)
       if ui_state.developer_ui in (DeveloperUiState.BOTTOM, DeveloperUiState.BOTH):
-        torque_rect = rl.Rectangle(rect.x, rect.y, rect.width, rect.height - get_bottom_dev_ui_offset())
+        torque_rect = rl.Rectangle(rect.x, rect.y, rect.width * ONROAD_SCALE, rect.height - get_bottom_dev_ui_offset())
       self._torque_bar.render(torque_rect)
+
+    self.follow_distance_renderer.render(rect)
 
     self.developer_ui.render(rect)
     self.road_name_renderer.render(rect)
@@ -146,3 +157,4 @@ class HudRendererSP(HudRenderer):
     self.turn_signal_controller.render(rect)
     self.circular_alerts_renderer.render(rect)
     self.rocket_fuel.render(rect, ui_state.sm)
+    self._compass.render(rect)
