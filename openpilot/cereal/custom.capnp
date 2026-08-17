@@ -71,6 +71,7 @@ struct SelfdriveStateSP @0x81c2f05a394cf4af {
   intelligentCruiseButtonManagement @1 :IntelligentCruiseButtonManagement;
   buttonsPressed @2 :UInt16;
   buttonsReleaseToggle @3 :UInt16;
+  speedLimit @4 :Float32;
 
   enum AudibleAlert {
     none @0;
@@ -112,6 +113,9 @@ struct SelfdriveStateSP @0x81c2f05a394cf4af {
 
     promptSingleLow @31;
     promptSingleHigh @32;
+
+    cruiseStepUp @33;
+    cruiseStepDown @34;
   }
 }
 
@@ -208,10 +212,22 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
     state @0 :DynamicExperimentalControlState;
     enabled @1 :Bool;
     active @2 :Bool;
+    source @3 :DynamicExperimentalControlSource;   # why the current mode was chosen this frame
 
     enum DynamicExperimentalControlState {
       acc @0;
       blended @1;
+    }
+
+    enum DynamicExperimentalControlSource {
+      none @0;          # default ACC, nothing triggered
+      mpcFcw @1;        # FCW emergency
+      closeLead @2;     # close lead -> ACC (radar mode: any detected lead)
+      upcomingTurn @3;  # predicted curvature ahead within the lookahead horizon
+      e2eDecel @4;      # e2e model anticipating a slowdown
+      slowDown @5;      # trajectory-endpoint shortfall (incl. high-urgency emergency)
+      standstill @6;    # stopped
+      slowness @7;      # driving below cruise speed -> ACC
     }
   }
 
@@ -352,6 +368,8 @@ struct OnroadEventSP @0xda96579883444c35 {
     speedLimitPending @22;
     e2eChime @23;
     laneChangeRoadEdge @24;
+    cruiseStepUp @25;
+    cruiseStepDown @26;
   }
 }
 
@@ -381,6 +399,7 @@ struct CarControlSP @0xa5cd762cd951a455 {
   leadOne @2 :LeadData;
   leadTwo @3 :LeadData;
   intelligentCruiseButtonManagement @4 :IntelligentCruiseButtonManagement;
+  speedLimit @5 :Float32;
 
   struct Param {
     key @0 :Text;
@@ -445,6 +464,23 @@ struct BackupManagerSP @0xf98d843bfd7004a3 {
 
 struct CarStateSP @0xb86e6369214c01c8 {
   speedLimit @0 :Float32;
+  # one-shot flag: true on the frame VCruiseHelper applied the (vEgo+10) decel jump
+  decelJumpFired @1 :Bool;
+
+  # Stock forward-camera lead + adjacent-vehicle objects (currently Honda Bosch radarless), parsed from
+  # CAMERA_LEAD / HUD_OBJECTS on the CAN bus
+  cameraLeadDistance @2 :Float32;       # m, single-lead distance from CAMERA_LEAD (0 = no lead / out of range)
+  cameraLeadValid @3 :Bool;             # camera reports a visible lead
+  hudObjects @4 :List(HudObject);       # up to 10 slots; consumers filter by .valid
+
+  struct HudObject {
+    slot @0 :UInt8;          # 0..9 (camera's internal slot index)
+    objectId @1 :UInt8;      # persistent object id; 0 when slot is empty
+    dRel @2 :Float32;        # longitudinal distance from ego (m), positive ahead
+    yRel @3 :Float32;        # lateral position (m), positive = left of ego
+    valid @4 :Bool;          # slot currently carries a real object
+    isLeadCar @5 :Bool;      # camera tags this object as the lead car (slot 0 when present)
+  }
 }
 
 struct LiveMapDataSP @0xf416ec09499d9d19 {
