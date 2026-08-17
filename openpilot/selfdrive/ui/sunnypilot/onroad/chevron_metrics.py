@@ -37,7 +37,7 @@ class ChevronMetrics:
     """Check if dev UI should be rendered"""
     return ui_state.chevron_metrics != ChevronOptions.OFF and self._lead_status_alpha > 0.0
 
-  def _draw_lead(self, lead_data, lead_vehicle, v_ego: float, rect: rl.Rectangle):
+  def _draw_lead(self, lead_data, lead_vehicle, v_ego: float, rect: rl.Rectangle, cam_d_rel: float = 0.0):
     """Draw lead vehicle status information (distance, speed, TTC)"""
     if not self.should_render():
       return
@@ -52,24 +52,24 @@ class ChevronMetrics:
     chevron_y = lead_vehicle.chevron[1][1]
     sz = np.clip((25 * 30) / (d_rel / 3 + 30), 15.0, 30.0) * 2.35
 
-    text_lines = self._build_text_lines(d_rel, v_rel, v_ego)
+    text_lines = self._build_text_lines(d_rel, v_rel, v_ego, cam_d_rel)
     if not text_lines:
       return
 
     self._render_text_lines(text_lines, chevron_x, chevron_y, sz, rect)
 
   @staticmethod
-  def _build_text_lines(d_rel: float, v_rel: float, v_ego: float) -> list[str]:
+  def _build_text_lines(d_rel: float, v_rel: float, v_ego: float, cam_d_rel: float = 0.0) -> list[str]:
     """Build text lines based on chevron info setting"""
     text_lines = []
 
-    # Distance
+    # Distance -- always shown in meters; the camera's own reading follows in parentheses
     if ui_state.chevron_metrics == ChevronOptions.DISTANCE_ONLY or ui_state.chevron_metrics == ChevronOptions.ALL:
       val = max(0.0, d_rel)
-      unit = "m" if ui_state.is_metric else "ft"
-      if not ui_state.is_metric:
-        val *= 3.28084
-      text_lines.append(f"{val:.0f} {unit}")
+      if cam_d_rel > 0:
+        text_lines.append(f"{val:.0f} m ({cam_d_rel:.0f} m)")
+      else:
+        text_lines.append(f"{val:.0f} m")
 
     # Speed
     if ui_state.chevron_metrics == ChevronOptions.SPEED_ONLY or ui_state.chevron_metrics == ChevronOptions.ALL:
@@ -89,18 +89,18 @@ class ChevronMetrics:
   def _render_text_lines(self, text_lines: list[str], chevron_x: float, chevron_y: float,
                          sz: float, rect: rl.Rectangle):
     """Render text lines with proper centering and positioning"""
-    font_size = 40
-    line_height = 50
+    font_size = 56
+    line_height = 70
     margin = 20
 
     text_y = chevron_y + sz + 15
     total_height = len(text_lines) * line_height
 
     # Adjust Y position if text would go off screen
-    if text_y + total_height > rect.height - margin:
-      y_max = min(chevron_y, rect.height - margin)
+    if text_y + total_height > rect.y + rect.height - margin:
+      y_max = min(chevron_y, rect.y + rect.height - margin)
       text_y = y_max - 15 - total_height
-      text_y = max(margin, text_y)
+      text_y = max(rect.y + margin, text_y)
 
     alpha = int(255 * self._lead_status_alpha)
     text_color = rl.Color(255, 255, 255, alpha)
@@ -108,7 +108,7 @@ class ChevronMetrics:
 
     for i, line in enumerate(text_lines):
       y = int(text_y + (i * line_height))
-      if y + line_height > rect.height - margin:
+      if y + line_height > rect.y + rect.height - margin:
         break
 
       # Measure actual text width for proper centering
@@ -117,7 +117,7 @@ class ChevronMetrics:
 
       # Center the text horizontally on the chevron
       x = int(chevron_x - text_width / 2)
-      x = int(np.clip(x, margin, rect.width - text_width - margin))
+      x = int(np.clip(x, rect.x + margin, rect.x + rect.width - text_width - margin))
 
       # Draw shadow
       rl.draw_text_ex(self._font, line, rl.Vector2(x + 2, y + 2), font_size, 0, shadow_color)
@@ -137,9 +137,12 @@ class ChevronMetrics:
       return
 
     v_ego = sm['carState'].vEgo
+    # Single-lead distance from CAMERA_LEAD; 0 = no lead / out of range. It tracks the camera's
+    # in-path lead, which is leadOne, so it is not shown against leadTwo.
+    cam_d_rel = sm['carStateSP'].cameraLeadDistance
 
     if has_lead_one and lead_vehicles[0].chevron:
-      self._draw_lead(lead_one, lead_vehicles[0], v_ego, rect)
+      self._draw_lead(lead_one, lead_vehicles[0], v_ego, rect, cam_d_rel)
 
     if has_lead_two and lead_vehicles[1].chevron:
       d_rel_diff = abs(lead_one.dRel - lead_two.dRel) if has_lead_one else float('inf')
