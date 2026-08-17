@@ -79,6 +79,13 @@ def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard):
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
+def get_T_FOLLOW_USER(curves, personality=log.LongitudinalPersonality.standard, v_ego=0.0):
+  if curves is not None:
+    curve = curves.get(personality)
+    if curve is not None:
+      return float(np.interp(v_ego, curve[0], curve[1]))
+  return get_T_FOLLOW(personality)
+
 def get_STOP_DISTANCE(personality=log.LongitudinalPersonality.standard):
   # personality shifts the stop distance +/-0.5 m around the stock STOP_DISTANCE
   if personality==log.LongitudinalPersonality.relaxed:
@@ -231,6 +238,7 @@ class LongitudinalMpc:
     self.solver = AcadosOcpSolverCython(MODEL_NAME, ACADOS_SOLVER_TYPE, N)
     self.reset()
     self.source = LongitudinalPlanSource.cruise
+    self.t_follow_curves = None  # {personality_name: (bp_v, t_vals)} from user settings
 
   def reset(self):
     self.solver.reset()
@@ -323,7 +331,8 @@ class LongitudinalMpc:
     return lead_xv
 
   def update(self, radarstate, personality=log.LongitudinalPersonality.standard):
-    t_follow = get_T_FOLLOW(personality)
+    v_ego = self.x0[1]
+    t_follow = get_T_FOLLOW_USER(self.t_follow_curves, personality, v_ego)
     stop_distance = get_STOP_DISTANCE(personality)
 
     lead_xv_0 = self.process_lead(radarstate.leadOne)
