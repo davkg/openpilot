@@ -680,6 +680,105 @@
           ]
         },
         {
+          "id": "custom_follow_distance",
+          "title": "Custom Follow Distance",
+          "description": "Follow time per driving personality. Full speed-dependent curves are editable on 3X.",
+          "visibility": [
+            {
+              "type": "capability",
+              "field": "has_longitudinal_control",
+              "equals": true
+            }
+          ],
+          "items": [
+            {
+              "key": "LongTFollowCustomEnabled",
+              "widget": "toggle",
+              "title": "Custom Follow Distance (T_FOLLOW)",
+              "description": "Set a follow time per driving personality. When off, the stock follow distances are used.",
+              "enablement": [
+                {
+                  "type": "capability",
+                  "field": "has_longitudinal_control",
+                  "equals": true
+                }
+              ]
+            },
+            {
+              "key": "LongTFollowSimpleRelaxed",
+              "widget": "option",
+              "needs_onroad_cycle": true,
+              "title": "Relaxed",
+              "min": 0.8,
+              "max": 3.0,
+              "step": 0.1,
+              "unit": "s",
+              "visibility": [
+                {
+                  "type": "param",
+                  "key": "LongTFollowCustomEnabled",
+                  "equals": true
+                }
+              ],
+              "enablement": [
+                {
+                  "type": "capability",
+                  "field": "has_longitudinal_control",
+                  "equals": true
+                }
+              ]
+            },
+            {
+              "key": "LongTFollowSimpleStandard",
+              "widget": "option",
+              "needs_onroad_cycle": true,
+              "title": "Standard",
+              "min": 0.8,
+              "max": 3.0,
+              "step": 0.1,
+              "unit": "s",
+              "visibility": [
+                {
+                  "type": "param",
+                  "key": "LongTFollowCustomEnabled",
+                  "equals": true
+                }
+              ],
+              "enablement": [
+                {
+                  "type": "capability",
+                  "field": "has_longitudinal_control",
+                  "equals": true
+                }
+              ]
+            },
+            {
+              "key": "LongTFollowSimpleAggressive",
+              "widget": "option",
+              "needs_onroad_cycle": true,
+              "title": "Aggressive",
+              "min": 0.8,
+              "max": 3.0,
+              "step": 0.1,
+              "unit": "s",
+              "visibility": [
+                {
+                  "type": "param",
+                  "key": "LongTFollowCustomEnabled",
+                  "equals": true
+                }
+              ],
+              "enablement": [
+                {
+                  "type": "capability",
+                  "field": "has_longitudinal_control",
+                  "equals": true
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "custom_acc_increments",
           "title": "Custom ACC Speed Intervals",
           "description": "",

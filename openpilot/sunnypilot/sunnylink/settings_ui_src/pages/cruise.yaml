@@ -57,6 +57,60 @@ sections:
         type: capability
         field: has_longitudinal_control
         equals: true
+- id: custom_follow_distance
+  title: Custom Follow Distance
+  description: Follow time per driving personality. Full speed-dependent curves are editable on 3X.
+  visibility:
+  - $ref: '#/macros/longitudinal'
+  items:
+  - key: LongTFollowCustomEnabled
+    widget: toggle
+    title: Custom Follow Distance (T_FOLLOW)
+    description: Set a follow time per driving personality. When off, the stock follow distances are used.
+    enablement:
+    - $ref: '#/macros/longitudinal'
+  - key: LongTFollowSimpleRelaxed
+    widget: option
+    title: Relaxed
+    min: 0.8
+    max: 3.0
+    step: 0.1
+    unit: s
+    needs_onroad_cycle: true
+    visibility:
+    - type: param
+      key: LongTFollowCustomEnabled
+      equals: true
+    enablement:
+    - $ref: '#/macros/longitudinal'
+  - key: LongTFollowSimpleStandard
+    widget: option
+    title: Standard
+    min: 0.8
+    max: 3.0
+    step: 0.1
+    unit: s
+    needs_onroad_cycle: true
+    visibility:
+    - type: param
+      key: LongTFollowCustomEnabled
+      equals: true
+    enablement:
+    - $ref: '#/macros/longitudinal'
+  - key: LongTFollowSimpleAggressive
+    widget: option
+    title: Aggressive
+    min: 0.8
+    max: 3.0
+    step: 0.1
+    unit: s
+    needs_onroad_cycle: true
+    visibility:
+    - type: param
+      key: LongTFollowCustomEnabled
+      equals: true
+    enablement:
+    - $ref: '#/macros/longitudinal'
 - id: custom_acc_increments
   title: Custom ACC Speed Intervals
   description: ''
