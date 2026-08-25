@@ -6,8 +6,8 @@ from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.controls.radard import VisionLeadSpeedFilter
 
 
-def _lead(d_rel, v_lead, status=True, radar=False):
-  return {'status': status, 'dRel': float(d_rel), 'vLead': float(v_lead),
+def _lead(d_rel, v_lead, present=True, radar=False):
+  return {'present': present, 'dRel': float(d_rel), 'vLead': float(v_lead),
           'vLeadK': float(v_lead), 'vRel': 0.0, 'radar': radar}
 
 

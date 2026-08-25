@@ -193,7 +193,7 @@ class VisionLeadSpeedFilter:
       return lead
     # Only correct with the clean camera lead. No camera lead (or no model lead) -> pass the model's
     # vLead through; hold state briefly so a flickering camera lead doesn't force a re-ramp.
-    if not (lead_valid and lead['status']):
+    if not (lead_valid and lead['present']):
       self.miss += 1
       if self.miss > self.DROP_HOLD:
         self.reset()
