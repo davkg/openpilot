@@ -115,6 +115,11 @@ def setup_interfaces(CI: CarInterfaceBase, params: Params | None = None) -> None
 def initialize_params(params) -> list[dict[str, Any]]:
   keys: list = []
 
+  # honda
+  keys.extend([
+    "LongitudinalActiveWithGas",
+  ])
+
   # hyundai
   keys.extend([
     "HyundaiLongitudinalTuning",

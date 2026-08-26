@@ -22,6 +22,10 @@ DESCRIPTIONS = {
     "Your attention is required at all times to use this feature."
   ),
   "DisengageOnAccelerator": tr_noop("When enabled, pressing the accelerator pedal will disengage sunnypilot."),
+  "LongitudinalActiveWithGas": tr_noop(
+    "Experimental: sunnypilot will keep commanding acceleration when accelerator pedal is pressed. Smoother transition" +
+    " for cars that blend ACC accel with driver pedal."
+  ),
   "LongitudinalPersonality": tr_noop(
     "Standard is recommended. In aggressive mode, sunnypilot will follow lead cars closer and be more aggressive with the gas and brake. " +
     "In relaxed mode sunnypilot will stay further away from lead cars. On supported cars, you can cycle through these personalities with " +
@@ -63,6 +67,12 @@ class TogglesLayout(Widget):
         DESCRIPTIONS["DisengageOnAccelerator"],
         "disengage_on_accelerator.png",
         False,
+      ),
+      "LongitudinalActiveWithGas": (
+        lambda: tr("Long Active With Accelerator Pedal"),
+        DESCRIPTIONS["LongitudinalActiveWithGas"],
+        "disengage_on_accelerator.png",
+        True,
       ),
       "IsLdwEnabled": (
         lambda: tr("Enable Lane Departure Warnings"),
@@ -208,6 +218,12 @@ class TogglesLayout(Widget):
     for toggle_def in self._toggle_defs:
       if self._toggle_defs[toggle_def][3] and toggle_def not in self._locked_toggles:
         self._toggles[toggle_def].action_item.set_enabled(not ui_state.engaged)
+
+    # requires sunnypilot longitudinal control; gated after the loop above so it isn't re-enabled
+    if ui_state.CP is not None and not ui_state.has_longitudinal_control:
+      self._toggles["LongitudinalActiveWithGas"].action_item.set_state(False)
+      self._toggles["LongitudinalActiveWithGas"].action_item.set_enabled(False)
+      self._params.remove("LongitudinalActiveWithGas")
 
   def _render(self, rect):
     self._scroller.render(rect)
