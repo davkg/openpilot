@@ -12,6 +12,10 @@ from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 
+# Render at bottom left instead of moving around with lead indicator
+STATIC_ANCHOR_X = 360
+STATIC_ANCHOR_Y_FROM_BOTTOM = 60
+
 
 class ChevronOptions:
   OFF = 0
@@ -45,12 +49,9 @@ class ChevronMetrics:
     d_rel = lead_data.dRel
     v_rel = lead_data.vRel
 
-    if not lead_vehicle.chevron or len(lead_vehicle.chevron) < 2:
-      return
-
-    chevron_x = lead_vehicle.chevron[1][0]
-    chevron_y = lead_vehicle.chevron[1][1]
-    sz = np.clip((25 * 30) / (d_rel / 3 + 30), 15.0, 30.0) * 2.35
+    chevron_x = rect.x + STATIC_ANCHOR_X
+    chevron_y = rect.y + rect.height - STATIC_ANCHOR_Y_FROM_BOTTOM
+    sz = 0.0
 
     text_lines = self._build_text_lines(d_rel, v_rel, v_ego, cam_d_rel)
     if not text_lines:
@@ -115,8 +116,8 @@ class ChevronMetrics:
       text_size = measure_text_cached(self._font, line, font_size, 0)
       text_width = text_size.x
 
-      # Center the text horizontally on the chevron
-      x = int(chevron_x - text_width / 2)
+      # Left align the text
+      x = int(chevron_x)
       x = int(np.clip(x, rect.x + margin, rect.x + rect.width - text_width - margin))
 
       # Draw shadow
@@ -126,25 +127,16 @@ class ChevronMetrics:
 
   def draw_lead_status(self, sm, radar_state, rect, lead_vehicles):
     lead_one = radar_state.leadOne
-    lead_two = radar_state.leadTwo
-
     has_lead_one = lead_one.present if lead_one else False
-    has_lead_two = lead_two.present if lead_two else False
 
-    self.update_alpha(has_lead_one or has_lead_two)
+    self.update_alpha(has_lead_one)
 
     if not self.should_render():
       return
 
     v_ego = sm['carState'].vEgo
-    # Single-lead distance from CAMERA_LEAD; 0 = no lead / out of range. It tracks the camera's
-    # in-path lead, which is leadOne, so it is not shown against leadTwo.
+    # Single-lead distance from CAMERA_LEAD; 0 = no lead / out of range.
     cam_d_rel = sm['carStateSP'].cameraLeadDistance
 
-    if has_lead_one and lead_vehicles[0].chevron:
+    if has_lead_one:
       self._draw_lead(lead_one, lead_vehicles[0], v_ego, rect, cam_d_rel)
-
-    if has_lead_two and lead_vehicles[1].chevron:
-      d_rel_diff = abs(lead_one.dRel - lead_two.dRel) if has_lead_one else float('inf')
-      if d_rel_diff > 3.0:
-        self._draw_lead(lead_two, lead_vehicles[1], v_ego, rect)
