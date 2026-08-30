@@ -183,9 +183,9 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   EventNameSP.experimentalModeSwitched: {
     ET.PERMANENT: Alert(
-      "Experimental Mode Switched", "",
-      AlertStatus.normal, AlertSize.small,
-      Priority.LOWER, VisualAlert.none, AudibleAlertSP.promptSingleHigh, 1.5),
+      "", "",
+      AlertStatus.normal, AlertSize.none,
+      Priority.LOWER, VisualAlert.none, AudibleAlertSP.promptSingleHigh, 0.5),
   },
 
   EventNameSP.wrongCarModeAlertOnly: {
