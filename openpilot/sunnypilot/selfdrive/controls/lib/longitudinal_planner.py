@@ -10,7 +10,9 @@ from opendbc.car import structs
 from openpilot.common.constants import CV
 from openpilot.common.params import Params
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX
-from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import get_T_FOLLOW_USER, get_STOP_DISTANCE, get_safe_obstacle_distance
+from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import (
+  get_T_FOLLOW_USER, get_STOP_DISTANCE, get_safe_obstacle_distance, get_stopped_equivalence_factor,
+)
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.dec import DynamicExperimentalController
 from openpilot.sunnypilot.selfdrive.controls.lib.t_follow_curve import load_t_follow_curves
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_alerts_helper import E2EAlertsHelper
@@ -96,10 +98,14 @@ class LongitudinalPlannerSP:
 
     # MPC's desired follow distance, recomputed here rather than plumbed out of the solver
     personality = sm['selfdriveState'].personality
+    lead_one = sm['radarState'].leadOne
     v_ego = self.mpc.x0[1]
     t_follow = get_T_FOLLOW_USER(self.mpc.t_follow_curves, personality, v_ego)
     stop_distance = get_STOP_DISTANCE(personality)
-    longitudinalPlanSP.desiredFollowDistance = float(get_safe_obstacle_distance(v_ego, t_follow, stop_distance))
+    desired_dist = get_safe_obstacle_distance(v_ego, t_follow, stop_distance)
+    if lead_one.present:
+      desired_dist -= get_stopped_equivalence_factor(lead_one.vLead)
+    longitudinalPlanSP.desiredFollowDistance = float(desired_dist)
 
     # Dynamic Experimental Control
     dec = longitudinalPlanSP.dec

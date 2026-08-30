@@ -81,10 +81,11 @@ class ChevronMetrics:
 
     # MPC desired follow distance
     if desired_dist > 0:
-      if v_ego > 0:
-        text_lines.append(f"want {desired_dist:.1f} m / {desired_dist / v_ego:.1f} s")
+      desired_dist_s = desired_dist / v_ego if v_ego > 0 else 0.0
+      if 0 < desired_dist_s < 200:
+        text_lines.append(f"mpc {desired_dist:.1f} m | {desired_dist_s:.1f} s")
       else:
-        text_lines.append(f"want {desired_dist:.1f} m")
+        text_lines.append(f"mpc {desired_dist:.1f} m")
 
     # Speed
     if ui_state.chevron_metrics == ChevronOptions.SPEED_ONLY:
