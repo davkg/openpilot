@@ -111,6 +111,7 @@ class FontWeight(StrEnum):
   SEMI_BOLD = "Inter-SemiBold.ttf"
   UNIFONT = "unifont.otf"
   AUDIOWIDE = "Audiowide-Regular.ttf"
+  MONO_SEMI_BOLD = "JetBrainsMono-SemiBold.ttf"
 
   # Small UI fonts
   DISPLAY_REGULAR = "Inter-Regular.ttf"

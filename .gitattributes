@@ -13,8 +13,12 @@
 openpilot/selfdrive/car/tests/test_models_segs.txt filter=lfs diff=lfs merge=lfs -text
 openpilot/common/hardware/comma/updater filter=lfs diff=lfs merge=lfs -text
 
-# Cruise-step click sounds: kept as plain git blobs, NOT LFS.
-# This fork has no write access to the sunnypilot LFS server (.lfsconfig),
-# so these small files are stored directly in the repo instead.
+# Cruise-step click sounds: kept as plain git blobs, not LFS, as we don't have LFS access
 openpilot/selfdrive/assets/sounds/cruise_step_down.wav -filter -diff -merge -text
 openpilot/selfdrive/assets/sounds/cruise_step_up.wav -filter -diff -merge -text
+
+# JetBrains Mono fonts: kept as plain git blobs, not LFS, as we don't have LFS access
+# JetBrainsMono-Medium.ttf is from upstream
+openpilot/selfdrive/assets/fonts/JetBrainsMono-Bold.ttf -filter -diff -merge -text
+openpilot/selfdrive/assets/fonts/JetBrainsMono-Regular.ttf -filter -diff -merge -text
+openpilot/selfdrive/assets/fonts/JetBrainsMono-SemiBold.ttf -filter -diff -merge -text

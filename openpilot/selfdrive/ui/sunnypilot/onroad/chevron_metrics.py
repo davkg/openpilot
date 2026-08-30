@@ -28,7 +28,7 @@ class ChevronOptions:
 class ChevronMetrics:
   def __init__(self):
     self._lead_status_alpha: float = 0.0
-    self._font = gui_app.font(FontWeight.SEMI_BOLD)
+    self._font = gui_app.font(FontWeight.MONO_SEMI_BOLD)
 
   def update_alpha(self, has_lead: bool):
     """Update the alpha value for fade in/out animation"""
@@ -41,7 +41,7 @@ class ChevronMetrics:
     """Check if dev UI should be rendered"""
     return ui_state.chevron_metrics != ChevronOptions.OFF and self._lead_status_alpha > 0.0
 
-  def _draw_lead(self, lead_data, lead_vehicle, v_ego: float, rect: rl.Rectangle, cam_d_rel: float = 0.0):
+  def _draw_lead(self, lead_data, lead_vehicle, v_ego: float, rect: rl.Rectangle, cam_d_rel: float = 0.0, desired_dist: float = 0.0):
     """Draw lead vehicle status information (distance, speed, TTC)"""
     if not self.should_render():
       return
@@ -53,37 +53,45 @@ class ChevronMetrics:
     chevron_y = rect.y + rect.height - STATIC_ANCHOR_Y_FROM_BOTTOM
     sz = 0.0
 
-    text_lines = self._build_text_lines(d_rel, v_rel, v_ego, cam_d_rel)
+    text_lines = self._build_text_lines(d_rel, v_rel, v_ego, cam_d_rel, desired_dist)
     if not text_lines:
       return
 
     self._render_text_lines(text_lines, chevron_x, chevron_y, sz, rect)
 
   @staticmethod
-  def _build_text_lines(d_rel: float, v_rel: float, v_ego: float, cam_d_rel: float = 0.0) -> list[str]:
+  def _build_text_lines(d_rel: float, v_rel: float, v_ego: float, cam_d_rel: float = 0.0, desired_dist: float = 0.0) -> list[str]:
     """Build text lines based on chevron info setting"""
     text_lines = []
 
-    # Distance -- always shown in meters; the camera's own reading follows in parentheses
+    # Distance
     if ui_state.chevron_metrics == ChevronOptions.DISTANCE_ONLY or ui_state.chevron_metrics == ChevronOptions.ALL:
       val = max(0.0, d_rel)
-      if cam_d_rel > 0:
-        text_lines.append(f"{val:.0f} m ({cam_d_rel:.0f} m)")
-      else:
-        text_lines.append(f"{val:.0f} m")
-
-    # Speed
-    if ui_state.chevron_metrics == ChevronOptions.SPEED_ONLY or ui_state.chevron_metrics == ChevronOptions.ALL:
-      multiplier = CV.MS_TO_KPH if ui_state.is_metric else CV.MS_TO_MPH
-      val = max(0.0, (v_rel + v_ego) * multiplier)
-      unit = "km/h" if ui_state.is_metric else "mph"
-      text_lines.append(f"{val:.0f} {unit}")
+      text_lines.append(f"{val:.1f} m")
+      # if cam_d_rel > 0:
+      #   text_lines.append(f"{val:.0f} m ({cam_d_rel:.0f} m)")
+      # else:
+      #   text_lines.append(f"{val:.0f} m")
 
     # Time to collision
     if ui_state.chevron_metrics == ChevronOptions.TTC_ONLY or ui_state.chevron_metrics == ChevronOptions.ALL:
       val = (d_rel / v_ego) if (d_rel > 0 and v_ego > 0) else 0.0
       ttc_text = f"{val:.1f} s" if (0 < val < 200) else "---"
       text_lines.append(ttc_text)
+
+    # MPC desired follow distance
+    if desired_dist > 0:
+      if v_ego > 0:
+        text_lines.append(f"want {desired_dist:.1f} m / {desired_dist / v_ego:.1f} s")
+      else:
+        text_lines.append(f"want {desired_dist:.1f} m")
+
+    # Speed
+    if ui_state.chevron_metrics == ChevronOptions.SPEED_ONLY:
+      multiplier = CV.MS_TO_KPH if ui_state.is_metric else CV.MS_TO_MPH
+      val = max(0.0, (v_rel + v_ego) * multiplier)
+      unit = "km/h" if ui_state.is_metric else "mph"
+      text_lines.append(f"{val:.0f} {unit}")
 
     return text_lines
 
@@ -137,6 +145,7 @@ class ChevronMetrics:
     v_ego = sm['carState'].vEgo
     # Single-lead distance from CAMERA_LEAD; 0 = no lead / out of range.
     cam_d_rel = sm['carStateSP'].cameraLeadDistance
+    desired_dist = sm['longitudinalPlanSP'].desiredFollowDistance
 
     if has_lead_one:
-      self._draw_lead(lead_one, lead_vehicles[0], v_ego, rect, cam_d_rel)
+      self._draw_lead(lead_one, lead_vehicles[0], v_ego, rect, cam_d_rel, desired_dist)
