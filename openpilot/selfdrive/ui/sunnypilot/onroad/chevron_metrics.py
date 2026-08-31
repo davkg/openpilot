@@ -64,28 +64,23 @@ class ChevronMetrics:
     """Build text lines based on chevron info setting"""
     text_lines = []
 
-    # Distance
+    # Distance, with the MPC's desired follow distance in parentheses
     if ui_state.chevron_metrics == ChevronOptions.DISTANCE_ONLY or ui_state.chevron_metrics == ChevronOptions.ALL:
       val = max(0.0, d_rel)
-      text_lines.append(f"{val:.1f} m")
+      want = f" ({desired_dist:.1f} m)" if desired_dist > 0 else ""
+      text_lines.append(f"{val:.1f} m{want}")
       # if cam_d_rel > 0:
       #   text_lines.append(f"{val:.0f} m ({cam_d_rel:.0f} m)")
       # else:
       #   text_lines.append(f"{val:.0f} m")
 
-    # Time to collision
+    # Time to collision, with the MPC's desired follow time in parentheses
     if ui_state.chevron_metrics == ChevronOptions.TTC_ONLY or ui_state.chevron_metrics == ChevronOptions.ALL:
       val = (d_rel / v_ego) if (d_rel > 0 and v_ego > 0) else 0.0
       ttc_text = f"{val:.1f} s" if (0 < val < 200) else "---"
-      text_lines.append(ttc_text)
-
-    # MPC desired follow distance
-    if desired_dist > 0:
-      desired_dist_s = desired_dist / v_ego if v_ego > 0 else 0.0
-      if 0 < desired_dist_s < 200:
-        text_lines.append(f"mpc {desired_dist:.1f} m | {desired_dist_s:.1f} s")
-      else:
-        text_lines.append(f"mpc {desired_dist:.1f} m")
+      desired_dist_s = desired_dist / v_ego if (desired_dist > 0 and v_ego > 0) else 0.0
+      want = f" ({desired_dist_s:.1f} s)" if 0 < desired_dist_s < 200 else ""
+      text_lines.append(f"{ttc_text}{want}")
 
     # Speed
     if ui_state.chevron_metrics == ChevronOptions.SPEED_ONLY:
