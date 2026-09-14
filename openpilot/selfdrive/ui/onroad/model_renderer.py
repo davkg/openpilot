@@ -12,7 +12,7 @@ from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.shader_polygon import draw_polygon, Gradient
 from openpilot.system.ui.widgets import Widget
 
-from openpilot.selfdrive.ui.sunnypilot.onroad.model_renderer import ChevronMetrics, ModelRendererSP
+from openpilot.selfdrive.ui.sunnypilot.onroad.model_renderer import ChevronMetrics, LANE_CENTERING_COLOR, ModelRendererSP
 
 CLIP_MARGIN = 500
 MIN_DRAW_DISTANCE = 10.0
@@ -117,6 +117,7 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
 
     if self._counter % 60 == 0:
       self._camera_offset = ui_state.params.get("CameraOffset", return_default=True) if ui_state.active_bundle else 0.0
+      self.update_lane_centering_params()
     self._counter += 1
 
     if sm.updated['carParams']:
@@ -315,12 +316,18 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
 
   def _draw_lane_lines(self):
     """Draw lane lines and road edges"""
+    lane_centering_direction = self.lane_centering_direction()
     for i, lane_line in enumerate(self._lane_lines):
       if lane_line.projected_points.size == 0:
         continue
 
       alpha = np.clip(self._lane_line_probs[i], 0.0, 0.7)
-      color = rl.Color(255, 255, 255, int(alpha * 255))
+      # tint the ego lane line that lane centering is biasing us toward
+      if (lane_centering_direction > 0 and i == 2) or (lane_centering_direction < 0 and i == 1):
+        c = LANE_CENTERING_COLOR
+        color = rl.Color(c.r, c.g, c.b, int(alpha * 255))
+      else:
+        color = rl.Color(255, 255, 255, int(alpha * 255))
       draw_polygon(self._rect, lane_line.projected_points, color)
 
     for i, road_edge in enumerate(self._road_edges):

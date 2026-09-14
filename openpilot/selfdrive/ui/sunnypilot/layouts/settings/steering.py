@@ -96,6 +96,42 @@ class SteeringLayout(Widget):
       title=lambda: tr("Neural Network Lateral Control (NNLC)"),
       description=""
     )
+    self._lane_centering_toggle = toggle_item_sp(
+      param="LaneCentering",
+      title=lambda: tr("Lane Centering"),
+      description=lambda: tr("Bias the model command toward the detected lane center. Requires two confident lane lines " +
+                             "and remains subject to the normal curvature and jerk limits. Ported from StarPilot."),
+    )
+    # this param defaults to on, so it can't use the param binding (get_bool returns False when unset)
+    self._lane_centering_pause_toggle = toggle_item_sp(
+      title=lambda: tr("Pause Lane Centering with Blinker"),
+      description=lambda: tr("Fade the lane centering correction out while a turn signal is active so it does not fight " +
+                             "a lane change or turn."),
+      initial_state=bool(ui_state.params.get("LaneCenteringPauseOnSignal", return_default=True)),
+      callback=self._on_lane_centering_pause_on_signal,
+    )
+    self._lane_center_offset_options = option_item_sp(
+      param="LaneCenterOffset",
+      title=lambda: tr("Lane Centering Offset"),
+      min_value=-30,
+      max_value=30,
+      description=lambda: tr("Shift the lane centering target left or right of the lane center. The offset is reduced " +
+                             "automatically when the detected lane is narrow."),
+      use_float_scaling=True,
+      label_callback=lambda offset: f"{offset / 100:.2f} m",
+    )
+    self._lane_centering_e2e_authority_options = option_item_sp(
+      param="LaneCenteringE2EAuthority",
+      title=lambda: tr("Lane Centering E2E Override"),
+      min_value=0,
+      max_value=100,
+      value_change_step=5,
+      description=lambda: tr("How strongly a confident end-to-end model path can override lane centering when it " +
+                             "deliberately departs the lane center. 100% gives the model full authority; " +
+                             "0% disables the override."),
+      use_float_scaling=True,
+      label_callback=lambda authority: f"{authority}%",
+    )
 
     items = [
       self._mads_toggle,
@@ -111,11 +147,20 @@ class SteeringLayout(Widget):
       self._torque_customization_button,
       LineSeparatorSP(40),
       self._nnlc_toggle,
+      LineSeparatorSP(40),
+      self._lane_centering_toggle,
+      self._lane_centering_pause_toggle,
+      self._lane_center_offset_options,
+      self._lane_centering_e2e_authority_options,
     ]
     return items
 
   def _set_current_panel(self, panel: PanelType):
     self._current_panel = panel
+
+  @staticmethod
+  def _on_lane_centering_pause_on_signal(state: bool):
+    ui_state.params.put_bool("LaneCenteringPauseOnSignal", state)
 
   def _update_state(self):
     super()._update_state()
@@ -131,6 +176,13 @@ class SteeringLayout(Widget):
     self._mads_settings_button.action_item.set_enabled(ui_state.is_offroad() and self._mads_toggle.action_item.get_state())
     self._blinker_control_options.set_visible(self._blinker_control_toggle.action_item.get_state())
     self._blinker_reengage_delay.set_visible(self._blinker_control_toggle.action_item.get_state())
+
+    # the pause toggle is not param-bound, so re-sync it here for sunnylink changes
+    self._lane_centering_pause_toggle.action_item.set_state(bool(ui_state.params.get("LaneCenteringPauseOnSignal", return_default=True)))
+    lane_centering_on = self._lane_centering_toggle.action_item.get_state()
+    self._lane_centering_pause_toggle.set_visible(lane_centering_on)
+    self._lane_center_offset_options.set_visible(lane_centering_on)
+    self._lane_centering_e2e_authority_options.set_visible(lane_centering_on)
 
     enforce_torque_enabled = self._torque_control_toggle.action_item.get_state()
     nnlc_enabled = self._nnlc_toggle.action_item.get_state()

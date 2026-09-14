@@ -13,7 +13,7 @@ from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.shader_polygon import draw_polygon, Gradient
 from openpilot.system.ui.widgets import Widget
 
-from openpilot.selfdrive.ui.sunnypilot.mici.onroad.model_renderer import LANE_LINE_COLORS_SP, ModelRendererSP
+from openpilot.selfdrive.ui.sunnypilot.mici.onroad.model_renderer import LANE_CENTERING_COLOR, LANE_LINE_COLORS_SP, ModelRendererSP
 
 CLIP_MARGIN = 500
 MIN_DRAW_DISTANCE = 10.0
@@ -106,6 +106,7 @@ class ModelRenderer(Widget, ModelRendererSP):
 
     if self._counter % 180 == 0:  # This runs at 60fps, so we query every 3 seconds
       self._camera_offset = ui_state.params.get("CameraOffset", return_default=True) if ui_state.active_bundle else 0.0
+      self.update_lane_centering_params()
     self._counter += 1
 
     self._torque_filter.update(-ui_state.sm['carOutput'].actuatorsOutput.torque)
@@ -294,7 +295,7 @@ class ModelRenderer(Widget, ModelRendererSP):
 
     return LeadVehicle(glow=glow, chevron=chevron, fill_alpha=int(fill_alpha))
 
-  def _get_ll_color(self, prob: float, adjacent: bool, left: bool):
+  def _get_ll_color(self, prob: float, adjacent: bool, left: bool, lane_centering: bool = False):
     alpha = np.clip(prob, 0.0, 0.7)
     if adjacent:
       _base_color = LANE_LINE_COLORS.get(ui_state.status, LANE_LINE_COLORS[UIStatus.DISENGAGED])
@@ -312,6 +313,10 @@ class ModelRenderer(Widget, ModelRendererSP):
     else:
       color = rl.Color(255, 255, 255, int(alpha * 255))
 
+    # tint the ego lane line that lane centering is biasing us toward
+    if lane_centering:
+      color = rl.Color(LANE_CENTERING_COLOR.r, LANE_CENTERING_COLOR.g, LANE_CENTERING_COLOR.b, int(alpha * 255))
+
     if ui_state.status == UIStatus.DISENGAGED:
       color = rl.Color(0, 0, 0, int(alpha * 255))
 
@@ -320,12 +325,14 @@ class ModelRenderer(Widget, ModelRendererSP):
   def _draw_lane_lines(self):
     """Draw lane lines and road edges. Two closest lines should be green (lane line or road edges)."""
     offset = np.array([self._rect.x, self._rect.y], dtype=np.float32)
+    lane_centering_direction = self.lane_centering_direction()
 
     for i, lane_line in enumerate(self._lane_lines):
       if lane_line.projected_points.size == 0:
         continue
 
-      color = self._get_ll_color(float(self._lane_line_probs[i]), i in (1, 2), i in (0, 1))
+      lane_centering_line = (lane_centering_direction > 0 and i == 2) or (lane_centering_direction < 0 and i == 1)
+      color = self._get_ll_color(float(self._lane_line_probs[i]), i in (1, 2), i in (0, 1), lane_centering_line)
       draw_polygon(self._rect, lane_line.projected_points + offset, color)
 
     for i, road_edge in enumerate(self._road_edges):

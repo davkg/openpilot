@@ -3,13 +3,22 @@ from collections.abc import Callable
 from openpilot.cereal import log
 
 from openpilot.system.ui.widgets.scroller import NavScroller
-from openpilot.selfdrive.ui.mici.widgets.button import BigParamControl, BigMultiParamToggle, BigToggle, GreyBigButton
+from openpilot.selfdrive.ui.mici.widgets.button import BigParamControl, BigMultiParamToggle, BigMultiToggle, BigToggle, GreyBigButton
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigConfirmationCircleButton
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.selfdrive.ui.layouts.settings.common import restart_needed_callback
 from openpilot.selfdrive.ui.ui_state import ui_state
 
 PERSONALITY_TO_INT = log.LongitudinalPersonality.schema.enumerants
+
+# Coarse presets for the lane centering settings. These params are floats shared with the 3X menu and
+# sunnylink, which both offer the full range, so a value set there snaps to the nearest preset here.
+LANE_CENTER_OFFSET = ((-0.1, "-0.1m"), (0.0, "0m"), (0.1, "+0.1m"))
+LANE_CENTERING_E2E_AUTHORITY = ((0.0, "0%"), (0.5, "50%"), (1.0, "100%"))
+
+
+def _nearest_label(presets, value) -> str:
+  return min(presets, key=lambda p: abs(p[0] - float(value)))[1]
 
 
 class ExperimentalModeConfirmPage(NavScroller):
@@ -53,6 +62,16 @@ class TogglesLayoutMici(NavScroller):
                                                  toggle_callback=restart_needed_callback)
     enable_openpilot = BigParamControl("enable sunnypilot", "OpenpilotEnabledToggle", toggle_callback=restart_needed_callback)
 
+    self._lane_centering_toggle = BigParamControl("lane centering", "LaneCentering",
+                                                  toggle_callback=self._update_lane_centering_visible)
+    self._lane_centering_pause_toggle = BigToggle("pause with blinker",
+                                                  initial_state=bool(ui_state.params.get("LaneCenteringPauseOnSignal", return_default=True)),
+                                                  toggle_callback=self._on_lane_centering_pause_on_signal)
+    self._lane_center_offset_toggle = BigMultiToggle("center offset", [label for _, label in LANE_CENTER_OFFSET],
+                                                     select_callback=self._on_lane_center_offset)
+    self._lane_centering_e2e_authority_toggle = BigMultiToggle("e2e override", [label for _, label in LANE_CENTERING_E2E_AUTHORITY],
+                                                               select_callback=self._on_lane_centering_e2e_authority)
+
     self._scroller.add_widgets([
       self._personality_toggle,
       self._experimental_btn,
@@ -62,6 +81,10 @@ class TogglesLayoutMici(NavScroller):
       record_front,
       record_mic,
       self._long_active_with_gas,
+      self._lane_centering_toggle,
+      self._lane_centering_pause_toggle,
+      self._lane_center_offset_toggle,
+      self._lane_centering_e2e_authority_toggle,
       enable_openpilot,
     ])
 
@@ -75,6 +98,7 @@ class TogglesLayoutMici(NavScroller):
       ("RecordAudio", record_mic),
       ("LongitudinalActiveWithGas", self._long_active_with_gas),
       ("OpenpilotEnabledToggle", enable_openpilot),
+      ("LaneCentering", self._lane_centering_toggle),
     )
 
     enable_openpilot.set_enabled(lambda: not ui_state.engaged)
@@ -121,6 +145,31 @@ class TogglesLayoutMici(NavScroller):
     # Refresh toggles from params to mirror external changes
     for key, item in self._refresh_toggles:
       item.set_checked(ui_state.params.get_bool(key))
+
+    # these three aren't param-bound (bool default is on, the other two map floats to presets)
+    self._lane_centering_pause_toggle.set_checked(bool(ui_state.params.get("LaneCenteringPauseOnSignal", return_default=True)))
+    self._lane_center_offset_toggle.set_value(
+      _nearest_label(LANE_CENTER_OFFSET, ui_state.params.get("LaneCenterOffset", return_default=True)))
+    self._lane_centering_e2e_authority_toggle.set_value(
+      _nearest_label(LANE_CENTERING_E2E_AUTHORITY, ui_state.params.get("LaneCenteringE2EAuthority", return_default=True)))
+    self._update_lane_centering_visible(ui_state.params.get_bool("LaneCentering"))
+
+  def _update_lane_centering_visible(self, enabled: bool):
+    self._lane_centering_pause_toggle.set_visible(enabled)
+    self._lane_center_offset_toggle.set_visible(enabled)
+    self._lane_centering_e2e_authority_toggle.set_visible(enabled)
+
+  @staticmethod
+  def _on_lane_centering_pause_on_signal(state: bool):
+    ui_state.params.put_bool("LaneCenteringPauseOnSignal", state, block=True)
+
+  @staticmethod
+  def _on_lane_center_offset(label: str):
+    ui_state.params.put("LaneCenterOffset", next(v for v, lb in LANE_CENTER_OFFSET if lb == label), block=True)
+
+  @staticmethod
+  def _on_lane_centering_e2e_authority(label: str):
+    ui_state.params.put("LaneCenteringE2EAuthority", next(v for v, lb in LANE_CENTERING_E2E_AUTHORITY if lb == label), block=True)
 
   def _on_experimental_mode(self, state: bool):
     if state and not ui_state.params.get_bool("ExperimentalModeConfirmed"):

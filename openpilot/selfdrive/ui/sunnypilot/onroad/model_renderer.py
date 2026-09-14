@@ -12,6 +12,7 @@ from openpilot.selfdrive.ui.sunnypilot.onroad.chevron_metrics import ChevronMetr
 from openpilot.selfdrive.ui.sunnypilot.onroad.rainbow_path import RainbowPath
 from openpilot.selfdrive.ui.sunnypilot.ui_state import MADSState
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
+from openpilot.sunnypilot.selfdrive.controls.lib.lane_centering import get_lane_centering_visual_direction
 from openpilot.system.ui.lib.application import FontWeight, gui_app
 
 CALIBRATED = log.ExtrinsicsCalibration.Status.calibrated
@@ -26,6 +27,9 @@ MAX_RADIUS_PX = 30.0
 NEAR_RANGE_M = 5.0
 FAR_RANGE_M = 100.0
 EGO_LANE_HALF_W = 1.5
+
+# Lane centering: the ego lane line we are being biased toward is tinted this color
+LANE_CENTERING_COLOR = rl.Color(65, 145, 255, 255)
 ADJACENT_LANE_OUTER = 4.5
 
 # Lane-band colors (RGB; alpha modulated per-frame by per-slot filter)
@@ -60,6 +64,11 @@ class ModelRendererSP:
     self._camera_marker_font: rl.Font = gui_app.font(FontWeight.MEDIUM)
     self._width_filter = FirstOrderFilter(0.9, 0.1, 1 / gui_app.target_fps)
 
+    self._lane_centering_enabled = False
+    self._lane_center_offset = 0.0
+    self._lane_centering_e2e_authority = 1.0
+    self._lane_centering_pause_on_signal = True
+
   @property
   def _lateral_active(self) -> bool:
     sm = ui_state.sm
@@ -68,6 +77,34 @@ class ModelRendererSP:
       if mads.available:
         return mads.enabled and mads.state != MADSState.paused
     return ui_state.status in (UIStatus.ENGAGED, UIStatus.LAT_ONLY)
+
+  def update_lane_centering_params(self) -> None:
+    params = ui_state.params
+    self._lane_centering_enabled = params.get_bool("LaneCentering")
+    self._lane_center_offset = float(params.get("LaneCenterOffset", return_default=True))
+    self._lane_centering_e2e_authority = float(params.get("LaneCenteringE2EAuthority", return_default=True))
+    self._lane_centering_pause_on_signal = bool(params.get("LaneCenteringPauseOnSignal", return_default=True))
+
+  def lane_centering_direction(self) -> int:
+    """1 to tint the right ego lane line, -1 the left, 0 for no tint."""
+    if not self._lane_centering_enabled:
+      return 0
+
+    sm = ui_state.sm
+    if sm.recv_frame["carState"] < ui_state.started_frame:
+      return 0
+    CS = sm["carState"]
+
+    # Prefer the correction actually applied by controlsd over the instantaneous raw one, so the
+    # tint follows the smoothed output and does not flicker (also drops out on driver override).
+    applied_correction = None
+    if sm.recv_frame["controlsState"] >= ui_state.started_frame:
+      applied_correction = sm["controlsState"].desiredCurvature - sm["modelV2"].action.desiredCurvature
+
+    return get_lane_centering_visual_direction(
+      sm["modelV2"], CS.vEgo, self._lane_center_offset, self._lane_centering_e2e_authority,
+      True, self._lateral_active, self._lane_centering_pause_on_signal,
+      bool(CS.leftBlinker or CS.rightBlinker), applied_correction)
 
   def _get_path_half_width(self) -> float:
     target = 0.9 if self._lateral_active else 0.40

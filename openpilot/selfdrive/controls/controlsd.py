@@ -133,6 +133,7 @@ class Controls(ControlsExt):
 
     if not CC.latActive:
       self.LaC.reset()
+      self.lane_centering.reset()
     if not CC.longActive:
       self.LoC.reset()
 
@@ -148,6 +149,18 @@ class Controls(ControlsExt):
       new_desired_curvature = self.sm['lateralManeuverPlan'].desiredCurvature if CC.latActive else self.curvature
     else:
       new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
+
+    new_desired_curvature = self.lane_centering.update(
+      new_desired_curvature, model_v2, CS.vEgo,
+      self.lane_centering_enabled,
+      self.lane_center_offset,
+      self.lane_centering_e2e_authority,
+      CC.latActive,
+      bool(self.sm.all_checks(['modelV2'])),
+      self.lane_centering_pause_on_signal,
+      bool(CS.leftBlinker or CS.rightBlinker),
+      bool(CS.steeringPressed))
+
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
     lat_delay = self.sm["lateralDelay"].lateralDelay + LAT_SMOOTH_SECONDS
 
