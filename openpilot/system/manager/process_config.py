@@ -6,13 +6,12 @@ from opendbc.car.structs import car
 from openpilot.cereal import custom
 from openpilot.common.params import Params
 from openpilot.common.hardware import PC, COMMA_HARDWARE
-from openpilot.selfdrive.modeld.helpers import reproject_expected
 from openpilot.system.manager.process import PythonProcess, NativeProcess, DaemonProcess
 from openpilot.common.hardware.hw import Paths
 
 from openpilot.sunnypilot.mapd.mapd_manager import MAPD_PATH
 
-from openpilot.sunnypilot.models.helpers import get_active_model_runner
+from openpilot.sunnypilot.models.helpers import get_active_model_runner, reproject_active
 from openpilot.sunnypilot.sunnylink.utils import sunnylink_need_register, sunnylink_ready, use_sunnylink_uploader
 
 WEBCAM = os.getenv("USE_WEBCAM") is not None
@@ -67,8 +66,7 @@ def only_offroad(started: bool, params: Params, CP: car.CarParams) -> bool:
   return not started
 
 def reproject(started: bool, params: Params, CP: car.CarParams) -> bool:
-  # stock runner only: sunnypilot's modeld_v2 reads camerad directly
-  return started and reproject_expected() and is_stock_model(started, params, CP)
+  return started and reproject_active(params)
 
 def livestream(started: bool, params: Params, CP: car.CarParams) -> bool:
   return params.get_bool("IsLiveStreaming")
@@ -128,6 +126,7 @@ procs = [
 
   PythonProcess("modeld", "openpilot.selfdrive.modeld.modeld", and_(only_onroad, is_stock_model)),
   PythonProcess("reprojectd", "openpilot.selfdrive.modeld.reprojectd", reproject),
+  PythonProcess("reprojectcalibd", "openpilot.selfdrive.modeld.reprojectcalibd", reproject),
   PythonProcess("dmonitoringmodeld", "openpilot.selfdrive.modeld.dmonitoringmodeld", driverview, enabled=(WEBCAM or not PC)),
 
   PythonProcess("sensord", "openpilot.system.sensord.sensord", only_onroad, enabled=not PC),

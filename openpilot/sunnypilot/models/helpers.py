@@ -13,7 +13,7 @@ from openpilot.cereal import custom
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.hardware.hw import Paths
-from openpilot.selfdrive.modeld.helpers import chestnut_present
+from openpilot.selfdrive.modeld.helpers import chestnut_present, reproject_expected
 
 # SET ME TO THE EXACT JSON VERSION WE SET IN SUNNYPILOT_MODELS REPO
 REQUIRED_JSON_VERSION = 19
@@ -188,6 +188,11 @@ def get_active_model_runner(params: Params | None = None, force_check: bool = Fa
     params.put("ModelRunnerTypeCache", int(runner_type), block=True)
 
   return runner_type
+
+
+def reproject_active(params: Params | None = None) -> bool:
+  """The 3X->comma 4 reprojection only feeds the stock runner's modeld; modeld_v2 reads camerad directly."""
+  return reproject_expected() and get_active_model_runner(params) == custom.ModelManagerSP.Runner.stock
 
 
 def _get_model():
