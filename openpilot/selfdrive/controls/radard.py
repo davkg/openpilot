@@ -158,14 +158,13 @@ class VisionLeadSpeedFilter:
   """Correct the model's over-estimated distant-lead speed. Uses HONDA_BOSCH_RADARLESS leadDistance.
   The model over-reports distant (>~70m) lead speed, causing late braking. The LKAS camera's
   leadDistance is reliable, so we derive speed from it via d(distance)/dt. The derived speed is
-  blended into vLead using the model's velocity uncertainty (vStd: high trust nearby, low trust
-  distant). The blend is downward-only and rate-limited. With no camera lead we pass the model's
-  vLead through unchanged. We use the LKAS camera leadDistance over the model's dRel because
-  leadDistance is less noisy and cleanly tracks the lead when a cut-in occurs. dRel will
+  blended into vLead by camera distance. The blend is downward-only and rate-limited. With no camera
+  lead we pass the model's vLead through unchanged. We use the LKAS camera leadDistance over the model's
+  dRel because leadDistance is less noisy and cleanly tracks the lead when a cut-in occurs. dRel will
   re-range onto a cut-in car, which is difficult to differentiate from an abrupt slowdown. aLeadK
   is untouched.
   """
-  W_VSTD = (1.0, 1.6)        # vStd blend window: weight ramps 0->1 (off below ~60 m, where the model is confident)
+  W_DIST = (50.0, 70.0)      # m -- blend window: weight ramps 0->1 (model bias ~0 below 55 m, +3-4 m/s past 70 m)
   OPEN_MAX = 8.0             # m/s -- max opening rate (caps upward re-range spikes)
   CLOSE_MARGIN = 2.0         # m/s -- closing capped at -(vEgo+margin); floors vLead at ~-margin
   V_RATE = 8.0               # m/s^2 -- max rate the corrected speed eases (MPC jerk-limits the brake downstream)
@@ -185,8 +184,7 @@ class VisionLeadSpeedFilter:
     self.v_corr = 0.0                     # rate-limited corrected speed
     self.miss = 0                         # consecutive dropout frames
 
-  def correct(self, lead: dict[str, Any], v_ego: float, v_std: float, lead_distance: float,
-              lead_valid: bool) -> dict[str, Any]:
+  def correct(self, lead: dict[str, Any], v_ego: float, lead_distance: float, lead_valid: bool) -> dict[str, Any]:
     # radar lead: dRel is already a good measurement, not the model's over-estimate -- pass through.
     if lead.get('radar', False):
       self.reset()
@@ -224,8 +222,8 @@ class VisionLeadSpeedFilter:
       sample = self.ema_vego + closing
     self.v_abs += (dt / (gap_tau + dt)) * (sample - self.v_abs)
 
-    # vStd-weighted blend (model velocity vs position-derived), downward-only, eased
-    w = min(max((v_std - self.W_VSTD[0]) / (self.W_VSTD[1] - self.W_VSTD[0]), 0.0), 1.0)
+    # distance-weighted blend (model velocity vs position-derived), downward-only, eased
+    w = min(max((self.ema_drel - self.W_DIST[0]) / (self.W_DIST[1] - self.W_DIST[0]), 0.0), 1.0)
     target = min(v_model, (1.0 - w) * v_model + w * self.v_abs)
     step = self.V_RATE * dt
     self.v_corr += min(max(target - self.v_corr, -step), step)
@@ -353,9 +351,8 @@ class RadarD:
       if self.CP.radarUnavailable:  # vision-only lead speed is over-estimated at distance; correct it
         cs_sp = sm['carStateSP']
         cam_lead_valid = sm.valid['carStateSP'] and cs_sp.cameraLeadValid
-        v_std0 = leads_v3[0].vStd[0] if len(leads_v3[0].vStd) else 0.0
         # only leadOne -- the camera's designated in-path lead; leadTwo is passed through
-        lead_one = self.lead_one_speed_filter.correct(lead_one, self.v_ego, v_std0, cs_sp.cameraLeadDistance, cam_lead_valid)
+        lead_one = self.lead_one_speed_filter.correct(lead_one, self.v_ego, cs_sp.cameraLeadDistance, cam_lead_valid)
       self.radar_state.leadOne = lead_one
       self.radar_state.leadTwo = lead_two
 
