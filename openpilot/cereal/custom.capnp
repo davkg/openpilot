@@ -373,6 +373,8 @@ struct OnroadEventSP @0xda96579883444c35 {
     bigModelReady @25;
     cruiseStepUp @26;
     cruiseStepDown @27;
+    bigModelAvailable @28;
+    bigModelLinkLost @29;
   }
 }
 
@@ -499,6 +501,23 @@ struct ModelDataV2SP @0xa1680744031fdb2d {
   laneTurnDirection @0 :TurnDirection;
   leftLaneChangeEdgeBlock @1 :Bool;
   rightLaneChangeEdgeBlock @2 :Bool;
+
+  # @3-@5 mirror zoompilot's layout so jetlink logs decode the same in both forks
+  bigModelAvailableDEPRECATED @3 :Bool;  # acceleratorState ready says it; ordinal kept for old logs
+
+  # Runtime state of an off-board accelerator (sunnypilot/jetlink_adapter). Offroad
+  # progress stays in the AcceleratorProgress param.
+  acceleratorState @4 :AcceleratorState;
+  acceleratorNameDEPRECATED @5 :Text;  # always jetlink; ordinal kept for old logs
+
+  enum AcceleratorState {
+    none @0;
+    joining @1;
+    running @2;
+    retrying @3;
+    unavailable @4;
+    ready @5;      # link up, engine loaded, waiting for a window to switch
+  }
 
   enum TurnDirection {
     none @0;
