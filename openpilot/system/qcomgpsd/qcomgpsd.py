@@ -157,6 +157,18 @@ def setup_quectel(diag: ModemDiag):
   ))
 
 
+@retry(attempts=10, delay=1.0)
+def connect_quectel() -> ModemDiag:
+  diag = ModemDiag()
+  try:
+    setup_quectel(diag)
+  except Exception:
+    # the port is opened exclusively: a retry could never open it again
+    diag.close()
+    raise
+  return diag
+
+
 def teardown_quectel(diag):
   at_cmd("AT+QGPSCFG=\"outport\",\"none\"")
   if gps_enabled():
@@ -211,8 +223,7 @@ def main() -> NoReturn:
   signal.signal(signal.SIGTERM, cleanup)
 
   # connect to modem
-  diag = ModemDiag()
-  setup_quectel(diag)
+  diag = connect_quectel()
   cloudlog.warning("quectel setup done")
   gpio_init(GPIO.GNSS_PWR_EN, True)
   gpio_set(GPIO.GNSS_PWR_EN, True)
@@ -220,7 +231,16 @@ def main() -> NoReturn:
   pm = messaging.PubMaster(['qcomGnss', 'gpsLocation'])
 
   while 1:
-    opcode, payload = diag.recv()
+    try:
+      opcode, payload = diag.recv()
+    except OSError:
+      # a modem reset takes the diag port with it; set up again once it is back
+      cloudlog.exception("modem diag port lost, reconnecting")
+      diag.close()
+      wait_for_modem()
+      diag = connect_quectel()
+      cloudlog.warning("quectel setup done")
+      continue
     if opcode != DIAG_LOG_F:
       cloudlog.error(f"Unhandled opcode: {opcode}")
       continue

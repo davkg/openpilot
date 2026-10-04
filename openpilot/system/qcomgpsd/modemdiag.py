@@ -31,6 +31,9 @@ class ModemDiag:
     self.serial = self.open_serial()
     self.pend = b''
 
+  def close(self):
+    self.serial.close()
+
   def open_serial(self):
     serial = Serial("/dev/ttyUSB0", baudrate=115200, rtscts=True, dsrdtr=True, timeout=0, exclusive=True)
     serial.flush()
@@ -63,6 +66,10 @@ class ModemDiag:
     while self.TRAILER_CHAR not in raw_payload[-1]:
       select.select([self.serial.fd], [], [])
       raw = self.serial.read(0x10000)
+      if not raw:
+        # readable but empty: the port hung up (the modem dropped off USB). Without
+        # this the loop spins on the dead fd forever, growing raw_payload
+        raise OSError("modem diag port hung up")
       raw_payload.append(raw)
     raw_payload = b''.join(raw_payload)
     raw_payload, self.pend = raw_payload.split(self.TRAILER_CHAR, 1)
