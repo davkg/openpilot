@@ -4,7 +4,7 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
-The mici models panel's Accelerator Link: the provisioning line, the icon state,
+The mici models panel's Jetlink setting: the provisioning line, the icon state,
 the link toggle and the accelerator's default big model. From zoompilot's
 test_mici_settings.py, converted from pytest to unittest.
 """
@@ -66,10 +66,10 @@ class TestAcceleratorProgressRenders(MiciTest):
 
   STAGES = ['download', 'connect', 'upload', 'build', 'failed']
 
-  def _info(self, stage, frac):
+  def _info(self, stage, frac, msg='', drops=0, mode='usb'):
     from openpilot.selfdrive.ui.ui_state import ui_state
     saved = ui_state.jetlink
-    ui_state.jetlink = jetlink_status(present=True, progress={'stage': stage, 'frac': frac, 'msg': ''})
+    ui_state.jetlink = jetlink_status(present=True, mode=mode, progress={'stage': stage, 'frac': frac, 'msg': msg, 'drops': drops})
     try:
       from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import _model_info
       return _model_info()
@@ -90,19 +90,19 @@ class TestAcceleratorProgressRenders(MiciTest):
     _, _, info = self._info('download', 0.42)
     assert '42%' in info
 
-  def test_a_message_is_shown_instead_of_a_percentage_that_means_nothing(self):
-    # a join has nothing to measure, and "getting ready" alone does not separate an
-    # unplugged Jetson from one six seconds from ready
-    from openpilot.selfdrive.ui.ui_state import ui_state
-    saved = ui_state.jetlink
-    ui_state.jetlink = jetlink_status(present=True, progress={'stage': 'connect', 'frac': 0.0, 'msg': 'waiting for the accelerator'})
-    try:
-      from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import _model_info
-      _, _, info = _model_info()
-    finally:
-      ui_state.jetlink = saved
-    assert 'waiting for the accelerator' in info
-    assert '%' not in info
+  def test_the_line_is_jetlinks_message(self):
+    cases = [
+      # a join has nothing to measure, and "getting ready" alone does not separate an
+      # unplugged Jetson from one six seconds from ready
+      ('connect', 0.0, 'waiting for jetlink', 0, 'usb', 'waiting for jetlink'),
+      ('download', 0.45, 'downloading', 0, 'usb', 'downloading 45%'),
+      # jetlink counts the drops; the card names the cable, and on iOS the phone app too
+      ('connect', 0.0, 'reconnecting', 2, 'usb', 'reconnecting, check cable (2 drops)'),
+      ('connect', 0.0, 'waiting for jetlink', 3, 'ios', 'waiting for jetlink, check cable or app (3 drops)'),
+    ]
+    for stage, frac, msg, drops, mode, shown in cases:
+      with self.subTest(msg=msg, drops=drops, mode=mode):
+        assert self._info(stage, frac, msg, drops, mode)[2] == shown
 
   def test_failure_says_so_rather_than_showing_100_percent(self):
     _, _, info = self._info('failed', 1.0)
@@ -300,7 +300,7 @@ class TestAcceleratorLinkToggle(MiciTest):
     params.remove(self.PARAM)
     toggle = AcceleratorLinkToggle()
     assert toggle.get_value() == "off"
-    for index, value in enumerate(("off", "usb: mac, linux", "iOS: iPhone, iPad")):
+    for index, value in enumerate(("off", "usb", "iOS")):
       params.put(self.PARAM, index, block=True)
       toggle.refresh()
       assert toggle.get_value() == value
