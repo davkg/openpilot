@@ -133,7 +133,7 @@ class Client:
     self.sent, self.last_timings, self.last_state, self.dead = [], (0, 0, 0), {'gpu_temp': 40.0}, False
     self.last_output, self.unanswered = None, 0
     self.t = SimpleNamespace(link_info=lambda: {'kind': 'usb'})
-  def infer_begin(self, data, packed, frame_id, reset=False, want_state=False):
+  def infer_begin(self, data, packed, frame_id, reset=False, want_state=False, silence=None):
     self.sent.append((bytes(data), np.array(packed), reset, want_state))
     return frame_id
   def infer_end(self, seq, deadline=None, hold=None):
