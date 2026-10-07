@@ -10,6 +10,8 @@ from openpilot.common.params import Params
 class ModelStateBase:
   # set by modeld each frame; jetlink's joining model reads it to hand a large model back
   frame_drop_ratio: float = 0.
+  # set by modeld each frame; the joining model swaps a large model in only while this is False
+  in_control: bool = True
 
   def __init__(self):
     self.lat_delay = Params().get("LagdValueCache", return_default=True)
