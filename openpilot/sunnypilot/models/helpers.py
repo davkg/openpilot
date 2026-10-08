@@ -5,6 +5,7 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 
+import functools
 import hashlib
 import os
 import numpy as np
@@ -12,6 +13,7 @@ import numpy as np
 from openpilot.cereal import custom
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
+from openpilot.common.hardware import HARDWARE
 from openpilot.common.hardware.hw import Paths
 from openpilot.selfdrive.modeld.helpers import chestnut_present, reproject_expected
 
@@ -190,9 +192,18 @@ def get_active_model_runner(params: Params | None = None, force_check: bool = Fa
   return runner_type
 
 
+@functools.cache
+def _tizi_with_chestnut() -> bool:
+  return HARDWARE.get_device_type() == "tizi" and chestnut_present()
+
+
 def reproject_active(params: Params | None = None) -> bool:
-  """The 3X->comma 4 reprojection only feeds the stock runner's modeld; modeld_v2 reads camerad directly."""
-  return reproject_expected() and get_active_model_runner(params) == custom.ModelManagerSP.Runner.stock
+  """Whether the 3X->comma 4 reprojection feeds the driving model this drive. Stock modeld runs its own big model
+  (reproject_expected); modeld_v2 runs a big model picked from the chestnut catalog, prebuilt for the comma 4 frame."""
+  runner = get_active_model_runner(params)
+  if runner == custom.ModelManagerSP.Runner.stock:
+    return reproject_expected()
+  return runner == custom.ModelManagerSP.Runner.tinygrad and _tizi_with_chestnut()
 
 
 def _get_model():
