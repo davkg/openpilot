@@ -27,8 +27,9 @@ if arch == 'comma_arm64':
   from openpilot.common.hardware import HARDWARE
   camera = _os_fisheye if HARDWARE.get_device_type() == "mici" else _ar_ox_fisheye
   camera_configs = [(camera.width, camera.height)]
-  if HARDWARE.get_device_type() == "tizi" and chestnut_present():
-    # with a chestnut a 3X runs both models on reprojectd's comma 4 frames (helpers.reproject_expected)
+  if HARDWARE.get_device_type() == "tizi":
+    # with a chestnut a 3X runs both models on reprojectd's comma 4 frames (helpers.reproject_expected). Built whether or
+    # not one is plugged in now: a build without it would otherwise leave the small pkl without this size next to a big one
     camera_configs.append((_os_fisheye.width, _os_fisheye.height))
   tg_backend = 'QCOM'
   tg_flags = f'DEV={tg_backend} IMAGE=1 FLOAT16=1 NOLOCALS=1 JIT_BATCH_SIZE=0 OPENPILOT_HACKS=1'
