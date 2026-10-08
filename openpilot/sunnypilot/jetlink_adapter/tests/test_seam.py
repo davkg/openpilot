@@ -250,6 +250,8 @@ class ModeldSeam:
       ADAPTER: adapter,
       'cloudlog': SimpleNamespace(warning=lambda *a, **k: None, exception=lambda *a, **k: None),
       'ModelState': FakeModelState,
+      # the big model's load asks the chestnut's SMU for its top clocks
+      'Device': {'AMD': SimpleNamespace(iface=SimpleNamespace(dev_impl=SimpleNamespace(smu=SimpleNamespace(set_clocks=lambda level: None))))},
       'ChestnutState': lambda pm, chestnut: SimpleNamespace(send=lambda *a: None, big=chestnut),
       'BIG_MODEL_TIMEOUT': 5,
       'vipc_client_main': SimpleNamespace(width=1928, height=1208),
