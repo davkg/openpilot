@@ -90,7 +90,9 @@ if not os.getenv('SKIP_TINYGRAD_COMPILE'):
           f'--onnx {File(f"models/{file_prefix}driving_supercombo.onnx").abspath} '
           f'--output {target_pkl_path} --frame-skip {frame_skip}')
     onnx_sizes_sum = sum(os.path.getsize(f) for f in driving_onnx_deps)
-    chunk_targets = get_chunk_targets(target_pkl_path, estimate_pickle_max_size(onnx_sizes_sum))
+    # one JIT per camera size, each with its own programs (only the weights are shared), so a 3X carrying the
+    # comma 4 size too needs room for both. Matches upstream 60d8ae2d4 (#38821)
+    chunk_targets = get_chunk_targets(target_pkl_path, estimate_pickle_max_size(onnx_sizes_sum * len(camera_configs)))
     def do_compile(target, source, env, command=cmd, pkl=target_pkl_path, chunks=chunk_targets):
       from openpilot.system.hardware.chestnut.flash import link_up
       # chestnut can enumerate before its PCIe link is up due to varying 12V power behavior across cars
