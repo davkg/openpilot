@@ -43,8 +43,10 @@ class Stage:
     self.loader: threading.Thread | None = None
     self.saver: threading.Thread | None = None
     self._src_tensors: dict[int, Tensor] = {}
-    self.out = np.zeros((2, self.rp.body), np.uint8)  # composite, wide: the kernel writes here, the server copies into its ring
-    self.rp.bind(self.out[1], self.out[0])
+    # composite, wide: the kernel writes here, the server copies into its ring. A whole comma 4 camerad buffer (the NV12
+    # body and its trailing padding), not just the body: modeld_v2's prebuilt warps take frames of that full size
+    self.out = np.zeros((2, get_nv12_info(*C4_CAM)[3]), np.uint8)
+    self.rp.bind(self.out[1, :self.rp.body], self.out[0, :self.rp.body])
     self.time = 0.0
 
   def src_tensor(self, buf) -> Tensor:
@@ -112,7 +114,7 @@ def main():
   stride, y_height, _, _ = get_nv12_info(*C4_CAM)
   server = VisionIpcServer("reproject")
   for tp in (NARROW, WIDE):
-    server.create_buffers_with_sizes(tp, 4, C4_CAM[0], C4_CAM[1], stage.rp.body, stride, stride * y_height)
+    server.create_buffers_with_sizes(tp, 4, C4_CAM[0], C4_CAM[1], stage.out.shape[1], stride, stride * y_height)
   server.start_listener()
   cloudlog.warning(f"reprojectd: serving after {time.monotonic() - t0:.1f} s")
   # real-time only from here: the table load and the jit capture above are seconds of CPU, and a real-time task holding a
