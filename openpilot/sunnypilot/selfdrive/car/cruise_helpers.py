@@ -23,23 +23,6 @@ CRUISE_STEP_EVENTS = {
 }
 
 
-def next_experimental_dec_state(experimental_mode: bool, dec: bool) -> tuple[bool, bool]:
-  """Advance the 3-state mode cycle on a mode-button hold (LKAS/distance) or on-screen tap.
-
-  The state is the (ExperimentalMode, DynamicExperimentalControl) param pair:
-    acc (chill)            : (False, *)     -> next: experimental, DEC off
-    experimental, DEC off  : (True, False)  -> next: experimental, DEC on
-    experimental, DEC on   : (True, True)   -> next: acc (chill)
-  Returns the (ExperimentalMode, DynamicExperimentalControl) values for the next state. Returning
-  to acc also clears DEC so the settings toggle reflects the inactive state rather than showing on.
-  """
-  if not experimental_mode:
-    return True, False
-  if not dec:
-    return True, True
-  return False, False
-
-
 class CruiseHelper:
   def __init__(self, CP: structs.CarParams):
     self.CP = CP
@@ -59,7 +42,7 @@ class CruiseHelper:
         self.update_experimental_mode(CS, events, experimental_mode)
 
         # audible feedback on each set-speed step while holding inc/dec, plus
-        # on a DEC tap that triggers the (vEgo+10) jump (signaled via CS_SP)
+        # on a decel tap that triggers the (vEgo+10) jump (signaled via CS_SP)
         self.update_cruise_step_chime(CS_SP, events)
 
   def update_button_frame_counts(self, CS) -> None:
@@ -76,10 +59,8 @@ class CruiseHelper:
     lkas_long_pressed = self.button_frame_counts[ButtonType.lkas] >= DISTANCE_LONG_PRESS
 
     if lkas_long_pressed and not self.experimental_mode_switched:
-      dec = self.params.get_bool("DynamicExperimentalControl")
-      self._experimental_mode, new_dec = next_experimental_dec_state(experimental_mode, dec)
+      self._experimental_mode = not experimental_mode
       self.params.put_bool("ExperimentalMode", self._experimental_mode)
-      self.params.put_bool("DynamicExperimentalControl", new_dec)
       events.add(EventNameSP.experimentalModeSwitched)
       self.experimental_mode_switched = True
 
@@ -96,7 +77,7 @@ class CruiseHelper:
       if count > 0 and count % CRUISE_LONG_PRESS == 0:
         events.add(event)
 
-    # DEC tap that triggered the (vEgo+10) jump-down: card sets decelJumpFired on
+    # decel tap that triggered the (vEgo+10) jump-down: card sets decelJumpFired on
     # the frame the jump applies; chime so the jump can be heard rather than read.
     if CS_SP.decelJumpFired:
       events.add(EventNameSP.cruiseStepDown)

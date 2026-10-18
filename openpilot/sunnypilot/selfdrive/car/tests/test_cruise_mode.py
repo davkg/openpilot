@@ -18,7 +18,7 @@ def _csp(decel_jump_fired: bool = False) -> custom.CarStateSP:
 
 
 class FakeParams:
-  """In-memory Params stand-in so the DEC-param read/write stays isolated from the real
+  """In-memory Params stand-in so the ExperimentalMode read/write stays isolated from the real
   store (and from other test workers) and is synchronous for deterministic assertions."""
   def __init__(self):
     self._store: dict[str, bool] = {}
@@ -41,25 +41,20 @@ class TestCruiseHelper(OpenpilotTestCase):
     self.cruise_helper.experimental_mode_switched = False
     self.events = Events()
 
-  @property
-  def _dec(self) -> bool:
-    return self.cruise_helper.params.get_bool("DynamicExperimentalControl")
-
-  def _set_state(self, experimental_mode: bool, dec: bool) -> None:
+  def _set_state(self, experimental_mode: bool) -> None:
     self.cruise_helper._experimental_mode = experimental_mode
     self.cruise_helper.params.put_bool("ExperimentalMode", experimental_mode)
-    self.cruise_helper.params.put_bool("DynamicExperimentalControl", dec)
 
   def reset(self):
     for _ in range(2):
       CS = car.CarState(cruiseState={"available": False})
       CS.buttonEvents = [ButtonEvent(type=ButtonType.lkas, pressed=False)]
-      self._set_state(False, False)
+      self._set_state(False)
       self.cruise_helper.experimental_mode_switched = False
       self.cruise_helper.update(CS, _csp(), self.events, False)
 
   def _hold(self, button) -> None:
-    """Long-press and release a button once, advancing one step in the mode cycle."""
+    """Long-press and release a button once, toggling experimental mode."""
     experimental_mode = self.cruise_helper._experimental_mode
     for i in range(DISTANCE_LONG_PRESS):
       CS = car.CarState(cruiseState={"available": True})
@@ -71,19 +66,17 @@ class TestCruiseHelper(OpenpilotTestCase):
     self.cruise_helper.update(CS, _csp(), self.events, self.cruise_helper._experimental_mode)
 
 
-  def test_button_hold_cycles_three_states(self) -> None:
-    """Each hold advances acc -> experimental(DEC off) -> experimental(DEC on) -> acc, looping."""
+  def test_button_hold_toggles(self) -> None:
+    """Each hold flips acc <-> experimental."""
     self.reset()
 
-    # (ExperimentalMode, DynamicExperimentalControl) after each successive hold, twice round
-    expected = [(True, False), (True, True), (False, False)] * 2
-    for exp_em, exp_dec in expected:
+    for expected in (True, False) * 2:
       self._hold(ButtonType.lkas)
-      assert self.cruise_helper._experimental_mode is exp_em
-      assert self._dec is exp_dec
+      assert self.cruise_helper._experimental_mode is expected
+      assert self.cruise_helper.params.get_bool("ExperimentalMode") is expected
 
   def test_button_hold_continues_no_extra_toggle(self) -> None:
-    """Continuing to hold past the first switch must not advance the cycle again."""
+    """Continuing to hold past the first switch must not toggle again."""
     self.reset()
 
     for i in range(3 * DISTANCE_LONG_PRESS):
@@ -91,16 +84,15 @@ class TestCruiseHelper(OpenpilotTestCase):
       CS.buttonEvents = [ButtonEvent(type=ButtonType.lkas, pressed=True)] if i == 0 else []
       self.cruise_helper.update(CS, _csp(), self.events, self.cruise_helper._experimental_mode)
 
-    # only the single acc -> experimental(DEC off) transition fired
+    # only the single acc -> experimental transition fired
     assert self.cruise_helper._experimental_mode is True
-    assert self._dec is False
 
   def test_button_short_press_no_toggle(self) -> None:
     for experimental_mode in (True, False):
       self.cruise_helper = CruiseHelper(self.CP)
       self.cruise_helper.params = FakeParams()  # ty: ignore[invalid-assignment]
       self.reset()
-      self._set_state(experimental_mode, False)
+      self._set_state(experimental_mode)
 
       for i in range(DISTANCE_LONG_PRESS - 1):
         CS = car.CarState(cruiseState={"available": True})
@@ -108,21 +100,18 @@ class TestCruiseHelper(OpenpilotTestCase):
         self.cruise_helper.update(CS, _csp(), self.events, experimental_mode)
 
       assert self.cruise_helper._experimental_mode == experimental_mode
-      assert self._dec is False
       assert self.cruise_helper.experimental_mode_switched is False
 
   def test_release_allows_retoggle(self) -> None:
-    """Release rearms the debounce so the next hold advances the cycle."""
+    """Release rearms the debounce so the next hold toggles again."""
     self.reset()
 
     self._hold(ButtonType.lkas)
     assert self.cruise_helper._experimental_mode is True
-    assert self._dec is False
     assert self.cruise_helper.experimental_mode_switched is False  # cleared on release
 
     self._hold(ButtonType.lkas)
-    assert self.cruise_helper._experimental_mode is True
-    assert self._dec is True
+    assert self.cruise_helper._experimental_mode is False
 
   def test_gap_adjust_no_longer_toggles_mode(self) -> None:
     """The distance button is free for personality now; holding it must not change mode."""
@@ -134,7 +123,6 @@ class TestCruiseHelper(OpenpilotTestCase):
       self.cruise_helper.update(CS, _csp(), self.events, False)
 
     assert self.cruise_helper._experimental_mode is False
-    assert self._dec is False
     assert self.cruise_helper.experimental_mode_switched is False
 
   def test_cruise_hold_chimes_on_each_step(self) -> None:
