@@ -458,8 +458,8 @@ struct BackupManagerSP @0xf98d843bfd7004a3 {
 
 struct CarStateSP @0xb86e6369214c01c8 {
   speedLimit @0 :Float32;
-  # one-shot flag: true on the frame VCruiseHelper applied the (vEgo+10) decel jump
-  decelJumpFired @1 :Bool;
+  # one-shot: direction (-1/0/+1) the displayed set speed moved on a long-press step or decel-tap jump this frame
+  setSpeedStep @1 :Int8;
 
   # Stock forward-camera lead + adjacent-vehicle objects (currently Honda Bosch radarless), parsed from
   # CAMERA_LEAD / HUD_OBJECTS on the CAN bus

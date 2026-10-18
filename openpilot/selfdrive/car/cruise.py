@@ -45,7 +45,7 @@ class VCruiseHelper(VCruiseHelperSP):
 
   def update_v_cruise(self, CS, enabled, is_metric):
     self.v_cruise_kph_last = self.v_cruise_kph
-    self.decel_jump_fired = False
+    self.set_speed_step = 0
 
     self.get_minimum_set_speed(is_metric)
 
@@ -115,6 +115,7 @@ class VCruiseHelper(VCruiseHelperSP):
     if self.update_speed_limit_assist_pre_active_confirmed(button_type):
       return
 
+    step_chime = long_press  # update_v_cruise_delta repurposes long_press, so capture the real hold first
     long_press, v_cruise_delta = VCruiseHelperSP.update_v_cruise_delta(self, long_press, v_cruise_delta)
 
     decel_jump = None
@@ -123,7 +124,7 @@ class VCruiseHelper(VCruiseHelperSP):
 
     if decel_jump is not None:
       self.v_cruise_kph = decel_jump
-      self.decel_jump_fired = True
+      step_chime = True
     elif long_press and self.v_cruise_kph % v_cruise_delta != 0:  # partial interval
       self.v_cruise_kph = CRUISE_NEAREST_FUNC[button_type](self.v_cruise_kph / v_cruise_delta) * v_cruise_delta
     else:
@@ -134,6 +135,8 @@ class VCruiseHelper(VCruiseHelperSP):
       self.v_cruise_kph = max(self.v_cruise_kph, CS.vEgo * CV.MS_TO_KPH)
 
     self.v_cruise_kph = np.clip(round(self.v_cruise_kph, 1), self.v_cruise_min, V_CRUISE_MAX)
+    if step_chime:
+      self.set_speed_step = VCruiseHelperSP.get_set_speed_step(self.v_cruise_kph_last, self.v_cruise_kph, is_metric)
 
   def update_button_timers(self, CS, enabled):
     # increment timer for buttons still pressed

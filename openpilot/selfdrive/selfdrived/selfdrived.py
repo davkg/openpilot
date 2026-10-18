@@ -513,7 +513,9 @@ class SelfdriveD(CruiseHelper):
     if CS.gearShifter == car.CarState.GearShifter.park and self.mads.enabled:
       self.events.remove(EventName.canBusMissing)
 
-    CruiseHelper.update(self, CS, self.sm['carStateSP'], self.events_sp, self.experimental_mode)
+    # setSpeedStep is a one-frame pulse: don't re-read it from a carStateSP that didn't update this step
+    set_speed_step = self.sm['carStateSP'].setSpeedStep if self.sm.updated['carStateSP'] else 0
+    CruiseHelper.update(self, CS, set_speed_step, self.events_sp, self.experimental_mode)
 
     # decrement personality on distance button press
     if self.CP.openpilotLongitudinalControl:

@@ -50,7 +50,7 @@ class VCruiseHelperSP:
     self.params = Params()
     self.v_cruise_min = 0
     self.enabled_prev = False
-    self.decel_jump_fired = False  # one-shot per update_v_cruise; mirrored into CarStateSP
+    self.set_speed_step = 0  # one-shot per update_v_cruise; mirrored into CarStateSP for the step chime
 
     self.custom_acc_enabled = self.params.get_bool("CustomAccIncrementsEnabled")
     self.short_increment = self.params.get("CustomAccShortPressIncrement", return_default=True)
@@ -101,6 +101,13 @@ class VCruiseHelperSP:
     if target_kph >= self.v_cruise_kph:
       return None
     return target_kph
+
+  @staticmethod
+  def get_set_speed_step(v_cruise_kph_last: float, v_cruise_kph: float, is_metric: bool) -> int:
+    # Direction the displayed set speed moved (-1/0/+1). Compared in display units so a clamp
+    # (min/max, gas-override clip to vEgo) that leaves the shown number unchanged stays silent.
+    to_display = 1. if is_metric else CV.KPH_TO_MPH
+    return int(np.sign(round(v_cruise_kph * to_display) - round(v_cruise_kph_last * to_display)))
 
   def get_minimum_set_speed(self, is_metric: bool) -> None:
     if self.CP_SP.pcmCruiseSpeed:

@@ -2,7 +2,7 @@ from opendbc.car.structs import car
 from openpilot.common.constants import CV
 from openpilot.common.parameterized import parameterized, parameterized_class
 from openpilot.common.params import Params
-from openpilot.selfdrive.car.cruise import V_CRUISE_INITIAL
+from openpilot.selfdrive.car.cruise import V_CRUISE_INITIAL, V_CRUISE_MIN, V_CRUISE_MAX, IMPERIAL_INCREMENT
 from openpilot.selfdrive.car.tests.test_cruise_speed import TestVCruiseHelper
 
 ButtonEvent = car.CarState.ButtonEvent
@@ -201,21 +201,21 @@ class TestDecelJump(TestVCruiseHelper):
     initial = self.v_cruise_helper.v_cruise_kph
     result = self._tap(ButtonType.accelCruise, self._to_ms(31, True), True)
     self.assertGreater(result, initial)
-    self.assertFalse(self.v_cruise_helper.decel_jump_fired)
+    self.assertEqual(self.v_cruise_helper.set_speed_step, 0)  # taps stay silent
 
-  def test_decel_jump_fired_flag(self):
-    """decel_jump_fired is True only on the frame the jump applies, then resets."""
+  def test_decel_jump_set_speed_step(self):
+    """The jump reports a -1 set-speed step only on the frame it applies, then resets."""
     self.enable(self._to_ms(70, True), False)
     CS = car.CarState(vEgo=self._to_ms(31, True), cruiseState={"available": True})
     CS.buttonEvents = [ButtonEvent(type=ButtonType.decelCruise, pressed=True)]
     self.v_cruise_helper.update_v_cruise(CS, enabled=True, is_metric=True)
-    self.assertFalse(self.v_cruise_helper.decel_jump_fired)  # press, no jump yet
+    self.assertEqual(self.v_cruise_helper.set_speed_step, 0)   # press, no jump yet
     CS.buttonEvents = [ButtonEvent(type=ButtonType.decelCruise, pressed=False)]
     self.v_cruise_helper.update_v_cruise(CS, enabled=True, is_metric=True)
-    self.assertTrue(self.v_cruise_helper.decel_jump_fired)   # release: jump fires
+    self.assertEqual(self.v_cruise_helper.set_speed_step, -1)  # release: jump fires
     CS.buttonEvents = []
     self.v_cruise_helper.update_v_cruise(CS, enabled=True, is_metric=True)
-    self.assertFalse(self.v_cruise_helper.decel_jump_fired)  # one-shot
+    self.assertEqual(self.v_cruise_helper.set_speed_step, 0)   # one-shot
 
   def test_decel_hold_does_not_jump(self):
     """A decel hold steps normally and never triggers the jump."""
@@ -224,9 +224,90 @@ class TestDecelJump(TestVCruiseHelper):
     CS = car.CarState(vEgo=31 * CV.KPH_TO_MS, cruiseState={"available": True})
     CS.buttonEvents = [ButtonEvent(type=ButtonType.decelCruise, pressed=True)]
     self.v_cruise_helper.update_v_cruise(CS, enabled=True, is_metric=True)
-    self.assertFalse(self.v_cruise_helper.decel_jump_fired)
     CS.buttonEvents = []
     for _ in range(50):  # one long-press tick
       self.v_cruise_helper.update_v_cruise(CS, enabled=True, is_metric=True)
-      self.assertFalse(self.v_cruise_helper.decel_jump_fired)
+    self.assertEqual(self.v_cruise_helper.set_speed_step, -1)  # long-press step, not a jump
     self.assertEqual(self.v_cruise_helper.v_cruise_kph, initial - 5)
+
+
+@parameterized_class(('pcm_cruise', 'pcm_cruise_speed'), [(False, True)])
+class TestSetSpeedStep(TestVCruiseHelper):
+  """set_speed_step drives the step chime: +/-1 only on frames a long-press step or decel jump moves the displayed set speed."""
+
+  def setup_method(self):
+    self.params = Params()
+    self.params.put_bool("CustomAccIncrementsEnabled", False, block=True)
+    TestVCruiseHelper.openpilot_setup_method(self)
+
+  def _hold(self, button_type, frames, v_ego=0., gas_pressed=False, engaged_at_press=True) -> list[tuple[float, int]]:
+    """Hold a button (imperial); returns (v_cruise_kph, set_speed_step) per frame."""
+    out = []
+    for i in range(frames):
+      CS = car.CarState(vEgo=v_ego, gasPressed=gas_pressed, cruiseState={"available": True})
+      CS.buttonEvents = [ButtonEvent(type=button_type, pressed=True)] if i == 0 else []
+      self.v_cruise_helper.update_v_cruise(CS, enabled=engaged_at_press or i > 0, is_metric=False)
+      out.append((self.v_cruise_helper.v_cruise_kph, self.v_cruise_helper.set_speed_step))
+    return out
+
+  def test_hold_steps_once_per_step(self):
+    for button_type, sign in ((ButtonType.accelCruise, 1), (ButtonType.decelCruise, -1)):
+      TestVCruiseHelper.openpilot_setup_method(self)
+      self.v_cruise_helper.v_cruise_kph = 60 * IMPERIAL_INCREMENT
+      v_prev = self.v_cruise_helper.v_cruise_kph
+      steps = 0
+      for v_cruise, step in self._hold(button_type, 3 * 50 + 1, v_ego=60 * CV.MPH_TO_MS):
+        self.assertEqual(step, sign if v_cruise != v_prev else 0)
+        steps += step != 0
+        v_prev = v_cruise
+      self.assertEqual(steps, 3)
+
+  def test_off_grid_snap_silent_when_display_unchanged(self):
+    """Engaging sets whole kph (97 kph = 60 mph); the first long-press step only snaps to the mph grid (96 kph, still 60)."""
+    self.enable(60 * CV.MPH_TO_MS, False)
+    self.assertEqual(self.v_cruise_helper.v_cruise_kph, 97)
+    frames = self._hold(ButtonType.decelCruise, 2 * 50 + 1)
+    self.assertEqual(frames[50], (96, 0))
+    self.assertEqual(frames[100], (88, -1))
+
+  def test_short_tap_silent(self):
+    for button_type in (ButtonType.accelCruise, ButtonType.decelCruise):
+      TestVCruiseHelper.openpilot_setup_method(self)
+      self.enable(60 * CV.MPH_TO_MS, False)
+      initial = self.v_cruise_helper.v_cruise_kph
+      CS = car.CarState(vEgo=60 * CV.MPH_TO_MS, cruiseState={"available": True})  # ego+10 > set, so no decel jump
+      for pressed in (True, False):
+        CS.buttonEvents = [ButtonEvent(type=button_type, pressed=pressed)]
+        self.v_cruise_helper.update_v_cruise(CS, enabled=True, is_metric=False)
+        self.assertEqual(self.v_cruise_helper.set_speed_step, 0)
+      self.assertNotEqual(self.v_cruise_helper.v_cruise_kph, initial)
+
+  def test_custom_long_increment_still_steps(self):
+    """update_v_cruise_delta repurposes long_press for custom increments other than 5/10; the hold must still chime."""
+    self.params.put_bool("CustomAccIncrementsEnabled", True, block=True)
+    self.params.put("CustomAccLongPressIncrement", 2, block=True)
+    self.v_cruise_helper.read_custom_set_speed_params()
+    self.enable(60 * CV.MPH_TO_MS, False)
+    steps = [step for _, step in self._hold(ButtonType.accelCruise, 3 * 50 + 1)]
+    self.assertEqual(steps.count(1), 3)
+
+  def test_no_step_when_set_speed_does_not_move(self):
+    cases = (
+      ("clamped at max", ButtonType.accelCruise, V_CRUISE_MAX, {}),
+      ("clamped at min", ButtonType.decelCruise, V_CRUISE_MIN, {}),
+      ("held since before engaging", ButtonType.accelCruise, 60 * CV.MPH_TO_KPH, {"engaged_at_press": False}),
+      ("held since before engaging", ButtonType.decelCruise, 60 * CV.MPH_TO_KPH, {"engaged_at_press": False}),
+    )
+    for name, button_type, v_cruise_kph, kwargs in cases:
+      TestVCruiseHelper.openpilot_setup_method(self)
+      self.v_cruise_helper.v_cruise_kph = v_cruise_kph
+      for _, step in self._hold(button_type, 3 * 50 + 1, **kwargs):
+        self.assertEqual(step, 0, name)
+
+  def test_gas_override_clip_follows_display(self):
+    """Holding SET/- on the gas clips the set speed up to vEgo: chime that as an up step, then stay
+    silent while the clip only nudges the set speed below a displayed mph."""
+    self.v_cruise_helper.v_cruise_kph = 40 * IMPERIAL_INCREMENT
+    frames = self._hold(ButtonType.decelCruise, 2 * 50 + 1, v_ego=50.2 * CV.MPH_TO_MS, gas_pressed=True)
+    self.assertEqual([step for _, step in frames if step], [1])
+    self.assertAlmostEqual(frames[-1][0], 50.2 * CV.MPH_TO_KPH, places=1)
