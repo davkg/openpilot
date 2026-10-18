@@ -150,7 +150,8 @@ class TogglesLayoutMici(NavScroller):
     if ui_state.CP is not None:
       if ui_state.has_longitudinal_control:
         self._experimental_btn.set_visible(True)
-        self._personality_toggle.set_visible(True)
+        # replaced by the button-stepped follow time (LongFollowTime)
+        self._personality_toggle.set_visible(False)
         self._long_active_with_gas.set_visible(True)
       else:
         # no long for now

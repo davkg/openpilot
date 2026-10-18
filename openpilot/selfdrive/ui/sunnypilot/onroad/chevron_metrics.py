@@ -13,7 +13,7 @@ from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 
 # Render at bottom left instead of moving around with lead indicator
-STATIC_ANCHOR_X = 360
+STATIC_ANCHOR_X = 470
 STATIC_ANCHOR_Y_FROM_BOTTOM = 60
 
 
@@ -67,19 +67,19 @@ class ChevronMetrics:
     # Distance, with the MPC's desired follow distance in parentheses
     if ui_state.chevron_metrics == ChevronOptions.DISTANCE_ONLY or ui_state.chevron_metrics == ChevronOptions.ALL:
       val = max(0.0, d_rel)
-      want = f" ({desired_dist:.1f} m)" if desired_dist > 0 else ""
-      text_lines.append(f"{val:.1f} m{want}")
+      want = f" ({desired_dist:.1f}m)" if desired_dist > 0 else ""
+      text_lines.append(f"{val:.1f}m{want}")
       # if cam_d_rel > 0:
-      #   text_lines.append(f"{val:.0f} m ({cam_d_rel:.0f} m)")
+      #   text_lines.append(f"{val:.0f}m ({cam_d_rel:.0f}m)")
       # else:
-      #   text_lines.append(f"{val:.0f} m")
+      #   text_lines.append(f"{val:.0f}m")
 
     # Time to collision, with the MPC's desired follow time in parentheses
     if ui_state.chevron_metrics == ChevronOptions.TTC_ONLY or ui_state.chevron_metrics == ChevronOptions.ALL:
       val = (d_rel / v_ego) if (d_rel > 0 and v_ego > 0) else 0.0
-      ttc_text = f"{val:.1f} s" if (0 < val < 200) else "---"
+      ttc_text = f"{val:.1f}s" if (0 < val < 200) else "---"
       desired_dist_s = desired_dist / v_ego if (desired_dist > 0 and v_ego > 0) else 0.0
-      want = f" ({desired_dist_s:.1f} s)" if 0 < desired_dist_s < 200 else ""
+      want = f" ({desired_dist_s:.1f}s)" if 0 < desired_dist_s < 200 else ""
       text_lines.append(f"{ttc_text}{want}")
 
     # Speed

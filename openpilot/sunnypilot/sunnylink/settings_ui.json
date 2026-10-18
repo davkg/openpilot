@@ -667,33 +667,6 @@
               "description": "When enabled, pressing the accelerator pedal will disengage longitudinal control."
             },
             {
-              "key": "LongitudinalPersonality",
-              "widget": "multiple_button",
-              "title": "Driving Personality",
-              "description": "Standard is recommended. In aggressive mode, sunnypilot will follow lead cars closer and be more aggressive with the gas and brake. In relaxed mode sunnypilot will stay further away from lead cars. On supported cars, you can cycle through these personalities with your steering wheel distance button.",
-              "options": [
-                {
-                  "value": 0,
-                  "label": "Aggressive"
-                },
-                {
-                  "value": 1,
-                  "label": "Standard"
-                },
-                {
-                  "value": 2,
-                  "label": "Relaxed"
-                }
-              ],
-              "enablement": [
-                {
-                  "type": "capability",
-                  "field": "has_longitudinal_control",
-                  "equals": true
-                }
-              ]
-            },
-            {
               "key": "IntelligentCruiseButtonManagement",
               "widget": "toggle",
               "title": "Intelligent Cruise Button Management (ICBM) (Alpha)",
@@ -715,105 +688,6 @@
                     "field": "has_longitudinal_control",
                     "equals": true
                   }
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "id": "custom_follow_distance",
-          "title": "Custom Follow Distance",
-          "description": "Follow time per driving personality. Full speed-dependent curves are editable on 3X.",
-          "visibility": [
-            {
-              "type": "capability",
-              "field": "has_longitudinal_control",
-              "equals": true
-            }
-          ],
-          "items": [
-            {
-              "key": "LongTFollowCustomEnabled",
-              "widget": "toggle",
-              "title": "Custom Follow Distance (T_FOLLOW)",
-              "description": "Set a follow time per driving personality. When off, the stock follow distances are used.",
-              "enablement": [
-                {
-                  "type": "capability",
-                  "field": "has_longitudinal_control",
-                  "equals": true
-                }
-              ]
-            },
-            {
-              "key": "LongTFollowSimpleRelaxed",
-              "widget": "option",
-              "needs_onroad_cycle": true,
-              "title": "Relaxed",
-              "min": 0.8,
-              "max": 3.0,
-              "step": 0.1,
-              "unit": "s",
-              "visibility": [
-                {
-                  "type": "param",
-                  "key": "LongTFollowCustomEnabled",
-                  "equals": true
-                }
-              ],
-              "enablement": [
-                {
-                  "type": "capability",
-                  "field": "has_longitudinal_control",
-                  "equals": true
-                }
-              ]
-            },
-            {
-              "key": "LongTFollowSimpleStandard",
-              "widget": "option",
-              "needs_onroad_cycle": true,
-              "title": "Standard",
-              "min": 0.8,
-              "max": 3.0,
-              "step": 0.1,
-              "unit": "s",
-              "visibility": [
-                {
-                  "type": "param",
-                  "key": "LongTFollowCustomEnabled",
-                  "equals": true
-                }
-              ],
-              "enablement": [
-                {
-                  "type": "capability",
-                  "field": "has_longitudinal_control",
-                  "equals": true
-                }
-              ]
-            },
-            {
-              "key": "LongTFollowSimpleAggressive",
-              "widget": "option",
-              "needs_onroad_cycle": true,
-              "title": "Aggressive",
-              "min": 0.8,
-              "max": 3.0,
-              "step": 0.1,
-              "unit": "s",
-              "visibility": [
-                {
-                  "type": "param",
-                  "key": "LongTFollowCustomEnabled",
-                  "equals": true
-                }
-              ],
-              "enablement": [
-                {
-                  "type": "capability",
-                  "field": "has_longitudinal_control",
-                  "equals": true
                 }
               ]
             }

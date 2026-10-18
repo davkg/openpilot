@@ -10,13 +10,14 @@ from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
 from openpilot.selfdrive.controls.radard import _LEAD_ACCEL_TAU
 from openpilot.selfdrive.test.longitudinal_maneuvers.lead_driver import MpcLead
+from openpilot.sunnypilot.selfdrive.controls.lib.follow_time import DEFAULT_FOLLOW_TIME
 
 
 class Plant:
   messaging_initialized = False
 
   def __init__(self, lead_relevancy=False, speed=0.0, distance_lead=2.0,
-               enabled=True, only_lead2=False, only_radar=False, e2e=False, personality=0, force_decel=False,
+               enabled=True, only_lead2=False, only_radar=False, e2e=False, follow_time=DEFAULT_FOLLOW_TIME, force_decel=False,
                mpc_lead=False, initial_lead_speed=0.0):
     self.rate = 1. / DT_MDL
 
@@ -42,7 +43,7 @@ class Plant:
     self.only_lead2 = only_lead2
     self.only_radar = only_radar
     self.e2e = e2e
-    self.personality = personality
+    self.follow_time = follow_time
     self.force_decel = force_decel
 
     # Optional MPC-driven lead. When enabled, each step's incoming v_lead is
@@ -78,6 +79,7 @@ class Plant:
     car_control = messaging.new_message('carControl')
     model = messaging.new_message('modelV2')
     car_state_sp = messaging.new_message('carStateSP')
+    ss_sp = messaging.new_message('selfdriveStateSP')
     live_map_data_sp = messaging.new_message('liveMapDataSP')
     gps_data = messaging.new_message('gpsLocation')
     if self.mpc_lead_enabled:
@@ -142,7 +144,7 @@ class Plant:
 
     control.controlsState.longControlState = LongCtrlState.pid if self.enabled else LongCtrlState.off
     ss.selfdriveState.experimentalMode = self.e2e
-    ss.selfdriveState.personality = self.personality
+    ss_sp.selfdriveStateSP.followTime = float(self.follow_time)
     control.controlsState.forceDecel = self.force_decel
     car_state.carState.vEgo = float(self.speed)
     car_state.carState.standstill = bool(self.speed < 0.01)
@@ -155,6 +157,7 @@ class Plant:
           'carControl': car_control.carControl,
           'controlsState': control.controlsState,
           'selfdriveState': ss.selfdriveState,
+          'selfdriveStateSP': ss_sp.selfdriveStateSP,
           'vehicleParameters': lp.vehicleParameters,
           'modelV2': model.modelV2,
           'carStateSP': car_state_sp.carStateSP,

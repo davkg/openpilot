@@ -3,8 +3,8 @@
 Tuning dashboards for longitudinal maneuvers.
 
 Defines a curated maneuver suite, runs it against the real planner/MPC
-across all three personalities, and emits one annotated PNG per
-(maneuver, personality) plus a `maneuver_scores.csv` scoreboard. Each
+across a sweep of follow times, and emits one annotated PNG per
+(maneuver, follow time) plus a `maneuver_scores.csv` scoreboard. Each
 dashboard shows ego/lead/set speed, commanded acceleration + jerk,
 gap-to-lead vs desired follow gap, and time headway vs t_follow -- with
 the background shaded by which MPC obstacle is binding (cruise / lead0 /
@@ -28,10 +28,9 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 from matplotlib.ticker import FuncFormatter
 
-from openpilot.cereal import log
 import openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc as _long_mpc_mod
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import (
-  COMFORT_BRAKE, get_STOP_DISTANCE, get_T_FOLLOW,
+  COMFORT_BRAKE, get_STOP_DISTANCE,
 )
 from openpilot.selfdrive.test.longitudinal_maneuvers.maneuver import Maneuver
 from openpilot.selfdrive.test.longitudinal_maneuvers.plant import Plant
@@ -140,17 +139,8 @@ def _write_solver_stamp():
 _check_solver_freshness()
 
 # ---- configuration -------------------------------------------------------
-# Personalities to run. Order controls PNG sort order via the slug prefix.
-PERSONALITIES = (
-  log.LongitudinalPersonality.aggressive,
-  log.LongitudinalPersonality.standard,
-  log.LongitudinalPersonality.relaxed,
-)
-PERSONALITY_SLUGS = {
-  int(log.LongitudinalPersonality.aggressive): 'agg',
-  int(log.LongitudinalPersonality.standard):   'std',
-  int(log.LongitudinalPersonality.relaxed):    'rlx',
-}
+# Follow times (s) to run. Order controls PNG sort order via the slug prefix.
+FOLLOW_TIMES = (0.7, 0.8, 1.2, 1.5, 2.0)
 
 # Coast band: aTarget within this range counts as "lift-off-throttle" coasting.
 COAST_BAND = (-0.5, -0.05)
@@ -161,25 +151,25 @@ SOURCE_NAMES = {0: 'cruise', 1: 'lead0', 2: 'lead1'}
 SOURCE_COLORS = {0: 'tab:blue', 1: 'tab:green', 2: 'tab:orange'}
 
 
-def build_maneuvers(personality):
+def build_maneuvers(follow_time):
   """Curated suite for tuning. Each maneuver targets a specific behavior;
   see the W1 section of the plan for what each one stresses."""
-  p = int(personality)
+  p = follow_time
   maneuvers = [
     # ---- baselines kept from the original suite ------------------------
     Maneuver('B1 below set speed with a distant lead', duration=40., initial_speed=15.,
              lead_relevancy=True, initial_distance_lead=100.,
              breakpoints=[0., 1.], speed_lead_values=[20., 20.],
-             cruise_values=[75 * MPH, 75 * MPH], personality=p),
+             cruise_values=[75 * MPH, 75 * MPH], follow_time=p),
     Maneuver('B2 approach a stopped car', duration=25., initial_speed=20.,
              lead_relevancy=True, initial_distance_lead=100.,
              breakpoints=[0., 1.], speed_lead_values=[0., 0.],
-             cruise_values=[20., 20.], personality=p),
+             cruise_values=[20., 20.], follow_time=p),
     Maneuver('B3 following on street', duration=60., initial_speed=25 * MPH,
              lead_relevancy=True, initial_distance_lead=17.,
              breakpoints=[0., 5., 15., 25., 35., 45.],
              speed_lead_values=[25 * MPH, 25 * MPH, 15 * MPH, 25 * MPH, 15 * MPH, 25 * MPH],
-             cruise_values=[40 * MPH] * 6, personality=p, mpc_lead=True),
+             cruise_values=[40 * MPH] * 6, follow_time=p, mpc_lead=True),
 
     # ---- M1-M4: stop-n-go ladder (parking-lot to relaxed-suburban) -----
     # All four use mpc_lead=True so the lead accelerates/decelerates with
@@ -188,22 +178,22 @@ def build_maneuvers(personality):
              lead_relevancy=True, initial_distance_lead=6.,
              breakpoints=[0., 4., 8., 12., 16.],
              speed_lead_values=[0., 2., 0., 2., 0.],
-             cruise_values=[4.] * 5, personality=p, mpc_lead=True),
+             cruise_values=[4.] * 5, follow_time=p, mpc_lead=True),
     Maneuver('M2 dense city stop-n-go 0to7 mps', duration=32., initial_speed=0.,
              lead_relevancy=True, initial_distance_lead=12.,
              breakpoints=[0., 6., 11., 17., 22., 28.],
              speed_lead_values=[0., 7., 0., 7., 0., 7.],
-             cruise_values=[9.] * 6, personality=p, mpc_lead=True),
+             cruise_values=[9.] * 6, follow_time=p, mpc_lead=True),
     Maneuver('M3 moderate stop-n-go 0to10 mps', duration=35., initial_speed=0.,
              lead_relevancy=True, initial_distance_lead=22.,
              breakpoints=[0., 8., 15., 23., 30.],
              speed_lead_values=[0., 10., 0., 10., 0.],
-             cruise_values=[12.] * 5, personality=p, mpc_lead=True),
+             cruise_values=[12.] * 5, follow_time=p, mpc_lead=True),
     Maneuver('M4 relaxed stop-n-go 0to11 mps long cycle', duration=65., initial_speed=0.,
              lead_relevancy=True, initial_distance_lead=30.,
              breakpoints=[0., 15., 30., 45., 60.],
              speed_lead_values=[0., 11., 0., 11., 0.],
-             cruise_values=[13.] * 5, personality=p, mpc_lead=True),
+             cruise_values=[13.] * 5, follow_time=p, mpc_lead=True),
 
     # ---- M5 family: long-range slower-lead approach --------------------
     # Constrained to initial_distance_lead <= 100m (model vision limit).
@@ -213,11 +203,11 @@ def build_maneuvers(personality):
     Maneuver('M5 highway slower lead 10 mps closing', duration=25., initial_speed=32.,
              lead_relevancy=True, initial_distance_lead=100.,
              breakpoints=[0., 25.], speed_lead_values=[22., 22.],
-             cruise_values=[32., 32.], personality=p),
+             cruise_values=[32., 32.], follow_time=p),
     Maneuver('M5b moderate closing 7 mps slower lead', duration=30., initial_speed=25.,
              lead_relevancy=True, initial_distance_lead=100.,
              breakpoints=[0., 30.], speed_lead_values=[18., 18.],
-             cruise_values=[25., 25.], personality=p),
+             cruise_values=[25., 25.], follow_time=p),
     # M5c: the canonical "coast-then-brake" target scenario David described.
     # Closing rate 7 m/s at 100 m. Ideal profile: minimal decel for ~5 s,
     # then ramp to peak decel to settle into the follow gap without dipping
@@ -225,67 +215,67 @@ def build_maneuvers(personality):
     Maneuver('M5c canonical coast-then-brake 7mps closing', duration=30., initial_speed=22.,
              lead_relevancy=True, initial_distance_lead=100.,
              breakpoints=[0., 30.], speed_lead_values=[15., 15.],
-             cruise_values=[22., 22.], personality=p),
+             cruise_values=[22., 22.], follow_time=p),
     # M5d: stopped-lead approach from low speed. Tests whether "free coast
     # time" exists -- the MPC currently holds speed for several seconds while
     # there's runway to start a gentle lift-off.
     Maneuver('M5d coast-to-stop from 7mps', duration=25., initial_speed=7.,
              lead_relevancy=True, initial_distance_lead=100.,
              breakpoints=[0., 25.], speed_lead_values=[0., 0.],
-             cruise_values=[7., 7.], personality=p),
+             cruise_values=[7., 7.], follow_time=p),
 
     # ---- M6: sudden hard lead brake from steady follow -----------------
     Maneuver('M6 sudden hard lead brake from steady follow', duration=30., initial_speed=25.,
              lead_relevancy=True, initial_distance_lead=35.,
              breakpoints=[0., 10., 13.], speed_lead_values=[25., 25., 8.],
-             cruise_values=[25., 25., 25.], personality=p),
+             cruise_values=[25., 25., 25.], follow_time=p),
     # M6b/M6c: moderate (real-world common) lead brake from steady follow.
     # Lead bleeds 10 m/s over 4s (~2.5 m/s^2) -- firm but comfortable. This is
     # the mid-severity regime where LDF/jerk_factor tuning shows up most.
     Maneuver('M6b moderate lead brake from 28mps steady', duration=30., initial_speed=28.,
              lead_relevancy=True, initial_distance_lead=42.,
              breakpoints=[0., 10., 14.], speed_lead_values=[28., 28., 18.],
-             cruise_values=[28., 28., 28.], personality=p),
+             cruise_values=[28., 28., 28.], follow_time=p),
     Maneuver('M6c moderate lead brake from 18mps steady', duration=25., initial_speed=18.,
              lead_relevancy=True, initial_distance_lead=29.,
              breakpoints=[0., 10., 14.], speed_lead_values=[18., 18., 8.],
-             cruise_values=[18., 18., 18.], personality=p),
+             cruise_values=[18., 18., 18.], follow_time=p),
     # M6d: lead brakes from 25 -> 8 m/s. mpc_lead caps lead decel at ~1.2 m/s^2
     # (CRUISE_MIN_ACCEL of the lead's MPC), so this is a sustained moderate
     # brake -- not a sudden hard one. Use M6 (scripted) for true hard brake.
     Maneuver('M6d realistic sustained lead brake from steady follow', duration=45., initial_speed=25.,
              lead_relevancy=True, initial_distance_lead=35.,
              breakpoints=[0., 10., 11.], speed_lead_values=[25., 25., 8.],
-             cruise_values=[25., 25., 25.], personality=p, mpc_lead=True),
+             cruise_values=[25., 25., 25.], follow_time=p, mpc_lead=True),
     # M6d: moderate lead brake from steady follow, lead runs its own MPC for
     # a realistic jerk-limited decel profile. Drops 10 m/s like M6b.
     Maneuver('M6e realistic lead brake from steady follow', duration=45., initial_speed=25.,
              lead_relevancy=True, initial_distance_lead=35.,
              breakpoints=[0., 10., 11.], speed_lead_values=[25., 25., 15.],
-             cruise_values=[25., 25., 25.], personality=p, mpc_lead=True),
+             cruise_values=[25., 25., 25.], follow_time=p, mpc_lead=True),
 
     # ---- M7/M8: cut-in (uses only_lead2 to simulate sudden appearance) -
     Maneuver('M7 distant cut-in rel 8 mps', duration=25., initial_speed=27.,
              lead_relevancy=True, initial_distance_lead=60.,
              breakpoints=[0., 25.], speed_lead_values=[19., 19.],
-             cruise_values=[27., 27.], personality=p, only_lead2=True),
+             cruise_values=[27., 27.], follow_time=p, only_lead2=True),
     Maneuver('M8 closer cut-in rel 12 mps', duration=20., initial_speed=27.,
              lead_relevancy=True, initial_distance_lead=35.,
              breakpoints=[0., 20.], speed_lead_values=[15., 15.],
-             cruise_values=[27., 27.], personality=p, only_lead2=True),
+             cruise_values=[27., 27.], follow_time=p, only_lead2=True),
 
     # ---- M10: highway pace at v_lead + margin (steady-state cruise) ----
     Maneuver('M10 highway pace at v_lead plus margin 60s', duration=60., initial_speed=32.,
              lead_relevancy=True, initial_distance_lead=50.,
              breakpoints=[0., 60.], speed_lead_values=[27., 27.],
-             cruise_values=[32., 32.], personality=p),
+             cruise_values=[32., 32.], follow_time=p),
 
     # ---- M11: lead clears from stop, re-accelerate ---------------------
     Maneuver('M11 lead clears re-accelerate', duration=20., initial_speed=0.,
              lead_relevancy=True, initial_distance_lead=4.5,
              breakpoints=[0., 3., 7., 20.],
              speed_lead_values=[0., 0., 15., 15.],
-             cruise_values=[15.] * 4, personality=p, mpc_lead=True),
+             cruise_values=[15.] * 4, follow_time=p, mpc_lead=True),
   ]
 
   # M9: stopped-lead approach with late detection (pop-in at 100m, 70mph)
@@ -294,7 +284,7 @@ def build_maneuvers(personality):
                    breakpoints=[0., 4.99, 5., 30.],
                    speed_lead_values=[55 * MPH] * 4,
                    prob_lead_values=[0., 0., 1., 1.],
-                   cruise_values=[70 * MPH] * 4, personality=p)
+                   cruise_values=[70 * MPH] * 4, follow_time=p)
   popin.lead_swaps = [(5., 100.)]  # at t=5s lead becomes visible exactly 100 m ahead
   maneuvers.append(popin)
 
@@ -302,7 +292,7 @@ def build_maneuvers(personality):
   swap = Maneuver('S1 lead leaves distant lead appears', duration=50.,
                   initial_speed=18., lead_relevancy=True, initial_distance_lead=33.,
                   breakpoints=[0., 50.], speed_lead_values=[18., 18.],
-                  cruise_values=[31., 31.], personality=p)
+                  cruise_values=[31., 31.], follow_time=p)
   swap.lead_swaps = [(15., 90.)]  # at t=15s lead A is replaced by a lead 90 m ahead
   maneuvers.append(swap)
 
@@ -310,7 +300,7 @@ def build_maneuvers(personality):
   swap = Maneuver('S1b lead leaves closer lead appears', duration=50.,
                   initial_speed=18., lead_relevancy=True, initial_distance_lead=33.,
                   breakpoints=[0., 50.], speed_lead_values=[18., 18.],
-                  cruise_values=[31., 31.], personality=p)
+                  cruise_values=[31., 31.], follow_time=p)
   swap.lead_swaps = [(15., 60.)]  # at t=15s lead A is replaced by a lead 60 m ahead
   maneuvers.append(swap)
 
@@ -327,7 +317,7 @@ def simulate(m):
   """
   plant = Plant(lead_relevancy=m.lead_relevancy, speed=m.speed, distance_lead=m.distance_lead,
                 enabled=m.enabled, only_lead2=m.only_lead2, only_radar=m.only_radar,
-                e2e=m.e2e, personality=m.personality, force_decel=m.force_decel,
+                e2e=m.e2e, follow_time=m.follow_time, force_decel=m.force_decel,
                 mpc_lead=m.mpc_lead,
                 initial_lead_speed=float(m.speed_lead_values[0]) if m.mpc_lead else 0.0)
   swaps = sorted(getattr(m, 'lead_swaps', []))
@@ -400,8 +390,8 @@ def plot_maneuver(m, d, out_dir='.', label=''):
   has_lead = bool(m.lead_relevancy)
 
   jerk = np.gradient(a, t)
-  tf = np.full(len(v_ego), get_T_FOLLOW(m.personality))
-  stop = get_STOP_DISTANCE(m.personality)
+  tf = np.full(len(v_ego), m.follow_time)
+  stop = get_STOP_DISTANCE(m.follow_time)
   desired_gap = tf * v_lead + stop
   headway = np.where(v_ego > 1.0, d_rel / np.maximum(v_ego, 1e-3), np.nan)
 
@@ -411,8 +401,7 @@ def plot_maneuver(m, d, out_dir='.', label=''):
   t_first_brake = _time_to_first_brake(t, a)
 
   fig, axs = plt.subplots(4, 1, figsize=(13, 15), sharex=True)
-  pers_name = {0: 'aggressive', 1: 'standard', 2: 'relaxed'}.get(int(m.personality), '?')
-  fig.suptitle(f"{m.title}    |    personality: {pers_name}", fontsize=13, y=0.998)
+  fig.suptitle(f"{m.title}    |    follow time: {m.follow_time:.1f}s", fontsize=13, y=0.998)
   for ax in axs:
     shade_sources(ax, t, source)
 
@@ -494,7 +483,7 @@ def plot_maneuver(m, d, out_dir='.', label=''):
   final_gap = float(d_rel[-1]) if has_lead else float('nan')
   metrics = {
     'title': m.title,
-    'personality': pers_name,
+    'follow_time': m.follow_time,
     'peak_accel': float(a.max()),
     'peak_decel': float(a.min()),
     'max_abs_jerk': float(np.abs(jerk).max()),
@@ -521,12 +510,12 @@ def plot_maneuver(m, d, out_dir='.', label=''):
            bbox={'boxstyle': 'round', 'fc': 'white', 'ec': '0.7'})
 
   fig.tight_layout(rect=(0, 0, 1, 0.955))
-  pers_slug = PERSONALITY_SLUGS.get(int(m.personality), 'pXX')
+  ft_slug = f't{m.follow_time:.1f}'
   slug = re.sub(r'[^a-z0-9]+', '_', m.title.lower()).strip('_')
   parts = ['maneuver']
   if label:
     parts.append(label)
-  parts += [pers_slug, slug]
+  parts += [ft_slug, slug]
   fname = os.path.join(out_dir, '_'.join(parts) + '.png')
   fig.savefig(fname, dpi=110)
   plt.close(fig)
@@ -543,21 +532,21 @@ def main():
 
   os.makedirs(args.out_dir, exist_ok=True)
   all_metrics = []
-  for personality in PERSONALITIES:
-    pers_slug = PERSONALITY_SLUGS[int(personality)]
-    print(f'==== personality: {pers_slug} ====')
-    for m in build_maneuvers(personality):
-      print(f'running: {pers_slug}  {m.title}')
+  for follow_time in FOLLOW_TIMES:
+    ft_slug = f't{follow_time:.1f}'
+    print(f'==== follow time: {ft_slug} ====')
+    for m in build_maneuvers(follow_time):
+      print(f'running: {ft_slug}  {m.title}')
       fname, bits, metrics = plot_maneuver(m, simulate(m),
                                            out_dir=args.out_dir, label=args.label)
       all_metrics.append(metrics)
       print(f'  saved {fname}  ({"  ".join(bits)})')
 
-  # Scoreboard CSV -- one row per (maneuver, personality). Order matches the
-  # plot loop, so the file is grouped by personality then title.
+  # Scoreboard CSV -- one row per (maneuver, follow time). Order matches the
+  # plot loop, so the file is grouped by follow time then title.
   csv_name = f'maneuver_scores_{args.label}.csv' if args.label else 'maneuver_scores.csv'
   csv_path = os.path.join(args.out_dir, csv_name)
-  fieldnames = ['personality', 'title', 'peak_accel', 'peak_decel', 'max_abs_jerk',
+  fieldnames = ['follow_time', 'title', 'peak_accel', 'peak_decel', 'max_abs_jerk',
                 'jerk_spikes', 'min_gap', 'final_gap', 't_first_brake',
                 'coast_time', 'coast_intervals']
   with open(csv_path, 'w', newline='') as f:

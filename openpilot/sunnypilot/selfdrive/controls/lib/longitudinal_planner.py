@@ -8,12 +8,11 @@ See the LICENSE.md file in the root directory for more details.
 from openpilot.cereal import messaging, custom
 from opendbc.car import structs
 from openpilot.common.constants import CV
-from openpilot.common.params import Params
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import (
-  get_T_FOLLOW_USER, get_STOP_DISTANCE, get_safe_obstacle_distance, get_stopped_equivalence_factor,
+  get_STOP_DISTANCE, get_safe_obstacle_distance, get_stopped_equivalence_factor,
 )
-from openpilot.sunnypilot.selfdrive.controls.lib.t_follow_curve import load_t_follow_curves
+from openpilot.sunnypilot.selfdrive.controls.lib.follow_time import get_follow_time
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_alerts_helper import E2EAlertsHelper
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.smart_cruise_control import SmartCruiseControl
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_assist import SpeedLimitAssist
@@ -32,7 +31,6 @@ class LongitudinalPlannerSP:
     self.resolver = SpeedLimitResolver()
     self.sla = SpeedLimitAssist(CP, CP_SP)
     self.mpc = mpc
-    self.mpc.t_follow_curves = load_t_follow_curves(Params())
     self.generation = int(model_bundle.generation) if (model_bundle := get_active_bundle()) else None
     self.source = LongitudinalPlanSource.cruise
     self.e2e_alerts_helper = E2EAlertsHelper()
@@ -86,11 +84,10 @@ class LongitudinalPlannerSP:
     longitudinalPlanSP.events = self.events_sp.to_msg()
 
     # MPC's desired follow distance, recomputed here rather than plumbed out of the solver
-    personality = sm['selfdriveState'].personality
     lead_one = sm['radarState'].leadOne
     v_ego = self.mpc.x0[1]
-    t_follow = get_T_FOLLOW_USER(self.mpc.t_follow_curves, personality, v_ego)
-    stop_distance = get_STOP_DISTANCE(personality)
+    t_follow = get_follow_time(sm['selfdriveStateSP'])
+    stop_distance = get_STOP_DISTANCE(t_follow)
     desired_dist = get_safe_obstacle_distance(v_ego, t_follow, stop_distance)
     if lead_one.present:
       desired_dist -= get_stopped_equivalence_factor(lead_one.vLead)

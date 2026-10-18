@@ -1,5 +1,6 @@
 import numpy as np
 from openpilot.selfdrive.test.longitudinal_maneuvers.plant import Plant
+from openpilot.sunnypilot.selfdrive.controls.lib.follow_time import DEFAULT_FOLLOW_TIME
 
 
 class Maneuver:
@@ -22,7 +23,7 @@ class Maneuver:
     self.ensure_slowdown = kwargs.get("ensure_slowdown", False)
     self.enabled = kwargs.get("enabled", True)
     self.e2e = kwargs.get("e2e", False)
-    self.personality = kwargs.get("personality", 0)
+    self.follow_time = kwargs.get("follow_time", DEFAULT_FOLLOW_TIME)
     self.force_decel = kwargs.get("force_decel", False)
     self.mpc_lead = kwargs.get("mpc_lead", False)
 
@@ -38,7 +39,7 @@ class Maneuver:
       only_lead2=self.only_lead2,
       only_radar=self.only_radar,
       e2e=self.e2e,
-      personality=self.personality,
+      follow_time=self.follow_time,
       force_decel=self.force_decel,
       mpc_lead=self.mpc_lead,
       initial_lead_speed=float(self.speed_lead_values[0]) if self.mpc_lead else 0.0,

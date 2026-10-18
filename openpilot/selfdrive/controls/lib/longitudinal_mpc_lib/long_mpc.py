@@ -40,7 +40,7 @@ J_EGO_COST = 5.
 A_CHANGE_COST = 200.
 DANGER_ZONE_COST = 100.
 CRASH_DISTANCE = .25
-LEAD_DANGER_FACTOR = 0.70
+LEAD_DANGER_FACTOR = 0.75
 LIMIT_COST = 1e6
 ACADOS_SOLVER_TYPE = 'SQP_RTI'
 
@@ -57,16 +57,9 @@ COMFORT_BRAKE = 2.5
 STOP_DISTANCE = 6.0
 MIN_X_LEAD_FACTOR = 0.5
 
-def get_jerk_factor(personality=log.LongitudinalPersonality.standard, v_ego=0.0):
-  # 3 m/s = 7 mph, 5 m/s = 11 mph, 12 m/s = 27 mph, 20 m/s = 45 mph
-  if personality==log.LongitudinalPersonality.relaxed:
-    return np.interp(v_ego, [3.0, 12.0], [0.5, 1.0])
-  elif personality==log.LongitudinalPersonality.standard:
-    return np.interp(v_ego, [3.0, 12.0], [0.5, 0.8])
-  elif personality==log.LongitudinalPersonality.aggressive:
-    return 0.5
-  else:
-    raise NotImplementedError("Longitudinal personality not supported")
+def get_jerk_factor(t_follow=1.45):
+  # lower jerk cost at short gaps so they brake early enough for a 3 m/s^2 lead stop
+  return np.interp(t_follow, [0.7, 1.0, 1.75], [0.3, 0.5, 1.0])
 
 
 def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard):
@@ -79,23 +72,8 @@ def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard):
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
-def get_T_FOLLOW_USER(curves, personality=log.LongitudinalPersonality.standard, v_ego=0.0):
-  if curves is not None:
-    curve = curves.get(personality)
-    if curve is not None:
-      return float(np.interp(v_ego, curve[0], curve[1]))
-  return get_T_FOLLOW(personality)
-
-def get_STOP_DISTANCE(personality=log.LongitudinalPersonality.standard):
-  # personality shifts the stop distance +/-0.5 m around the stock STOP_DISTANCE
-  if personality==log.LongitudinalPersonality.relaxed:
-    return STOP_DISTANCE + 0.5
-  elif personality==log.LongitudinalPersonality.standard:
-    return STOP_DISTANCE
-  elif personality==log.LongitudinalPersonality.aggressive:
-    return STOP_DISTANCE - 0.5
-  else:
-    raise NotImplementedError("Longitudinal personality not supported")
+def get_STOP_DISTANCE(t_follow=1.45):
+  return STOP_DISTANCE - 0.5 if t_follow < 1.2 else STOP_DISTANCE
 
 def get_stopped_equivalence_factor(v_lead):
   return (v_lead**2) / (2 * COMFORT_BRAKE)
@@ -238,7 +216,6 @@ class LongitudinalMpc:
     self.solver = AcadosOcpSolverCython(MODEL_NAME, ACADOS_SOLVER_TYPE, N)
     self.reset()
     self.source = LongitudinalPlanSource.cruise
-    self.t_follow_curves = None  # {personality_name: (bp_v, t_vals)} from user settings
 
   def reset(self):
     self.solver.reset()
@@ -284,8 +261,8 @@ class LongitudinalMpc:
     for i in range(N):
       self.solver.cost_set(i, 'Zl', Zl)
 
-  def set_weights(self, prev_accel_constraint=True, personality=log.LongitudinalPersonality.standard, v_ego=0.0):
-    jerk_factor = get_jerk_factor(personality, v_ego)
+  def set_weights(self, prev_accel_constraint=True, t_follow=1.45):
+    jerk_factor = get_jerk_factor(t_follow)
     a_change_cost = A_CHANGE_COST if prev_accel_constraint else 0
     cost_weights = [X_EGO_OBSTACLE_COST, X_EGO_COST, V_EGO_COST, A_EGO_COST, jerk_factor * a_change_cost, jerk_factor * J_EGO_COST]
     constraint_cost_weights = [LIMIT_COST, LIMIT_COST, LIMIT_COST, DANGER_ZONE_COST]
@@ -330,10 +307,8 @@ class LongitudinalMpc:
     lead_xv = self.extrapolate_lead(x_lead, v_lead, a_lead, a_lead_tau)
     return lead_xv
 
-  def update(self, radarstate, personality=log.LongitudinalPersonality.standard):
-    v_ego = self.x0[1]
-    t_follow = get_T_FOLLOW_USER(self.t_follow_curves, personality, v_ego)
-    stop_distance = get_STOP_DISTANCE(personality)
+  def update(self, radarstate, t_follow=1.45):
+    stop_distance = get_STOP_DISTANCE(t_follow)
 
     lead_xv_0 = self.process_lead(radarstate.leadOne)
     lead_xv_1 = self.process_lead(radarstate.leadTwo)

@@ -246,14 +246,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"ToyotaEnforceStockLongitudinal", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"ToyotaStopAndGoHack", {PERSISTENT | BACKUP, BOOL, "0"}},
 
-    {"LongTFollowCustomEnabled", {PERSISTENT | BACKUP, BOOL, "0"}},
-    {"LongTFollowMode", {PERSISTENT | BACKUP, INT, "0"}},  // 0=Simple, 1=Advanced (curve strings, 3X only)
-    {"LongTFollowCurveRelaxed", {PERSISTENT | BACKUP, STRING, "20:1.75, 40:1.75, 60:1.75"}},
-    {"LongTFollowCurveStandard", {PERSISTENT | BACKUP, STRING, "20:1.45, 40:1.45, 60:1.45"}},
-    {"LongTFollowCurveAggressive", {PERSISTENT | BACKUP, STRING, "20:1.25, 40:1.25, 60:1.25"}},
-    {"LongTFollowSimpleRelaxed", {PERSISTENT | BACKUP, FLOAT, "1.75"}},
-    {"LongTFollowSimpleStandard", {PERSISTENT | BACKUP, FLOAT, "1.45"}},
-    {"LongTFollowSimpleAggressive", {PERSISTENT | BACKUP, FLOAT, "1.25"}},
+    {"LongFollowTime", {PERSISTENT | BACKUP, FLOAT, "1.2"}},  // s, stepped by the distance/LKAS buttons
     {"BlindSpot", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"AdjacentVehicleMarkers", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"AdjacentVehicleMarkersDebug", {PERSISTENT, BOOL, "0"}},

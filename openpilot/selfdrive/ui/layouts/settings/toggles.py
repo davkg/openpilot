@@ -145,9 +145,7 @@ class TogglesLayout(Widget):
 
       self._toggles[param] = toggle
 
-      # insert longitudinal personality after NDOG toggle
-      if param == "DisengageOnAccelerator":
-        self._toggles["LongitudinalPersonality"] = self._long_personality_setting
+      # longitudinal personality not inserted: replaced by the button-stepped follow time (LongFollowTime)
 
     self._update_experimental_mode_icon()
     self._scroller = Scroller(list(self._toggles.values()), line_separator=True, spacing=0)

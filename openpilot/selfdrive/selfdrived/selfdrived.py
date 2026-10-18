@@ -515,14 +515,8 @@ class SelfdriveD(CruiseHelper):
 
     # setSpeedStep is a one-frame pulse: don't re-read it from a carStateSP that didn't update this step
     set_speed_step = self.sm['carStateSP'].setSpeedStep if self.sm.updated['carStateSP'] else 0
+    # also steps the follow time on distance/LKAS taps, replacing the personality cycle
     CruiseHelper.update(self, CS, set_speed_step, self.events_sp, self.experimental_mode)
-
-    # decrement personality on distance button press
-    if self.CP.openpilotLongitudinalControl:
-      if any(not be.pressed and be.type == ButtonType.gapAdjustCruise for be in CS.buttonEvents):
-        self.personality = (self.personality - 1) % 3
-        self.params.put('LongitudinalPersonality', self.personality)
-        self.events.add(EventName.personalityChanged)
 
     self.icbm.run(CS, self.sm['carControl'], self.sm['longitudinalPlanSP'], self.is_metric)
 
@@ -639,6 +633,7 @@ class SelfdriveD(CruiseHelper):
 
     # forwarded to the car so platforms that can render it show openpilot's speed limit on the dash
     ss_sp.speedLimit = self.sm['longitudinalPlanSP'].speedLimit.resolver.speedLimit
+    ss_sp.followTime = self.follow_time
 
     self.pm.send('selfdriveStateSP', ss_sp_msg)
 

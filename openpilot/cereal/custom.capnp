@@ -72,6 +72,7 @@ struct SelfdriveStateSP @0x81c2f05a394cf4af {
   buttonsPressed @2 :UInt16;
   buttonsReleaseToggle @3 :UInt16;
   speedLimit @4 :Float32;
+  followTime @5 :Float32;  # longitudinal follow time (s), stepped by the distance/LKAS buttons
 
   enum AudibleAlert {
     none @0;

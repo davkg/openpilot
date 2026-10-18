@@ -3,18 +3,18 @@ import numpy as np
 
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.common.parameterized import parameterized_class
-from openpilot.cereal import log
 from openpilot.selfdrive.car.cruise import VCruiseHelper, V_CRUISE_MIN, V_CRUISE_MAX, V_CRUISE_INITIAL, IMPERIAL_INCREMENT
 from openpilot.cereal import custom
 from opendbc.car.structs import car
 from openpilot.common.constants import CV
 from openpilot.selfdrive.test.longitudinal_maneuvers.maneuver import Maneuver
+from openpilot.sunnypilot.selfdrive.controls.lib.follow_time import MIN_FOLLOW_TIME, DEFAULT_FOLLOW_TIME, MAX_FOLLOW_TIME
 
 ButtonEvent = car.CarState.ButtonEvent
 ButtonType = car.CarState.ButtonEvent.Type
 
 
-def run_cruise_simulation(cruise, e2e, personality, t_end=20.):
+def run_cruise_simulation(cruise, e2e, follow_time, t_end=20.):
   man = Maneuver(
     '',
     duration=t_end,
@@ -25,23 +25,23 @@ def run_cruise_simulation(cruise, e2e, personality, t_end=20.):
     prob_lead_values=[0.0],
     breakpoints=[0.],
     e2e=e2e,
-    personality=personality,
+    follow_time=follow_time,
   )
   valid, output = man.evaluate()
   assert valid
   return output[-1, 3]
 
 
-@parameterized_class(("e2e", "personality", "speed"), itertools.product(
+@parameterized_class(("e2e", "follow_time", "speed"), itertools.product(
                       [True, False], # e2e
-                      log.LongitudinalPersonality.schema.enumerants, # personality
+                      [MIN_FOLLOW_TIME, DEFAULT_FOLLOW_TIME, 1.5, MAX_FOLLOW_TIME], # follow_time
                       [5,35])) # speed
 class TestCruiseSpeed(OpenpilotTestCase):
   def test_cruise_speed(self):
     print(f'Testing {self.speed} m/s')
     cruise_speed = float(self.speed)
 
-    simulation_steady_state = run_cruise_simulation(cruise_speed, self.e2e, self.personality)
+    simulation_steady_state = run_cruise_simulation(cruise_speed, self.e2e, self.follow_time)
     self.assertAlmostEqual(simulation_steady_state, cruise_speed, delta=.01, msg=f'Did not reach {self.speed} m/s')
 
 

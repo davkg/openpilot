@@ -5,6 +5,7 @@ from openpilot.common.test import OpenpilotTestCase
 from openpilot.selfdrive.selfdrived.events import Events
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 from openpilot.sunnypilot.selfdrive.car.cruise_helpers import CruiseHelper, DISTANCE_LONG_PRESS
+from openpilot.sunnypilot.selfdrive.controls.lib.follow_time import MIN_FOLLOW_TIME, MAX_FOLLOW_TIME, follow_time_bars, step_follow_time
 
 ButtonEvent = car.CarState.ButtonEvent
 ButtonType = car.CarState.ButtonEvent.Type
@@ -12,10 +13,16 @@ EventNameSP = custom.OnroadEventSP.EventName
 
 
 class FakeParams:
-  """In-memory Params stand-in so the ExperimentalMode read/write stays isolated from the real
-  store (and from other test workers) and is synchronous for deterministic assertions."""
+  """In-memory Params stand-in so the ExperimentalMode/LongFollowTime read/write stays isolated from the
+  real store (and from other test workers) and is synchronous for deterministic assertions."""
   def __init__(self):
-    self._store: dict[str, bool] = {}
+    self._store: dict[str, bool | float] = {}
+
+  def get(self, key: str):
+    return self._store.get(key)
+
+  def put(self, key: str, value) -> None:
+    self._store[key] = value
 
   def get_bool(self, key: str) -> bool:
     return self._store.get(key, False)
@@ -108,7 +115,7 @@ class TestCruiseHelper(OpenpilotTestCase):
     assert self.cruise_helper._experimental_mode is False
 
   def test_gap_adjust_no_longer_toggles_mode(self) -> None:
-    """The distance button is free for personality now; holding it must not change mode."""
+    """The distance button is free for follow time now; holding it must not change mode."""
     self.reset()
 
     for i in range(3 * DISTANCE_LONG_PRESS):
@@ -134,3 +141,59 @@ class TestCruiseHelper(OpenpilotTestCase):
     self.events = EventsSP()
     self.cruise_helper.update(CS, 1, self.events, False)
     assert EventNameSP.cruiseStepUp not in self.events.events
+
+  def _tap(self, button) -> EventsSP:
+    events = EventsSP()
+    for pressed in (True, False):
+      CS = car.CarState(cruiseState={"available": True})
+      CS.buttonEvents = [ButtonEvent(type=button, pressed=pressed)]
+      self.cruise_helper.update(CS, 0, events, False)
+    return events
+
+  def test_follow_time_taps(self) -> None:
+    """Distance tap steps 0.1 s closer, LKAS tap 0.1 s farther, silently (no alert or chime)."""
+    self.reset()
+    self.cruise_helper.follow_time = 1.2
+
+    events = self._tap(ButtonType.gapAdjustCruise)
+    assert self.cruise_helper.follow_time == 1.1
+    assert self.cruise_helper.params.get("LongFollowTime") == 1.1
+    assert not events.events
+
+    events = self._tap(ButtonType.lkas)
+    events = self._tap(ButtonType.lkas)
+    assert self.cruise_helper.follow_time == 1.3
+    assert not events.events
+
+  def test_follow_time_clamps(self) -> None:
+    self.reset()
+    for start, button in ((MIN_FOLLOW_TIME, ButtonType.gapAdjustCruise), (MAX_FOLLOW_TIME, ButtonType.lkas)):
+      self.cruise_helper.follow_time = start
+      self._tap(button)
+      assert self.cruise_helper.follow_time == start
+
+  def test_lkas_hold_does_not_step_follow_time(self) -> None:
+    self.reset()
+    self.cruise_helper.follow_time = 1.2
+    self._hold(ButtonType.lkas)
+    assert self.cruise_helper._experimental_mode is True
+    assert self.cruise_helper.follow_time == 1.2
+
+  def test_lkas_tap_ignored_with_mads(self) -> None:
+    self.reset()
+    self.cruise_helper.follow_time = 1.2
+    self.cruise_helper._lkas_steps_follow_time = False
+    self._tap(ButtonType.lkas)
+    assert self.cruise_helper.follow_time == 1.2
+
+  def test_follow_time_stays_on_grid(self) -> None:
+    """Repeated float steps must not drift: 0.7 + 3 x 0.1 has to land exactly on the 1.0 bar threshold."""
+    t = MIN_FOLLOW_TIME
+    for _ in range(3):
+      t = step_follow_time(t, 1)
+    assert t == 1.0
+    assert follow_time_bars(t) == 2
+
+  def test_follow_time_bars(self) -> None:
+    for t, bars in ((0.7, 1), (0.9, 1), (1.0, 2), (1.2, 2), (1.3, 3), (1.6, 3), (1.7, 4), (2.0, 4)):
+      assert follow_time_bars(t) == bars, t
