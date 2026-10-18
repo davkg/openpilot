@@ -262,13 +262,53 @@ class TestSetSpeedStep(TestVCruiseHelper):
         v_prev = v_cruise
       self.assertEqual(steps, 3)
 
-  def test_off_grid_snap_silent_when_display_unchanged(self):
-    """Engaging sets whole kph (97 kph = 60 mph); the first long-press step only snaps to the mph grid (96 kph, still 60)."""
+  def _shown(self, v_cruise_kph, is_metric=False):
+    return round(v_cruise_kph * (1. if is_metric else CV.KPH_TO_MPH))
+
+  def _long_steps(self, button_type, v_cruise_kph, n, is_metric=False) -> list[int]:
+    """Displayed set speed after each of n long-press steps, starting from v_cruise_kph."""
+    self.v_cruise_helper.v_cruise_kph = v_cruise_kph
+    shown = []
+    for i in range(n * 50 + 1):
+      CS = car.CarState(cruiseState={"available": True})
+      CS.buttonEvents = [ButtonEvent(type=button_type, pressed=True)] if i == 0 else []
+      self.v_cruise_helper.update_v_cruise(CS, enabled=True, is_metric=is_metric)
+      if i and i % 50 == 0:
+        shown.append(self._shown(self.v_cruise_helper.v_cruise_kph, is_metric))
+    return shown
+
+  def test_long_press_first_step_visible_after_engage(self):
+    """Engaging sets whole kph (97 kph = 60 mph); the first long-press step must still move the shown number."""
     self.enable(60 * CV.MPH_TO_MS, False)
     self.assertEqual(self.v_cruise_helper.v_cruise_kph, 97)
     frames = self._hold(ButtonType.decelCruise, 2 * 50 + 1)
-    self.assertEqual(frames[50], (96, 0))
-    self.assertEqual(frames[100], (88, -1))
+    self.assertEqual((self._shown(frames[50][0]), frames[50][1]), (55, -1))
+    self.assertEqual((self._shown(frames[100][0]), frames[100][1]), (50, -1))
+
+  def test_long_press_steps_displayed_number(self):
+    cases = (
+      ("engaged off-grid, down", ButtonType.decelCruise, 97., [55, 50]),
+      ("engaged off-grid, up", ButtonType.accelCruise, 97., [65, 70]),
+      ("between multiples, down", ButtonType.decelCruise, 62 * IMPERIAL_INCREMENT, [60, 55]),
+      ("between multiples, up", ButtonType.accelCruise, 62 * IMPERIAL_INCREMENT, [65, 70]),
+      ("SLA 45 mph (true conversion)", ButtonType.decelCruise, 72.4, [40, 35]),
+      ("85 mph up, past the 1.6-grid undershoot", ButtonType.accelCruise, 85 * IMPERIAL_INCREMENT, [90, 90]),
+      ("grid 90 mph shows 89, up", ButtonType.accelCruise, 90 * IMPERIAL_INCREMENT, [90, 90]),
+    )
+    for name, button_type, v_cruise_kph, expected in cases:
+      TestVCruiseHelper.openpilot_setup_method(self)
+      self.assertEqual(self._long_steps(button_type, v_cruise_kph, len(expected)), expected, name)
+
+  def test_long_press_metric_matches_stock(self):
+    self.assertEqual(self._long_steps(ButtonType.decelCruise, 97., 2, is_metric=True), [95, 90])
+    TestVCruiseHelper.openpilot_setup_method(self)
+    self.assertEqual(self._long_steps(ButtonType.accelCruise, 97., 2, is_metric=True), [100, 105])
+
+  def test_long_press_custom_increment_10(self):
+    self.params.put_bool("CustomAccIncrementsEnabled", True, block=True)
+    self.params.put("CustomAccLongPressIncrement", 10, block=True)
+    self.v_cruise_helper.read_custom_set_speed_params()
+    self.assertEqual(self._long_steps(ButtonType.decelCruise, 97., 2), [50, 40])
 
   def test_short_tap_silent(self):
     for button_type in (ButtonType.accelCruise, ButtonType.decelCruise):

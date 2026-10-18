@@ -125,8 +125,8 @@ class VCruiseHelper(VCruiseHelperSP):
     if decel_jump is not None:
       self.v_cruise_kph = decel_jump
       step_chime = True
-    elif long_press and self.v_cruise_kph % v_cruise_delta != 0:  # partial interval
-      self.v_cruise_kph = CRUISE_NEAREST_FUNC[button_type](self.v_cruise_kph / v_cruise_delta) * v_cruise_delta
+    elif long_press:  # step the displayed number, so an off-grid set speed (engage, SLA, gas clip) still moves visibly
+      self.v_cruise_kph = VCruiseHelperSP.get_long_press_target(self.v_cruise_kph, v_cruise_delta, CRUISE_INTERVAL_SIGN[button_type], is_metric)
     else:
       self.v_cruise_kph += v_cruise_delta * CRUISE_INTERVAL_SIGN[button_type]
 

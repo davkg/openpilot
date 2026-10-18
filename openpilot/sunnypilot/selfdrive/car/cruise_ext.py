@@ -103,6 +103,19 @@ class VCruiseHelperSP:
     return target_kph
 
   @staticmethod
+  def get_long_press_target(v_cruise_kph: float, v_cruise_delta: float, sign: int, is_metric: bool) -> float:
+    # Long press: move the displayed set speed to the next multiple of the increment strictly in the
+    # press direction (60 -> 55, 62 -> 60), and convert back with the true factor so it shows exactly
+    # that number. Stock snaps on the 1.6 kph-per-mph grid instead, which is a visible no-op for an
+    # off-grid value (engaged at 97 kph = 60 mph -> 96 kph, still 60) and reads one mph low from 87 mph.
+    base_kph = 1.0 if is_metric else round(CV.MPH_TO_KPH, 1)  # matches IMPERIAL_INCREMENT
+    to_display = 1. if is_metric else CV.KPH_TO_MPH
+    increment = round(v_cruise_delta / base_kph)
+    shown = round(v_cruise_kph * to_display)
+    target = (shown // increment + 1) * increment if sign > 0 else (shown - 1) // increment * increment
+    return target / to_display
+
+  @staticmethod
   def get_set_speed_step(v_cruise_kph_last: float, v_cruise_kph: float, is_metric: bool) -> int:
     # Direction the displayed set speed moved (-1/0/+1). Compared in display units so a clamp
     # (min/max, gas-override clip to vEgo) that leaves the shown number unchanged stays silent.
