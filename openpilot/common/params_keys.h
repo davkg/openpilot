@@ -246,7 +246,6 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"ToyotaEnforceStockLongitudinal", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"ToyotaStopAndGoHack", {PERSISTENT | BACKUP, BOOL, "0"}},
 
-    {"DynamicExperimentalControl", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"LongTFollowCustomEnabled", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"LongTFollowMode", {PERSISTENT | BACKUP, INT, "0"}},  // 0=Simple, 1=Advanced (curve strings, 3X only)
     {"LongTFollowCurveRelaxed", {PERSISTENT | BACKUP, STRING, "20:1.75, 40:1.75, 60:1.75"}},

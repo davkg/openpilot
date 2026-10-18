@@ -88,11 +88,6 @@ class CruiseLayout(Widget):
       callback=lambda: self._set_current_panel(PanelType.SLA)
     )
 
-    self.dec_toggle = toggle_item_sp(
-      title=tr("Enable Dynamic Experimental Control"),
-      description=tr("Enable toggle to allow the model to determine when to use sunnypilot ACC or sunnypilot End to End Longitudinal."),
-      param="DynamicExperimentalControl")
-
     self.t_follow_toggle = toggle_item_sp(
       title=tr("Custom Follow Distance (T_FOLLOW)"),
       description=tr("Set a speed-dependent follow time per driving personality as \"mph:seconds\" pairs " +
@@ -125,7 +120,6 @@ class CruiseLayout(Widget):
 
     items = [
       self.icbm_toggle,
-      self.dec_toggle,
       self.t_follow_toggle,
       self.t_follow_mode,
       *self.t_follow_simple_rows,
@@ -184,7 +178,6 @@ class CruiseLayout(Widget):
 
       if has_long or has_icbm:
         self.custom_acc_toggle.action_item.set_enabled(((has_long and not ui_state.CP.pcmCruise) or has_icbm) and ui_state.is_offroad())
-        self.dec_toggle.action_item.set_enabled(has_long)
         self.scc_v_toggle.action_item.set_enabled(True)
         self.scc_m_toggle.action_item.set_enabled(True)
         self.t_follow_toggle.action_item.set_enabled(has_long)
@@ -193,12 +186,10 @@ class CruiseLayout(Widget):
           row.action_item.set_enabled(has_long)
       else:
         ui_state.params.remove("CustomAccIncrementsEnabled")
-        ui_state.params.remove("DynamicExperimentalControl")
         ui_state.params.remove("SmartCruiseControlVision")
         ui_state.params.remove("SmartCruiseControlMap")
         ui_state.params.remove("LongTFollowCustomEnabled")
         self.custom_acc_toggle.action_item.set_enabled(False)
-        self.dec_toggle.action_item.set_enabled(False)
         self.scc_v_toggle.action_item.set_enabled(False)
         self.scc_m_toggle.action_item.set_enabled(False)
         self.t_follow_toggle.action_item.set_enabled(False)

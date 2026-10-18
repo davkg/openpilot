@@ -200,7 +200,6 @@ struct ModelManagerSP @0xaedffd8f31e7b55d {
 }
 
 struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
-  dec @0 :DynamicExperimentalControl;
   longitudinalPlanSource @1 :LongitudinalPlanSource;
   smartCruiseControl @2 :SmartCruiseControl;
   speedLimit @3 :SpeedLimit;
@@ -210,26 +209,18 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
   e2eAlerts @7 :E2eAlerts;
   desiredFollowDistance @8 :Float32;  # meters, MPC target gap
 
-  struct DynamicExperimentalControl {
+  deprecated :group {
+    dec @0 :DynamicExperimentalControlDEPRECATED;
+  }
+
+  struct DynamicExperimentalControlDEPRECATED {
     state @0 :DynamicExperimentalControlState;
     enabled @1 :Bool;
     active @2 :Bool;
-    source @3 :DynamicExperimentalControlSource;   # why the current mode was chosen this frame
 
     enum DynamicExperimentalControlState {
       acc @0;
       blended @1;
-    }
-
-    enum DynamicExperimentalControlSource {
-      none @0;          # default ACC, nothing triggered
-      mpcFcw @1;        # FCW emergency
-      closeLead @2;     # close lead -> ACC (radar mode: any detected lead)
-      upcomingTurn @3;  # predicted curvature ahead within the lookahead horizon
-      e2eDecel @4;      # e2e model anticipating a slowdown
-      slowDown @5;      # trajectory-endpoint shortfall (incl. high-urgency emergency)
-      standstill @6;    # stopped
-      slowness @7;      # driving below cruise speed -> ACC
     }
   }
 
