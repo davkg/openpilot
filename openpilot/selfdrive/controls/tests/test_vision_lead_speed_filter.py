@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 
 from openpilot.common.realtime import DT_MDL
-from openpilot.selfdrive.controls.radard import VisionLeadSpeedFilter
+from openpilot.selfdrive.controls.radard import VisionLeadSpeedFilter, stretch_vision_a_lead
 
 
 def _lead(d_rel, v_lead, present=True, radar=False):
@@ -87,3 +87,19 @@ class TestVisionLeadSpeedFilter(unittest.TestCase):
     self.assertEqual(near, 25.0)
     self.assertLess(mid, near - 1.0)
     self.assertLess(far, mid - 1.0)
+
+
+class TestStretchVisionALead(unittest.TestCase):
+  def test_noise_band_and_accel_untouched(self):
+    for a in (2.0, 0.5, 0.0, -0.3, -0.5):
+      self.assertEqual(stretch_vision_a_lead(a), a)
+
+  def test_braking_is_stretched(self):
+    self.assertAlmostEqual(stretch_vision_a_lead(-1.0), -1.3)
+    self.assertAlmostEqual(stretch_vision_a_lead(-2.1), -3.06)
+
+  def test_monotonic_and_continuous(self):
+    a = np.linspace(-4.0, 1.0, 501)
+    out = np.array([stretch_vision_a_lead(x) for x in a])
+    self.assertTrue(np.all(np.diff(out) > 0))
+    self.assertLess(np.max(np.abs(np.diff(out))), 0.03)

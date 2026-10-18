@@ -137,6 +137,17 @@ def match_vision_to_track(v_ego: float, lead: capnp._DynamicStructReader, tracks
     return None
 
 
+# The model under-reports lead braking: ~0.6-0.7x true decel and rarely below ~-2.2 m/s^2 (18 braking events,
+# small model, 2026-10). Leave the steady-follow noise band alone and stretch real braking; the gentle slope
+# undercorrects the worst events (-2.1 -> -3.1) to avoid over-braking the rest. Braking side only.
+VISION_A_LEAD_KNEE = -0.5      # m/s^2
+VISION_A_LEAD_STRETCH = 0.6
+
+
+def stretch_vision_a_lead(a_lead: float) -> float:
+  return a_lead + VISION_A_LEAD_STRETCH * min(0.0, a_lead - VISION_A_LEAD_KNEE)
+
+
 def get_RadarState_from_vision(lead_msg: capnp._DynamicStructReader, v_ego: float, model_v_ego: float, lead_prob: float):
   lead_v_rel_pred = lead_msg.v[0] - model_v_ego
   return {
@@ -145,7 +156,7 @@ def get_RadarState_from_vision(lead_msg: capnp._DynamicStructReader, v_ego: floa
     "vRel": float(lead_v_rel_pred),
     "vLead": float(v_ego + lead_v_rel_pred),
     "vLeadK": float(v_ego + lead_v_rel_pred),
-    "aLeadK": float(lead_msg.a[0]),
+    "aLeadK": stretch_vision_a_lead(float(lead_msg.a[0])),
     "aLeadTau": 0.3,
     "modelProb": float(lead_prob),
     "present": True,
