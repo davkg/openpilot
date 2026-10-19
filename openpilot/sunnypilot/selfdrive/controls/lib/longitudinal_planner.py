@@ -37,6 +37,7 @@ class LongitudinalPlannerSP:
 
     self.output_v_target = 0.
     self.output_a_target = 0.
+    self.accel_candidates = (0., 0., 0.)  # (mpc, cruise, e2e), set by LongitudinalPlanner.update
 
   def update_targets(self, sm: messaging.SubMaster, v_ego: float, a_ego: float, v_cruise: float) -> tuple[float, float]:
     CS = sm['carState']
@@ -92,6 +93,12 @@ class LongitudinalPlannerSP:
     if lead_one.present:
       desired_dist -= get_stopped_equivalence_factor(lead_one.vLead)
     longitudinalPlanSP.desiredFollowDistance = float(desired_dist)
+
+    # Arbitration inputs, so the UI can show how strongly each one binds
+    mpc_accel, cruise_accel, e2e_accel = self.accel_candidates
+    longitudinalPlanSP.mpcAccel = float(mpc_accel)
+    longitudinalPlanSP.cruiseAccel = float(cruise_accel)
+    longitudinalPlanSP.e2eAccel = float(e2e_accel)
 
     # Smart Cruise Control
     smartCruiseControl = longitudinalPlanSP.smartCruiseControl

@@ -209,6 +209,9 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
   events @6 :List(OnroadEventSP.Event);
   e2eAlerts @7 :E2eAlerts;
   desiredFollowDistance @8 :Float32;  # meters, MPC target gap
+  mpcAccel @9 :Float32;  # m/s^2, lead MPC's candidate for the planner's min() arbitration
+  cruiseAccel @10 :Float32;  # m/s^2, cruise candidate
+  e2eAccel @11 :Float32;  # m/s^2, model candidate (only arbitrated in experimental mode)
 
   deprecated :group {
     dec @0 :DynamicExperimentalControlDEPRECATED;

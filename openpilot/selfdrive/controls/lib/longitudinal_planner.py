@@ -153,6 +153,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
                   (self.a_cruise, LongitudinalPlanSource.cruise, cruise_should_stop)]
     if experimental_mode:
       candidates.append((output_a_target_e2e, LongitudinalPlanSource.e2e, output_should_stop_e2e))
+    self.accel_candidates = (output_a_target_mpc, self.a_cruise, output_a_target_e2e)  # published in longitudinalPlanSP for the UI
 
     output_a_target, self.mpc.source, _ = min(candidates, key=lambda c: c[0])
     self.output_should_stop = any(should_stop for _, _, should_stop in candidates)
