@@ -1,6 +1,7 @@
 import math
 import pyray as rl
 
+from openpilot.selfdrive.ui.sunnypilot.onroad.follow_distance_indicator import BG_HEIGHT, BG_WIDTH, CORNER_MARGIN
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.text_measure import measure_text_cached
@@ -16,9 +17,8 @@ ARROW_BASE_RADIUS_FRAC = 0.60
 
 CENTER_FONT_SIZE = 76
 INVALID_ALPHA = 0.5
-# bottom-left corner slot the compass sits in; the follow time box lines up to its right
-SLOT_BORDER = 30
 SLOT_SIZE = 192
+MARGIN_ABOVE_FOLLOW_BOX = 24  # gap between the follow time box in the bottom-left corner and the compass stacked above it
 SMOOTHING_FACTOR = 0.1  # per-frame fraction of remaining angular distance to close
 MIN_SPEED_FOR_UPDATE = 0.1  # m/s; freeze the compass below this to avoid stationary bearing noise
 
@@ -96,8 +96,8 @@ class CompassRenderer(Widget):
 
   def _render(self, rect: rl.Rectangle) -> None:
     radius = SLOT_SIZE / 2
-    cx = rect.x + SLOT_BORDER * 2 + radius
-    cy = rect.y + rect.height - SLOT_BORDER * 2 - radius
+    cx = rect.x + CORNER_MARGIN + BG_WIDTH / 2
+    cy = rect.y + rect.height - CORNER_MARGIN - BG_HEIGHT - MARGIN_ABOVE_FOLLOW_BOX - radius
 
     alpha = 1.0 if self._is_valid else INVALID_ALPHA
 

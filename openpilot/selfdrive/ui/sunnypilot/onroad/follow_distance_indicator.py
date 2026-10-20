@@ -6,7 +6,6 @@ from opendbc.car.structs import car
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.params import Params
 from openpilot.selfdrive.ui.onroad.hud_renderer import COLORS
-from openpilot.selfdrive.ui.sunnypilot.onroad.compass import SLOT_BORDER, SLOT_SIZE
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.sunnypilot.selfdrive.controls.lib.follow_time import get_follow_time, read_follow_time
 from openpilot.system.ui.lib.application import gui_app, FontWeight
@@ -16,11 +15,11 @@ from openpilot.system.ui.widgets import Widget
 FONT_SIZE = 90
 UNIT_FONT_SIZE = 40
 UNIT_OVERLAP = 18  # pulls the unit up into the value's line padding
-MARGIN_RIGHT_OF_COMPASS = 24  # gap between right edge of the compass and left edge of background box
+CORNER_MARGIN = 60  # box inset from the left and bottom screen edges; the compass stacks above it
 
 # Background box around the value and its "sec" unit line
 BG_WIDTH = 190
-BG_HEIGHT = 130
+BG_HEIGHT = 150
 BG_ROUNDNESS = 0.35
 
 # How far e2e binds below ACC, shown as a bar rather than a switch so near-ties can't flicker.
@@ -28,16 +27,16 @@ BG_ROUNDNESS = 0.35
 BLEND_WIDTH = 0.3
 BLEND_RC = 0.1  # s, light smoothing so lead swaps don't jump the bar
 BAR_WIDTH = 130
-BAR_HEIGHT = 14
-BAR_MARGIN_BOTTOM = 18  # bar bottom to box bottom
-VALUE_SHIFT_UP = 14  # makes room for the bar under the value
+BAR_HEIGHT = 16
+BAR_MARGIN_BOTTOM = 25  # bar bottom to box bottom
+VALUE_SHIFT_UP = 18  # makes room for the bar under the value; with BAR_MARGIN_BOTTOM, centers digits + bar in the box
 
 
 class FollowDistanceRenderer(Widget):
   """Draws the longitudinal follow time in a box: the value (e.g. "1.2") with a smaller "sec" below it,
   styled like the speed indicator's unit.
 
-  Positioned at the bottom-left of the screen, just to the right of the compass.
+  Positioned in the bottom-left corner of the screen, under the compass.
   Hidden when OP does not have longitudinal control.
 
   With long active, a bar under the value fills as the e2e model brakes below ACC.
@@ -73,17 +72,15 @@ class FollowDistanceRenderer(Widget):
     if not self._longitudinal_control:
       return
 
-    slot_center_y = rect.y + rect.height - SLOT_BORDER * 2 - SLOT_SIZE / 2
-
-    bg_x = rect.x + SLOT_BORDER * 2 + SLOT_SIZE + MARGIN_RIGHT_OF_COMPASS
-    bg_y = slot_center_y - BG_HEIGHT / 2
+    bg_x = rect.x + CORNER_MARGIN
+    bg_y = rect.y + rect.height - CORNER_MARGIN - BG_HEIGHT
     rl.draw_rectangle_rounded(rl.Rectangle(bg_x, bg_y, BG_WIDTH, BG_HEIGHT), BG_ROUNDNESS, 10, COLORS.BLACK_TRANSLUCENT)
 
     center_x = bg_x + BG_WIDTH / 2
 
     value_text = f"{self._follow_time:.1f}"
     value_size = measure_text_cached(self._font_bold, value_text, FONT_SIZE)
-    value_y = slot_center_y - value_size.y / 2 - VALUE_SHIFT_UP
+    value_y = bg_y + BG_HEIGHT / 2 - value_size.y / 2 - VALUE_SHIFT_UP
     rl.draw_text_ex(self._font_bold, value_text, rl.Vector2(center_x - value_size.x / 2, value_y), FONT_SIZE, 0, COLORS.WHITE)
 
     bar_x = center_x - BAR_WIDTH / 2
@@ -99,7 +96,7 @@ class FollowDistanceRenderer(Widget):
     # unit_size = measure_text_cached(self._font_medium, unit_text, UNIT_FONT_SIZE)
 
     # # center the overlapped value + unit pair in the box; need to manually adjust y offset to center
-    # value_y = slot_center_y - (value_size.y + unit_size.y - UNIT_OVERLAP) / 2 - 4
+    # value_y = bg_y + BG_HEIGHT / 2 - (value_size.y + unit_size.y - UNIT_OVERLAP) / 2 - 4
     # rl.draw_text_ex(self._font_bold, value_text, rl.Vector2(center_x - value_size.x / 2, value_y), FONT_SIZE, 0, COLORS.WHITE)
     # rl.draw_text_ex(self._font_medium, unit_text, rl.Vector2(center_x - unit_size.x / 2, value_y + value_size.y - UNIT_OVERLAP),
     #                 UNIT_FONT_SIZE, 0, COLORS.WHITE_TRANSLUCENT)
