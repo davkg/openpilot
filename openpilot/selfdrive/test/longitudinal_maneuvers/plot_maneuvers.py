@@ -317,7 +317,7 @@ def simulate(m):
   """
   plant = Plant(lead_relevancy=m.lead_relevancy, speed=m.speed, distance_lead=m.distance_lead,
                 enabled=m.enabled, only_lead2=m.only_lead2, only_radar=m.only_radar,
-                e2e=m.e2e, follow_time=m.follow_time, force_decel=m.force_decel,
+                follow_time=m.follow_time, force_decel=m.force_decel,
                 mpc_lead=m.mpc_lead,
                 initial_lead_speed=float(m.speed_lead_values[0]) if m.mpc_lead else 0.0)
   swaps = sorted(getattr(m, 'lead_swaps', []))
@@ -329,9 +329,7 @@ def simulate(m):
     v_lead = float(np.interp(t, m.breakpoints, m.speed_lead_values))
     prob_lead = float(np.interp(t, m.breakpoints, m.prob_lead_values))
     cruise = float(np.interp(t, m.breakpoints, m.cruise_values))
-    pitch = float(np.interp(t, m.breakpoints, m.pitch_values))
-    prob_throttle = float(np.interp(t, m.breakpoints, m.prob_throttle_values))
-    out = plant.step(v_lead, prob_lead, cruise, pitch, prob_throttle)
+    out = plant.step(v_lead, prob_lead, cruise)
     visible = m.lead_relevancy and (m.only_radar or prob_lead > 0.5)
     # In mpc_lead mode, the interp value is the lead's cruise *target*; the
     # actual velocity is what plant just used in the radar message.

@@ -123,8 +123,6 @@ class SelfdriveD(CruiseHelper):
     # cleanup old params
     if not self.CP.alphaLongitudinalAvailable:
       self.params.remove("AlphaLongitudinalEnabled")
-    if not self.CP.openpilotLongitudinalControl:
-      self.params.remove("ExperimentalMode")
 
     self.CS_prev = car.CarState.new_message()
     self.AM = AlertManager()
@@ -141,7 +139,6 @@ class SelfdriveD(CruiseHelper):
     self.events_prev = []
     self.logged_comm_issue = None
     self.not_running_prev = None
-    self.experimental_mode = False
     self.personality = get_sanitize_int_param(
       "LongitudinalPersonality",
       min(log.LongitudinalPersonality.schema.enumerants.values()),
@@ -209,6 +206,7 @@ class SelfdriveD(CruiseHelper):
     big_failed = big_active is False or model_unavailable or (self.big_model_active and not chestnut_present)
     if big_failed and not self.big_model_failed:
       self.events.add(EventName.bigModelFailed)
+      self.big_model_ready_t = time.monotonic()
     self.big_model_failed = big_failed
 
     # soft disable if the big model fails
@@ -236,7 +234,9 @@ class SelfdriveD(CruiseHelper):
 
     # Check for user bookmark press
     if self.sm.updated['userBookmark']:
-      self.events.add(EventName.userBookmark)
+      prime_type = self.params.get("PrimeType")
+      paired = prime_type is not None and int(prime_type) >= 0
+      self.events.add(EventName.userBookmark if paired else EventName.userBookmarkNotPaired)
 
     # Don't add any more events while in dashcam mode
     if self.CP.passive:
@@ -506,7 +506,7 @@ class SelfdriveD(CruiseHelper):
 
     # TODO: fix simulator
     if not SIMULATION or REPLAY:
-      if self.sm['modelV2'].frameDropPerc > 1:
+      if self.sm['modelV2'].frameDropPerc > 1 and not big_model_settling:
         self.events.add(EventName.modeldLagging)
 
     # mute canBusMissing event if in Park, as it sometimes may trigger a false alarm with MADS in Paused state
@@ -516,7 +516,7 @@ class SelfdriveD(CruiseHelper):
     # setSpeedStep is a one-frame pulse: don't re-read it from a carStateSP that didn't update this step
     set_speed_step = self.sm['carStateSP'].setSpeedStep if self.sm.updated['carStateSP'] else 0
     # also steps the follow time on distance/LKAS taps, replacing the personality cycle
-    CruiseHelper.update(self, CS, set_speed_step, self.events_sp, self.experimental_mode)
+    CruiseHelper.update(self, CS, set_speed_step, self.events_sp)
 
     self.icbm.run(CS, self.sm['carControl'], self.sm['longitudinalPlanSP'], self.is_metric)
 
@@ -593,7 +593,6 @@ class SelfdriveD(CruiseHelper):
     ss.active = self.active
     ss.state = self.state_machine.state
     ss.engageable = not self.events.contains(ET.NO_ENTRY)
-    ss.experimentalMode = self.experimental_mode
     ss.personality = self.personality
 
     ss.alertText1 = self.AM.current_alert.alert_text_1
@@ -664,7 +663,6 @@ class SelfdriveD(CruiseHelper):
       self.is_metric = self.params.get_bool("IsMetric")
       self.is_ldw_enabled = self.params.get_bool("IsLdwEnabled")
       self.disengage_on_accelerator = self.params.get_bool("DisengageOnAccelerator")
-      self.experimental_mode = self.params.get_bool("ExperimentalMode") and self.CP.openpilotLongitudinalControl
       self.personality = self.params.get("LongitudinalPersonality", return_default=True)
 
       self.mads.read_params()

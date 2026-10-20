@@ -10,14 +10,13 @@ car actually does instead of taking corner-y linear-interp velocity steps.
 The lead has no lead of its own, so its behavior is shaped purely by the cruise
 schedule.
 """
-from opendbc.car import structs
+import numpy as np
 
 from openpilot.common.realtime import DT_MDL
-from openpilot.selfdrive.controls.lib.longitudinal_planner import get_cruise_accel
+from openpilot.selfdrive.controls.lib.longitudinal_planner import A_CRUISE_MIN, J_CRUISE_BP, J_CRUISE_VALS
 
-# Only steerRatio/wheelbase are read, and only to convert steering angle into
-# lateral accel. The lead is driven straight ahead, so any sane values do.
-_LEAD_CP = structs.CarParams(steerRatio=15.0, wheelbase=2.7)
+# the planner's former chill-mode accel limit, kept so the lead accelerates like a car rather than at ACCEL_MAX
+LEAD_A_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
 
 
 class MpcLead:
@@ -28,8 +27,9 @@ class MpcLead:
     self.x = float(x0)
 
   def step(self, v_cruise):
-    a_cmd = get_cruise_accel(False, float(v_cruise), self.v, self.a, 0.0, _LEAD_CP, self.dt,
-                             accel_coast=0.0, allow_throttle=True)
+    a_max = np.interp(self.v, J_CRUISE_BP, LEAD_A_MAX_VALS)
+    j_max = np.interp(self.v, J_CRUISE_BP, J_CRUISE_VALS)
+    a_cmd = float(np.clip(np.clip(float(v_cruise) - self.v, A_CRUISE_MIN, a_max), self.a - j_max * self.dt, self.a + j_max * self.dt))
     self.x = self.x + self.v * self.dt + 0.5 * a_cmd * self.dt * self.dt
     self.v = max(0.0, self.v + a_cmd * self.dt)
     self.a = a_cmd

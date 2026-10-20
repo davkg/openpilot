@@ -23,20 +23,15 @@ class CruiseHelper:
     self.params = Params()
 
     self.button_frame_counts = {ButtonType.lkas: 0}
-    self._experimental_mode = False
-    self.experimental_mode_switched = False
     self.follow_time = read_follow_time(self.params)
     self._lkas_steps_follow_time = not self.params.get_bool("Mads")  # MADS owns the LKAS tap when enabled
 
-  def update(self, CS, set_speed_step, events, experimental_mode) -> None:
+  def update(self, CS, set_speed_step, events) -> None:
     if self.CP.openpilotLongitudinalControl:
       if CS.cruiseState.available:
         # before the frame counts update, which clears the LKAS hold length on release
         self.update_follow_time(CS)
         self.update_button_frame_counts(CS)
-
-        # toggle experimental mode once on LKAS button hold
-        self.update_experimental_mode(CS, events, experimental_mode)
 
         # audible feedback on each long-press set-speed step and on the decel-tap jump
         self.update_cruise_step_chime(set_speed_step, events)
@@ -51,20 +46,8 @@ class CruiseHelper:
       if button in self.button_frame_counts:
         self.button_frame_counts[button] = int(button_event.pressed)
 
-  def update_experimental_mode(self, CS, events, experimental_mode) -> None:
-    lkas_long_pressed = self.button_frame_counts[ButtonType.lkas] >= DISTANCE_LONG_PRESS
-
-    if lkas_long_pressed and not self.experimental_mode_switched:
-      self._experimental_mode = not experimental_mode
-      self.params.put_bool("ExperimentalMode", self._experimental_mode)
-      events.add(EventNameSP.experimentalModeSwitched)
-      self.experimental_mode_switched = True
-
-    if any(be.type == ButtonType.lkas and not be.pressed for be in CS.buttonEvents):
-      self.experimental_mode_switched = False
-
   def update_follow_time(self, CS) -> None:
-    # distance tap steps closer, LKAS tap steps farther; an LKAS hold is the experimental mode toggle instead.
+    # distance tap steps closer, LKAS tap steps farther; an LKAS hold does nothing.
     # deliberately silent: no alert or chime, the value is logged via selfdriveStateSP.followTime
     direction = 0
     for be in CS.buttonEvents:

@@ -1,7 +1,6 @@
 import math
 import pyray as rl
 
-from openpilot.selfdrive.ui.onroad.hud_renderer import UI_CONFIG
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.text_measure import measure_text_cached
@@ -17,7 +16,9 @@ ARROW_BASE_RADIUS_FRAC = 0.60
 
 CENTER_FONT_SIZE = 76
 INVALID_ALPHA = 0.5
-COMPASS_GAP_ABOVE_EXP_BUTTON = 20
+# bottom-left corner slot the compass sits in; the follow time box lines up to its right
+SLOT_BORDER = 30
+SLOT_SIZE = 192
 SMOOTHING_FACTOR = 0.1  # per-frame fraction of remaining angular distance to close
 MIN_SPEED_FOR_UPDATE = 0.1  # m/s; freeze the compass below this to avoid stationary bearing noise
 
@@ -94,12 +95,9 @@ class CompassRenderer(Widget):
         self._displayed_bearing = (self._displayed_bearing + diff * SMOOTHING_FACTOR) % 360
 
   def _render(self, rect: rl.Rectangle) -> None:
-    # Anchored above the exp button (bottom-left), same x and size.
-    button_size = UI_CONFIG.button_size
-    border_size = UI_CONFIG.border_size
-    radius = button_size / 2
-    cx = rect.x + border_size * 2 + radius
-    cy = rect.y + rect.height - border_size * 2 - button_size - COMPASS_GAP_ABOVE_EXP_BUTTON - radius
+    radius = SLOT_SIZE / 2
+    cx = rect.x + SLOT_BORDER * 2 + radius
+    cy = rect.y + rect.height - SLOT_BORDER * 2 - radius
 
     alpha = 1.0 if self._is_valid else INVALID_ALPHA
 

@@ -181,13 +181,6 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
     ET.NO_ENTRY: NoEntryAlert("Controls Mismatch: Lateral"),
   },
 
-  EventNameSP.experimentalModeSwitched: {
-    ET.PERMANENT: Alert(
-      "", "",
-      AlertStatus.normal, AlertSize.none,
-      Priority.LOWER, VisualAlert.none, AudibleAlertSP.promptSingleHigh, 0.5),
-  },
-
   EventNameSP.wrongCarModeAlertOnly: {
     ET.WARNING: wrong_car_mode_alert,
   },

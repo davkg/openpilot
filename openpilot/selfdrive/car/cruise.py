@@ -13,7 +13,6 @@ V_CRUISE_MIN = 8
 V_CRUISE_MAX = 145
 V_CRUISE_UNSET = 255
 V_CRUISE_INITIAL = 40
-V_CRUISE_INITIAL_EXPERIMENTAL_MODE = 113  # ~70mph, upstream is 105 (~65mph)
 IMPERIAL_INCREMENT = round(CV.MPH_TO_KPH, 1)  # round here to avoid rounding errors incrementing set speed
 
 ButtonEvent = car.CarState.ButtonEvent
@@ -150,12 +149,10 @@ class VCruiseHelper(VCruiseHelperSP):
         self.button_timers[b.type.raw] = 1 if b.pressed else 0
         self.button_change_states[b.type.raw] = {"standstill": CS.cruiseState.standstill, "enabled": enabled}
 
-  def initialize_v_cruise(self, CS, experimental_mode: bool) -> None:
+  def initialize_v_cruise(self, CS, initial_speed: int) -> None:
     # initializing is handled by the PCM
     if self.CP.pcmCruise:
       return
-
-    initial = V_CRUISE_INITIAL_EXPERIMENTAL_MODE if experimental_mode else V_CRUISE_INITIAL
 
     if any(b.type in (ButtonType.accelCruise, ButtonType.resumeCruise) for b in CS.buttonEvents) and self.v_cruise_initialized:
       self.v_cruise_kph = self.v_cruise_kph_last
@@ -165,6 +162,6 @@ class VCruiseHelper(VCruiseHelperSP):
       # that window, causing the round-to-kph below to flip +/-1 mph in the UI). Fall back to vEgo
       # when the cluster signal isn't published.
       v_ego = CS.vEgoCluster if CS.vEgoCluster > 0 else CS.vEgo
-      self.v_cruise_kph = int(round(np.clip(v_ego * CV.MS_TO_KPH, initial, V_CRUISE_MAX)))
+      self.v_cruise_kph = int(round(np.clip(max(v_ego * CV.MS_TO_KPH, initial_speed), V_CRUISE_INITIAL, V_CRUISE_MAX)))
 
     self.v_cruise_cluster_kph = self.v_cruise_kph

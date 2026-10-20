@@ -17,7 +17,7 @@ class Plant:
   messaging_initialized = False
 
   def __init__(self, lead_relevancy=False, speed=0.0, distance_lead=2.0,
-               enabled=True, only_lead2=False, only_radar=False, e2e=False, follow_time=DEFAULT_FOLLOW_TIME, force_decel=False,
+               enabled=True, only_lead2=False, only_radar=False, follow_time=DEFAULT_FOLLOW_TIME, force_decel=False,
                mpc_lead=False, initial_lead_speed=0.0):
     self.rate = 1. / DT_MDL
 
@@ -42,7 +42,6 @@ class Plant:
     self.enabled = enabled
     self.only_lead2 = only_lead2
     self.only_radar = only_radar
-    self.e2e = e2e
     self.follow_time = follow_time
     self.force_decel = force_decel
 
@@ -68,20 +67,19 @@ class Plant:
   def current_time(self):
     return float(self.rk.frame) / self.rate
 
-  def step(self, v_lead=0.0, prob_lead=1.0, v_cruise=50., pitch=0.0, prob_throttle=1.0):
+  def step(self, v_lead=0.0, prob_lead=1.0, v_cruise=50.):
     # ******** publish a fake model going straight and fake calibration ********
     # note that this is worst case for MPC, since model will delay long mpc by one time step
     radar = messaging.new_message('radarState')
     control = messaging.new_message('controlsState')
     ss = messaging.new_message('selfdriveState')
     car_state = messaging.new_message('carState')
-    lp = messaging.new_message('vehicleParameters')
-    car_control = messaging.new_message('carControl')
     model = messaging.new_message('modelV2')
     car_state_sp = messaging.new_message('carStateSP')
     ss_sp = messaging.new_message('selfdriveStateSP')
     live_map_data_sp = messaging.new_message('liveMapDataSP')
     gps_data = messaging.new_message('gpsLocation')
+    car_control = messaging.new_message('carControl')
     if self.mpc_lead_enabled:
       # Treat the maneuver-supplied v_lead as the lead's set-speed target this
       # step. The lead's actual v/a/x come from the lead driver, which was
@@ -128,7 +126,7 @@ class Plant:
 
     # Simulate model predicting slightly faster speed
     # this is to ensure lead policy is effective when model
-    # does not predict slowdown in e2e mode
+    # does not predict slowdown
     position = log.XYZTData.new_message()
     position.x = [float(x) for x in (self.speed + 0.5) * np.array(ModelConstants.T_IDXS)]
     model.modelV2.position = position
@@ -140,16 +138,13 @@ class Plant:
     acceleration = log.XYZTData.new_message()
     acceleration.x = [float(x) for x in np.zeros_like(ModelConstants.T_IDXS)]
     model.modelV2.acceleration = acceleration
-    model.modelV2.meta.disengagePredictions.gasPressProbs = [float(prob_throttle) for _ in range(6)]
 
     control.controlsState.longControlState = LongCtrlState.pid if self.enabled else LongCtrlState.off
-    ss.selfdriveState.experimentalMode = self.e2e
     ss_sp.selfdriveStateSP.followTime = float(self.follow_time)
     control.controlsState.forceDecel = self.force_decel
     car_state.carState.vEgo = float(self.speed)
     car_state.carState.standstill = bool(self.speed < 0.01)
     car_state.carState.vCruise = float(v_cruise * 3.6)
-    car_control.carControl.orientationNED = [0., float(pitch), 0.]
 
     # ******** get controlsState messages for plotting ***
     sm = {'radarState': radar.radarState,
@@ -158,7 +153,6 @@ class Plant:
           'controlsState': control.controlsState,
           'selfdriveState': ss.selfdriveState,
           'selfdriveStateSP': ss_sp.selfdriveStateSP,
-          'vehicleParameters': lp.vehicleParameters,
           'modelV2': model.modelV2,
           'carStateSP': car_state_sp.carStateSP,
           'liveMapDataSP': live_map_data_sp.liveMapDataSP,

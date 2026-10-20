@@ -137,7 +137,7 @@ def read_segment(path: str) -> dict:
         c = m.extrinsicsCalibration
         out['calib'].append((t, (tuple(c.rpyCalib), c.height[0] if len(c.height) else 1.22, tuple(c.wideFromDeviceEuler))))
       elif w == 'selfdriveState':
-        out['selfdrive'].append((t, ((m.selfdriveState.alertText1 or '').strip(), m.selfdriveState.experimentalMode)))
+        out['selfdrive'].append((t, ((m.selfdriveState.alertText1 or '').strip(), m.selfdriveState.deprecated.experimentalMode)))
       elif w == 'logMessage' and 'reprojectd.stage' in m.logMessage:
         out['stage'].append((t, json.loads(m.logMessage)['msg']))
       elif w == 'cameraOdometry':
