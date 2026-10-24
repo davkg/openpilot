@@ -3,7 +3,8 @@ import unittest
 import numpy as np
 
 from openpilot.common.realtime import DT_MDL
-from openpilot.selfdrive.controls.radard import VisionLeadSpeedFilter, stretch_vision_a_lead
+from cereal import log
+from openpilot.selfdrive.controls.radard import VisionLeadSpeedFilter, get_RadarState_from_vision, stretch_vision_a_lead
 
 
 def _lead(d_rel, v_lead, present=True, radar=False):
@@ -103,3 +104,8 @@ class TestStretchVisionALead(unittest.TestCase):
     out = np.array([stretch_vision_a_lead(x) for x in a])
     self.assertTrue(np.all(np.diff(out) > 0))
     self.assertLess(np.max(np.abs(np.diff(out))), 0.03)
+
+  def test_big_model_unstretched(self):
+    lead = log.ModelDataV2.LeadDataV3.new_message(x=[50.0], y=[0.0], v=[20.0], a=[-2.0])
+    self.assertAlmostEqual(get_RadarState_from_vision(lead, 25.0, 25.0, 0.9)['aLeadK'], stretch_vision_a_lead(-2.0))
+    self.assertAlmostEqual(get_RadarState_from_vision(lead, 25.0, 25.0, 0.9, big_model=True)['aLeadK'], -2.0)

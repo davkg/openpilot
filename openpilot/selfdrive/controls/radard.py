@@ -139,7 +139,8 @@ def match_vision_to_track(v_ego: float, lead: capnp._DynamicStructReader, tracks
 
 # The model under-reports lead braking: ~0.6-0.7x true decel and rarely below ~-2.2 m/s^2 (18 braking events,
 # small model, 2026-10). Leave the steady-follow noise band alone and stretch real braking; the gentle slope
-# undercorrects the worst events (-2.1 -> -3.1) to avoid over-braking the rest. Braking side only.
+# undercorrects the worst events (-2.1 -> -3.1) to avoid over-braking the rest. Braking side only. Small model only:
+# the big model is billed as better at lead decel, and the fit never saw it.
 VISION_A_LEAD_KNEE = -0.5      # m/s^2
 VISION_A_LEAD_STRETCH = 0.6
 
@@ -148,7 +149,9 @@ def stretch_vision_a_lead(a_lead: float) -> float:
   return a_lead + VISION_A_LEAD_STRETCH * min(0.0, a_lead - VISION_A_LEAD_KNEE)
 
 
-def get_RadarState_from_vision(lead_msg: capnp._DynamicStructReader, v_ego: float, model_v_ego: float, lead_prob: float):
+def get_RadarState_from_vision(lead_msg: capnp._DynamicStructReader, v_ego: float, model_v_ego: float, lead_prob: float,
+                               big_model: bool = False):
+  a_lead = float(lead_msg.a[0])
   lead_v_rel_pred = lead_msg.v[0] - model_v_ego
   return {
     "dRel": float(lead_msg.x[0] - RADAR_TO_CAMERA),
@@ -156,7 +159,7 @@ def get_RadarState_from_vision(lead_msg: capnp._DynamicStructReader, v_ego: floa
     "vRel": float(lead_v_rel_pred),
     "vLead": float(v_ego + lead_v_rel_pred),
     "vLeadK": float(v_ego + lead_v_rel_pred),
-    "aLeadK": stretch_vision_a_lead(float(lead_msg.a[0])),
+    "aLeadK": a_lead if big_model else stretch_vision_a_lead(a_lead),
     "aLeadTau": 0.3,
     "modelProb": float(lead_prob),
     "present": True,
@@ -249,7 +252,7 @@ class VisionLeadSpeedFilter:
 
 def get_lead(v_ego: float, ready: bool, tracks: dict[int, Track], lead_msg: capnp._DynamicStructReader,
              model_v_ego: float, lead_prob: float, CP: structs.CarParams, CP_SP: structs.CarParamsSP,
-             low_speed_override: bool = True) -> dict[str, Any]:
+             low_speed_override: bool = True, big_model: bool = False) -> dict[str, Any]:
   # Determine leads, this is where the essential logic happens
   if len(tracks) > 0 and ready and lead_prob > .5:
     track = match_vision_to_track(v_ego, lead_msg, tracks)
@@ -261,7 +264,7 @@ def get_lead(v_ego: float, ready: bool, tracks: dict[int, Track], lead_msg: capn
     lead_dict = track.get_RadarState(lead_prob)
     lead_dict = get_custom_yrel(CP, CP_SP, lead_dict, lead_msg)
   elif (track is None) and ready and (lead_prob > .5):
-    lead_dict = get_RadarState_from_vision(lead_msg, v_ego, model_v_ego, lead_prob)
+    lead_dict = get_RadarState_from_vision(lead_msg, v_ego, model_v_ego, lead_prob, big_model)
 
   if low_speed_override:
     low_speed_tracks = [c for c in tracks.values() if c.potential_low_speed_lead(v_ego)]
@@ -346,6 +349,7 @@ class RadarD:
     else:
       model_v_ego = self.v_ego
     leads_v3 = sm['modelV2'].leadsV3
+    big_model = sm['modelV2'].big
     if len(leads_v3) > 1:
       for i in range(2):
         # Asymmetric filter on lead prob to keep lead when uncertain
@@ -356,14 +360,18 @@ class RadarD:
           self.lead_prob_filters[i].update(lead_prob)
 
       lead_one = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[0], model_v_ego, self.lead_prob_filters[0].x,
-                          self.CP, self.CP_SP, low_speed_override=True)
+                          self.CP, self.CP_SP, low_speed_override=True, big_model=big_model)
       lead_two = get_lead(self.v_ego, self.ready, self.tracks, leads_v3[1], model_v_ego, self.lead_prob_filters[1].x,
-                          self.CP, self.CP_SP, low_speed_override=False)
-      if self.CP.radarUnavailable:  # vision-only lead speed is over-estimated at distance; correct it
+                          self.CP, self.CP_SP, low_speed_override=False, big_model=big_model)
+      # vision-only lead speed is over-estimated at distance; correct it. Small model only: the big model runs
+      # uncorrected for now to evaluate it as shipped (it still over-reads slowing leads at 60-130 m).
+      if self.CP.radarUnavailable and not big_model:
         cs_sp = sm['carStateSP']
         cam_lead_valid = sm.valid['carStateSP'] and cs_sp.cameraLeadValid
         # only leadOne -- the camera's designated in-path lead; leadTwo is passed through
         lead_one = self.lead_one_speed_filter.correct(lead_one, self.v_ego, cs_sp.cameraLeadDistance, cam_lead_valid)
+      elif big_model:
+        self.lead_one_speed_filter.reset()  # no stale state if we fall back to the small model
       self.radar_state.leadOne = lead_one
       self.radar_state.leadTwo = lead_two
 
