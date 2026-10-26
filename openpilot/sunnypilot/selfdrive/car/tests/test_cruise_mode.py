@@ -83,18 +83,22 @@ class TestCruiseHelper(OpenpilotTestCase):
     return events
 
   def test_follow_time_taps(self) -> None:
-    """Distance tap steps 0.1 s closer, LKAS tap 0.1 s farther, silently (no alert or chime)."""
+    """Distance tap steps closer, LKAS tap farther (0.2 s above 1.0 s), silently (no alert or chime)."""
     self.reset()
     self.cruise_helper.follow_time = 1.2
 
     events = self._tap(ButtonType.gapAdjustCruise)
-    assert self.cruise_helper.follow_time == 1.1
-    assert self.cruise_helper.params.get("LongFollowTime") == 1.1
+    assert self.cruise_helper.follow_time == 1.0
+    assert self.cruise_helper.params.get("LongFollowTime") == 1.0
     assert not events.events
+
+    events = self._tap(ButtonType.gapAdjustCruise)
+    assert self.cruise_helper.follow_time == 0.9
 
     events = self._tap(ButtonType.lkas)
     events = self._tap(ButtonType.lkas)
-    assert self.cruise_helper.follow_time == 1.3
+    events = self._tap(ButtonType.lkas)
+    assert self.cruise_helper.follow_time == 1.4
     assert not events.events
 
   def test_follow_time_clamps(self) -> None:
@@ -124,6 +128,21 @@ class TestCruiseHelper(OpenpilotTestCase):
       t = step_follow_time(t, 1)
     assert t == 1.0
     assert follow_time_bars(t) == 2
+
+  def test_follow_time_steps(self) -> None:
+    """0.1 s steps up to 1.0 s, 0.2 s above, symmetric both ways; off-grid saved values snap onto the grid."""
+    up = [MIN_FOLLOW_TIME]
+    while up[-1] < MAX_FOLLOW_TIME:
+      up.append(step_follow_time(up[-1], 1))
+    assert up == [0.7, 0.8, 0.9, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+
+    down = [MAX_FOLLOW_TIME]
+    while down[-1] > MIN_FOLLOW_TIME:
+      down.append(step_follow_time(down[-1], -1))
+    assert down == up[::-1]
+
+    assert step_follow_time(1.3, 1) == 1.4
+    assert step_follow_time(1.3, -1) == 1.2
 
   def test_follow_time_bars(self) -> None:
     for t, bars in ((0.7, 1), (0.9, 1), (1.0, 2), (1.2, 2), (1.3, 3), (1.6, 3), (1.7, 4), (2.0, 4)):

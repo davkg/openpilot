@@ -7,7 +7,8 @@ import numpy as np
 
 MIN_FOLLOW_TIME = 0.7  # s
 MAX_FOLLOW_TIME = 2.0  # s
-FOLLOW_TIME_STEP = 0.1  # s
+# button steps: 0.1 s up to 1.0 s, 0.2 s above
+FOLLOW_TIME_STEPS = (0.7, 0.8, 0.9, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0)  # s
 DEFAULT_FOLLOW_TIME = 1.2  # s, matches the LongFollowTime param default
 
 # dash distance bars: 1 bar < 1.0 s, 2 bars < 1.3 s, 3 bars < 1.7 s, else 4
@@ -20,7 +21,14 @@ def clip_follow_time(t: float) -> float:
 
 
 def step_follow_time(t: float, direction: int) -> float:
-  return clip_follow_time(t + direction * FOLLOW_TIME_STEP)
+  # moves to the next grid entry in that direction, so an off-grid saved value (e.g. 1.3) snaps back onto the grid
+  t = clip_follow_time(t)
+  for _ in range(abs(direction)):
+    if direction > 0:
+      t = next((s for s in FOLLOW_TIME_STEPS if s > t), MAX_FOLLOW_TIME)
+    else:
+      t = next((s for s in reversed(FOLLOW_TIME_STEPS) if s < t), MIN_FOLLOW_TIME)
+  return t
 
 
 def read_follow_time(params) -> float:
