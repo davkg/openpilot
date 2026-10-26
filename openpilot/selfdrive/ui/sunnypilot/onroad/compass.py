@@ -95,6 +95,10 @@ class CompassRenderer(Widget):
         self._displayed_bearing = (self._displayed_bearing + diff * SMOOTHING_FACTOR) % 360
 
   def _render(self, rect: rl.Rectangle) -> None:
+    # appear with the rest of the HUD (follow box, speed) once card is up, not on the first onroad frame
+    if ui_state.sm.recv_frame['carState'] < ui_state.started_frame:
+      return
+
     radius = SLOT_SIZE / 2
     cx = rect.x + CORNER_MARGIN + BG_WIDTH / 2
     cy = rect.y + rect.height - CORNER_MARGIN - BG_HEIGHT - MARGIN_ABOVE_FOLLOW_BOX - radius
