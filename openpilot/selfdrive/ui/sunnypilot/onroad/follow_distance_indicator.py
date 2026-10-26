@@ -22,10 +22,14 @@ BG_WIDTH = 190
 BG_HEIGHT = 150
 BG_ROUNDNESS = 0.35
 
-# How far e2e binds below ACC, shown as a bar rather than a switch so near-ties can't flicker.
-# The bar fills over BLEND_WIDTH m/s^2 of margin.
-BLEND_WIDTH = 0.3
-BLEND_RC = 0.1  # s, light smoothing so lead swaps don't jump the bar
+# Two-sided bar under the value, filling out from the center by how far one candidate binds below the other.
+# Left: e2e binds below ACC (gas nudges it up). Right: the lead MPC binds below e2e (the follow time is the limit).
+E2E_WIDTH = 0.3  # m/s^2 of margin for a full left side
+MPC_WIDTH = 0.15  # m/s^2 of margin for a full right side
+BLEND_RC = 0.3  # s, one filter on the signed fill, so a side swap passes through empty
+# Right side in steady following only: while closing, MPC binding means braking early, not a long gap
+VREL_GATE = (0.5, 1.5)  # m/s, |vRel| fade-out
+VREL_RC = 1.0  # s, so the gate can't chatter
 BAR_WIDTH = 130
 BAR_HEIGHT = 16
 BAR_MARGIN_BOTTOM = 25  # bar bottom to box bottom
@@ -39,7 +43,8 @@ class FollowDistanceRenderer(Widget):
   Positioned in the bottom-left corner of the screen, under the compass.
   Hidden when OP does not have longitudinal control.
 
-  With long active, a bar under the value fills as the e2e model brakes below ACC.
+  With long active, a bar under the value fills left when the model limits accel below ACC, and right when
+  the follow time limits it behind a lead.
   """
 
   def __init__(self):
@@ -49,7 +54,9 @@ class FollowDistanceRenderer(Widget):
     self._font_medium = gui_app.font(FontWeight.MEDIUM)
     self._follow_time: float = read_follow_time(self._params)
     self._longitudinal_control: bool = False
-    self._e2e_binding = FirstOrderFilter(0.0, BLEND_RC, 1 / gui_app.target_fps)
+    self._binding = FirstOrderFilter(0.0, BLEND_RC, 1 / gui_app.target_fps)  # -1 e2e side .. +1 MPC side
+    self._v_rel = FirstOrderFilter(0.0, VREL_RC, 1 / gui_app.target_fps)
+    self._lead_present = False
 
     if car_params := self._params.get("CarParams"):
       cp = messaging.log_from_bytes(car_params, car.CarParams)
@@ -62,11 +69,23 @@ class FollowDistanceRenderer(Widget):
     if ui_state.started and ui_state.sm.valid["selfdriveStateSP"]:
       self._follow_time = get_follow_time(ui_state.sm["selfdriveStateSP"])
 
-    e2e_binding = 0.0
+    lead = ui_state.sm["radarState"].leadOne
+    if lead.present:
+      if not self._lead_present:
+        self._v_rel.x = lead.vRel  # a new lead may already be closing
+      self._v_rel.update(lead.vRel)
+    self._lead_present = lead.present
+
+    binding = 0.0
     if ui_state.started and ui_state.sm["carControl"].longActive:
       lp_sp = ui_state.sm["longitudinalPlanSP"]
-      e2e_binding = np.clip((min(lp_sp.mpcAccel, lp_sp.cruiseAccel) - lp_sp.e2eAccel) / BLEND_WIDTH, 0.0, 1.0)
-    self._e2e_binding.update(e2e_binding)
+      e2e_binding = np.clip((min(lp_sp.mpcAccel, lp_sp.cruiseAccel) - lp_sp.e2eAccel) / E2E_WIDTH, 0.0, 1.0)
+      mpc_binding = 0.0
+      if lead.present:
+        steady = np.interp(abs(self._v_rel.x), VREL_GATE, [1.0, 0.0])
+        mpc_binding = steady * np.clip((min(lp_sp.e2eAccel, lp_sp.cruiseAccel) - lp_sp.mpcAccel) / MPC_WIDTH, 0.0, 1.0)
+      binding = mpc_binding - e2e_binding  # at most one is nonzero
+    self._binding.update(binding)
 
   def _render(self, rect: rl.Rectangle) -> None:
     if not self._longitudinal_control:
@@ -86,9 +105,14 @@ class FollowDistanceRenderer(Widget):
     bar_x = center_x - BAR_WIDTH / 2
     bar_y = bg_y + BG_HEIGHT - BAR_MARGIN_BOTTOM - BAR_HEIGHT
     rl.draw_rectangle_rounded(rl.Rectangle(bar_x, bar_y, BAR_WIDTH, BAR_HEIGHT), 1.0, 10, COLORS.BORDER_TRANSLUCENT)
-    fill_width = BAR_WIDTH * float(self._e2e_binding.x)
+    fill_width = BAR_WIDTH / 2 * abs(float(self._binding.x))
     if fill_width >= 1:
-      rl.draw_rectangle_rounded(rl.Rectangle(bar_x, bar_y, fill_width, BAR_HEIGHT), 1.0, 10, COLORS.WHITE)
+      fill_x = center_x if self._binding.x > 0 else center_x - fill_width
+      rl.draw_rectangle_rounded(rl.Rectangle(fill_x, bar_y, fill_width, BAR_HEIGHT), 1.0, 10, COLORS.WHITE)
+      # square off the center end so the fill reads as anchored there
+      cap = min(fill_width, BAR_HEIGHT / 2)
+      cap_x = center_x if self._binding.x > 0 else center_x - cap
+      rl.draw_rectangle_rec(rl.Rectangle(cap_x, bar_y, cap, BAR_HEIGHT), COLORS.WHITE)
 
     # value_text = f"{self._follow_time:.1f}"
     # unit_text = tr("sec")
