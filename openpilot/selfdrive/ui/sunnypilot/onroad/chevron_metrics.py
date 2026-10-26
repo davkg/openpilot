@@ -13,7 +13,7 @@ from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 
 # Render at bottom left instead of moving around with lead indicator
-STATIC_ANCHOR_X = 470
+STATIC_ANCHOR_X = 250
 STATIC_ANCHOR_Y_FROM_BOTTOM = 60
 
 
