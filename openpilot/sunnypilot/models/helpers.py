@@ -15,6 +15,7 @@ from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.hardware import HARDWARE
 from openpilot.common.hardware.hw import Paths
+from openpilot.common.hardware.usb import cable_connected
 from openpilot.selfdrive.modeld.helpers import chestnut_present, reproject_expected
 
 # SET ME TO THE EXACT JSON VERSION WE SET IN SUNNYPILOT_MODELS REPO
@@ -184,7 +185,7 @@ def get_active_model_runner(params: Params | None = None, force_check: bool = Fa
 
 @functools.cache
 def _tizi_with_chestnut() -> bool:
-  return HARDWARE.get_device_type() == "tizi" and chestnut_present()
+  return HARDWARE.get_device_type() == "tizi" and (chestnut_present() or cable_connected())
 
 
 def reproject_active(params: Params | None = None) -> bool:

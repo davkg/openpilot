@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 
 from openpilot.common.hardware import AGNOS, HARDWARE
-from openpilot.common.hardware.usb import CHESTNUT_USB_PRODUCT, USB_DEVICES_PATH, is_chestnut_usb_id
+from openpilot.common.hardware.usb import CHESTNUT_USB_PRODUCT, USB_DEVICES_PATH, cable_connected, is_chestnut_usb_id
 
 MODELS_DIR = Path(__file__).resolve().parent / 'models'
 
@@ -50,4 +50,4 @@ def reproject_expected() -> bool:
   """reprojectd serves the 3X cameras as a comma 4's for the big model: a 3X with a chestnut and the big model in place.
   The chestnut test is modeld's, so the two always agree on the frames. Decided once per process, as modeld does: the
   manager starts reprojectd and reprojectcalibd on it, so a chestnut plugged in later takes a reboot."""
-  return HARDWARE.get_device_type() == "tizi" and chestnut_present() and chestnut_compiled()
+  return HARDWARE.get_device_type() == "tizi" and (chestnut_present() or cable_connected()) and chestnut_compiled()

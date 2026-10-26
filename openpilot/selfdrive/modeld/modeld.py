@@ -274,6 +274,9 @@ def main(demo=False):
   cloudlog.warning("loading model")
   model = None
   if CHESTNUT:
+    # the chestnut is unpowered during the boot GPS hold (chestnut_gps_hold), so loading now would time out
+    while params.get_bool("ChestnutGpsHoldActive"):
+      time.sleep(0.1)
     big_model = None
     def load_big():
       nonlocal big_model
