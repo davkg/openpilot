@@ -6,6 +6,7 @@ See the LICENSE.md file in the root directory for more details.
 """
 import pyray as rl
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
+from openpilot.selfdrive.ui.sunnypilot.onroad.blendful import BlendfulRenderer
 from openpilot.selfdrive.ui.sunnypilot.onroad.rainbow_path import RainbowPath
 from openpilot.sunnypilot.selfdrive.controls.lib.lane_centering import get_lane_centering_visual_direction
 
@@ -21,6 +22,7 @@ LANE_CENTERING_COLOR = rl.Color(65, 145, 255, 255)
 class ModelRendererSP:
   def __init__(self):
     self.rainbow_path = RainbowPath()
+    self.blendful = BlendfulRenderer(rect_relative=True)
 
     self._lane_centering_enabled = False
     self._lane_center_offset = 0.0

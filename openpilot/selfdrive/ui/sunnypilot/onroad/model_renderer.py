@@ -8,10 +8,11 @@ import pyray as rl
 
 from openpilot.cereal import log
 from openpilot.common.filter_simple import FirstOrderFilter
+from openpilot.selfdrive.ui.sunnypilot.onroad.blendful import BlendfulRenderer
 from openpilot.selfdrive.ui.sunnypilot.onroad.chevron_metrics import ChevronMetrics
 from openpilot.selfdrive.ui.sunnypilot.onroad.rainbow_path import RainbowPath
-from openpilot.selfdrive.ui.sunnypilot.ui_state import MADSState
-from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
+from openpilot.selfdrive.ui.sunnypilot.ui_state import UIStateSP
+from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.sunnypilot.selfdrive.controls.lib.lane_centering import get_lane_centering_visual_direction
 from openpilot.system.ui.lib.application import FontWeight, gui_app
 
@@ -58,6 +59,7 @@ class ModelRendererSP:
   def __init__(self):
     self.rainbow_path = RainbowPath()
     self.chevron_metrics = ChevronMetrics()
+    self.blendful = BlendfulRenderer(readout=False)
     self._camera_marker_alpha = [
       FirstOrderFilter(0.0, 0.15, 1 / gui_app.target_fps) for _ in range(NUM_OBJECT_SLOTS)
     ]
@@ -71,12 +73,7 @@ class ModelRendererSP:
 
   @property
   def _lateral_active(self) -> bool:
-    sm = ui_state.sm
-    if sm.valid["selfdriveStateSP"]:
-      mads = sm["selfdriveStateSP"].mads
-      if mads.available:
-        return mads.enabled and mads.state != MADSState.paused
-    return ui_state.status in (UIStatus.ENGAGED, UIStatus.LAT_ONLY)
+    return UIStateSP.lateral_active(ui_state)
 
   def update_lane_centering_params(self) -> None:
     params = ui_state.params
