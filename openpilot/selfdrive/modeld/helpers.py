@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 
 from openpilot.common.hardware import AGNOS, HARDWARE
-from openpilot.common.hardware.usb import CHESTNUT_USB_PRODUCT, USB_DEVICES_PATH, cable_connected, is_chestnut_usb_id
+from openpilot.common.hardware.usb import CHESTNUT_USB_IDS, CHESTNUT_USB_PRODUCT, USB_DEVICES_PATH, cable_connected, is_chestnut_usb_id
 
 MODELS_DIR = Path(__file__).resolve().parent / 'models'
 
@@ -31,10 +31,18 @@ def chestnut_present() -> bool:
       pass
   return False
 
+def chestnut_usb_visible() -> bool:
+  # tinygrad caches its USB scan for the life of the process, and modeld_v2 already scanned at startup (importing
+  # tinygrad.nn.onnx picks a default device, which probes AMD over USB). With the boot GPS hold the chestnut was
+  # unpowered then, so the cached scan is empty and the load fails "AMD:0 does not exist". Rescan once it's here.
+  from tinygrad.runtime.support.usb import USB3
+  USB3.list_devices.cache_clear()
+  return any(USB3.list_devices(*usb_id) for usb_id in CHESTNUT_USB_IDS)
+
 def wait_for_chestnut(timeout: float = 10.) -> None:
   # the cable is detected before chestnut enumerates
   st = time.monotonic()
-  while not chestnut_present():
+  while not (chestnut_present() and chestnut_usb_visible()):
     if time.monotonic() - st > timeout:
       raise TimeoutError("chestnut did not enumerate")
     time.sleep(0.1)
