@@ -1,3 +1,7 @@
+import importlib.util
+import os
+import re
+from pathlib import Path
 from unittest import mock
 
 from openpilot.common.params import Params
@@ -76,3 +80,65 @@ class TestHoldDaemon(OpenpilotTestCase):
     with mock.patch(f"{MOD}.cable_connected", return_value=False):
       chestnut_gps_hold.main()
     assert self.writes == []
+
+
+OPENPILOT = Path(__file__).resolve().parents[3]
+CHESTNUT_CHECK = re.compile(r"\bchestnut_present\(\)|\bchestnutPresent\b")
+# Every enumerated-only chestnut check (chestnut_present() / deviceState.chestnutPresent), reviewed against the hold:
+# while it runs, a cabled chestnut is unpowered and reads absent. A check that decides something for the drive must also
+# count cable_connected(), as get_active_source and the modelds' CHESTNUT do.
+REVIEWED_CHESTNUT_CHECKS = {
+  "common/hardware/usb.py": 1,  # publishes deviceState.chestnutPresent
+  "selfdrive/modeld/helpers.py": 3,  # the def; wait_for_chestnut (after the hold); reproject_expected (or cable_connected)
+  "selfdrive/modeld/modeld.py": 1,  # CHESTNUT (or cable_connected)
+  "selfdrive/selfdrived/selfdrived.py": 1,  # bigModelFailed, only once the big model was active
+  "selfdrive/ui/ui_state.py": 2,  # display; onroad also counts usb_connected
+  "sunnypilot/modeld_v2/modeld.py": 1,  # CHESTNUT (or cable_connected)
+  "sunnypilot/models/fetcher.py": 1,  # catalog refresh slot, display only
+  "sunnypilot/models/helpers.py": 2,  # get_active_source, _tizi_with_chestnut (both or cable_connected)
+  "sunnypilot/models/manager.py": 1,  # model manager slot, display only
+}
+
+
+class TestUpstreamSeams(OpenpilotTestCase):
+  """Tripwires for upstream merges: the hold leans on code it doesn't own."""
+
+  def test_chestnut_checks_reviewed(self):
+    found = {}
+    for d, dirs, files in os.walk(OPENPILOT):
+      dirs[:] = [x for x in dirs if x not in ("tests", "test", "third_party", "__pycache__")]
+      for f in files:
+        if f.endswith(".py") and (n := len(CHESTNUT_CHECK.findall((Path(d) / f).read_text()))):
+          found[str((Path(d) / f).relative_to(OPENPILOT))] = n
+    changed = {k: (REVIEWED_CHESTNUT_CHECKS.get(k), found.get(k)) for k in found.keys() | REVIEWED_CHESTNUT_CHECKS.keys()
+               if found.get(k) != REVIEWED_CHESTNUT_CHECKS.get(k)}
+    assert not changed, f"chestnut checks changed (reviewed, now), review them against the hold: {changed}"
+
+  def test_held_chestnut_is_the_active_slot(self):
+    from openpilot.sunnypilot.models.helpers import get_active_source
+    with (mock.patch("openpilot.sunnypilot.models.helpers.chestnut_present", return_value=False),
+          mock.patch("openpilot.sunnypilot.models.helpers.cable_connected", return_value=True)):
+      assert get_active_source() == "chestnut"
+
+  def test_modelds_wait_out_the_hold(self):
+    for path in ("selfdrive/modeld/modeld.py", "sunnypilot/modeld_v2/modeld.py"):
+      src = (OPENPILOT / path).read_text()
+      assert 'get_bool("ChestnutGpsHoldActive")' in src and "wait_for_chestnut()" in src, path
+
+  def test_tinygrad_usb_scan_is_clearable(self):
+    # wait_for_chestnut clears this cached scan, the one the AMD USB device opens from
+    from tinygrad.runtime.support.usb import USB3
+    assert hasattr(USB3.list_devices, "cache_clear")
+    assert "USB3.list_devices(" in Path(importlib.util.find_spec("tinygrad.runtime.ops_amd").origin).read_text()
+
+  def test_qcomgpsd_runs_offroad_during_the_hold(self):
+    from openpilot.system.manager import process_config
+    self.params = Params()
+    self.params.put_bool("ChestnutGpsHoldActive", True, block=True)
+    with mock.patch.object(process_config, "ublox_available", return_value=False):
+      assert process_config.qcomgps(False, self.params, None)
+    assert "chestnut_gps_hold" in process_config.managed_processes
+
+  def test_selfdrived_ignores_the_exited_hold(self):
+    # one-shot: once it exits, processNotRunning would block engagement
+    assert "'chestnut_gps_hold'" in (OPENPILOT / "selfdrive/selfdrived/selfdrived.py").read_text()

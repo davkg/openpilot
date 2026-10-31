@@ -24,7 +24,6 @@ from typing import Any
 from unittest import mock
 
 from openpilot.cereal import custom
-from openpilot.common.params import Params
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.sunnypilot.models import manager as manager_module
 from openpilot.sunnypilot.models.fetcher import ModelFetcher, get_cached_bundles
@@ -503,12 +502,6 @@ class TestActiveBundle(OpenpilotTestCase):
     for gpu, source in ((False, "qcom"), (True, "chestnut")):
       with mock.patch("openpilot.sunnypilot.models.helpers.chestnut_present", return_value=gpu):
         assert get_active_source() == source
-    # the boot GPS hold keeps the chestnut unpowered, it's still the active slot
-    with mock.patch("openpilot.sunnypilot.models.helpers.chestnut_present", return_value=False):
-      Params().put_bool("ChestnutGpsHoldActive", True)
-      assert get_active_source() == "chestnut"
-      Params().remove("ChestnutGpsHoldActive")
-      assert get_active_source() == "qcom"
     for state, source in (
       ((True, False, False, True), "chestnut"),  # offroad
       ((True, False, True, False), "chestnut"),  # onroad, big model loading
