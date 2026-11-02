@@ -18,7 +18,7 @@ from openpilot.selfdrive.modeld.helpers import chestnut_compiled
 
 VBUS_PATH = "/sys/kernel/debug/regulator/smb2-vbus/enable"
 # counted from the first forward gear, so time parked (e.g. in a garage) doesn't use it up
-DRIVE_TIMEOUT = 120.
+DRIVE_TIMEOUT = 180.
 FORWARD_GEARS = ("drive", "sport", "low", "brake", "eco", "manumatic")
 
 

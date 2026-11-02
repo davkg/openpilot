@@ -106,7 +106,7 @@ class ModelsLayout(Widget):
                              " Yields around obstacles. Not available with the Default model.")
     self.blendful_toggle = toggle_item_sp(tr("Blendful (Alpha)"), self._blendful_desc, param="Blendful")
     self.chestnut_gps_hold_toggle = toggle_item_sp(tr("Hold Chestnut for GPS Fix"),
-                                                   tr("At startup, keep the chestnut powered off until GPS gets a fix, for up to 2 minutes of driving. " +
+                                                   tr("At startup, keep the chestnut powered off until GPS gets a fix, for up to 3 minutes of driving. " +
                                                       "The chestnut's USB 3 link interferes with GPS acquisition on the 3X. " +
                                                       "The big model loads once the hold ends."),
                                                    param="ChestnutGpsHold")
