@@ -6,28 +6,22 @@ See the LICENSE.md file in the root directory for more details.
 """
 import numpy as np
 
-from openpilot.cereal import log
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL
 from openpilot.sunnypilot import PARAMS_UPDATE_PERIOD
+from openpilot.sunnypilot.selfdrive.controls.lib.follow_time import follow_time_bars, get_follow_time
 
 ACCEL_BOOST_MIN_SPEED = 1.0
-ACCEL_BOOST_MAX = (0.4, 0.25, 0.1)  # aggressive, standard, relaxed, m/s^2
+ACCEL_BOOST_MAX = (0.4, 0.25, 0.1)  # 1 bar, 2 bars, 3-4 bars, m/s^2
 ACCEL_BOOST_BUILD, ACCEL_BOOST_RELEASE = 0.2, 1.0  # m/s^3
 BRAKE_PROB = (0.1, 0.3)  # the model's brake press in 4 s: it wants to slow
 GAS_PROB = (0.6, 0.8)  # predicts a human gas press at this hypothesis at about 23%
 CURVE_LAT_ACCEL = (1.5, 2.5)
 
 
-def get_boost_max(personality=log.LongitudinalPersonality.standard):
-  if personality == log.LongitudinalPersonality.relaxed:
-    return ACCEL_BOOST_MAX[2]
-  elif personality == log.LongitudinalPersonality.standard:
-    return ACCEL_BOOST_MAX[1]
-  elif personality == log.LongitudinalPersonality.aggressive:
-    return ACCEL_BOOST_MAX[0]
-  else:
-    raise NotImplementedError("Longitudinal personality not supported")
+def get_boost_max(follow_time):
+  # by the dash follow-distance bars, so the boost tracks what the driver sees
+  return ACCEL_BOOST_MAX[min(follow_time_bars(follow_time), len(ACCEL_BOOST_MAX)) - 1]
 
 
 class AccelBoostSP:
@@ -60,7 +54,7 @@ class AccelBoostSP:
     want = max(float(np.interp(brake_probs[1], BRAKE_PROB, [1.0, 0.0])), float(np.interp(gas_probs[1], GAS_PROB, [0.0, 1.0])))
     want = 0.0 if model.action.shouldStop else want
     want *= float(np.interp(abs(model.action.desiredCurvature) * sm['carState'].vEgo ** 2, CURVE_LAT_ACCEL, [1.0, 0.0]))
-    target = want * get_boost_max(sm['selfdriveState'].personality)
+    target = want * get_boost_max(get_follow_time(sm['selfdriveStateSP']))
     self.boost = float(np.clip(target, self.boost - ACCEL_BOOST_RELEASE * DT_MDL, self.boost + ACCEL_BOOST_BUILD * DT_MDL))
     speed_scale = np.interp(sm['carState'].vEgo, [ACCEL_BOOST_MIN_SPEED, 2 * ACCEL_BOOST_MIN_SPEED], [0.0, 1.0])
     self.total_boost = self.boost * speed_scale * np.interp(output_a_target_e2e, [-0.7, -0.2, 5.0], [0.0, 1.0, 1.0], right=0.0)

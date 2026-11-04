@@ -59,7 +59,7 @@ class CruiseLayout(Widget):
 
     self.accel_boost_toggle = toggle_item_sp(
       title=tr("Acceleration Boost"),
-      description=tr("Adds a small push on top of sunnypilot's own acceleration, stronger in Aggressive and gentler in Relaxed. " +
+      description=tr("Adds a small push on top of sunnypilot's own acceleration, stronger at shorter follow distances and gentler at longer ones. " +
                      "Eases off in curves and when sunnypilot slows or stops. Never goes past your set speed, and lead-car following still comes first."),
       param="AccelBoostSP")
 

@@ -15,12 +15,12 @@ from openpilot.sunnypilot import PARAMS_UPDATE_PERIOD
 from openpilot.sunnypilot.selfdrive.controls.lib.accel_boost import AccelBoostSP, ACCEL_BOOST_MAX
 
 
-def make_sm(brake_prob=0.05, gas_prob=0.3, lat_accel=0.0, v_ego=30.0, personality=0, enabled=True, should_stop=False):
+def make_sm(brake_prob=0.05, gas_prob=0.3, lat_accel=0.0, v_ego=30.0, follow_time=0.9, enabled=True, should_stop=False):
   meta = SimpleNamespace(disengagePredictions=SimpleNamespace(brakePressProbs=[0.0, brake_prob, 0.0, 0.0, 0.0, 0.0],
                                                               gasPressProbs=[0.0, gas_prob, 0.0, 0.0, 0.0, 0.0]))
   action = SimpleNamespace(shouldStop=should_stop, desiredCurvature=lat_accel / v_ego ** 2)
   return {'modelV2': SimpleNamespace(meta=meta, action=action), 'carState': SimpleNamespace(vEgo=v_ego),
-          'selfdriveState': SimpleNamespace(enabled=enabled, personality=personality)}
+          'selfdriveState': SimpleNamespace(enabled=enabled), 'selfdriveStateSP': SimpleNamespace(followTime=follow_time)}
 
 
 def settle(sm, frames=100):
@@ -31,9 +31,13 @@ def settle(sm, frames=100):
 
 
 class TestAccelBoostSP(OpenpilotTestCase):
-  @parameterized.expand([(0,), (1,), (2,)])
-  def test_personality_max(self, personality):
-    assert abs(settle(make_sm(personality=personality)) - ACCEL_BOOST_MAX[personality]) < 1e-6
+  @parameterized.expand([(0.7, 0), (0.9, 0), (1.0, 1), (1.2, 1), (1.4, 2), (1.8, 2), (2.0, 2)])
+  def test_follow_time_max(self, follow_time, level):
+    assert abs(settle(make_sm(follow_time=follow_time)) - ACCEL_BOOST_MAX[level]) < 1e-6
+
+  def test_unset_follow_time(self):
+    # selfdriveStateSP not yet received: falls back to the default follow time (2 bars)
+    assert abs(settle(make_sm(follow_time=0.0)) - ACCEL_BOOST_MAX[1]) < 1e-6
 
   def test_brake_gate_closes(self):
     assert settle(make_sm(brake_prob=0.5)) == 0.0
