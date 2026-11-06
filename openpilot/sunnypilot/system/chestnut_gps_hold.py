@@ -2,7 +2,7 @@
 """
 Keeps the chestnut unpowered at boot until the 3X has a GPS fix. Its USB 3 link costs the 3X's GNSS ~8 dB:
 enough to block acquisition but not tracking, so a fix taken before the chestnut comes back survives it.
-modeld waits out the hold before loading the big model.
+modeld's big model loader waits out the hold while the small model drives.
 """
 import signal
 import sys
@@ -57,7 +57,7 @@ def main() -> None:
     while not hold.done(sm['gpsLocation'].hasFix, str(sm['carState'].gearShifter), time.monotonic()):
       sm.update(1000)
   finally:
-    # power the chestnut before modeld is let go
+    # power the chestnut before the big model loader is let go
     write_vbus(True)
     params.remove("ChestnutGpsHoldActive")
     cloudlog.event("chestnut gps hold end", fix=sm['gpsLocation'].hasFix, duration=round(time.monotonic() - st, 1),

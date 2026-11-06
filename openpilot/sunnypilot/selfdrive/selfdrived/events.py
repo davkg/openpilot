@@ -257,6 +257,14 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
       Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 2.),
   },
 
+  EventNameSP.bigModelAvailable: {
+    ET.PERMANENT: Alert(
+      "Big Model Ready",
+      "Disengage to switch",
+      AlertStatus.normal, AlertSize.mid,
+      Priority.LOW, VisualAlert.none, AudibleAlert.none, 3.),
+  },
+
   # short directional click on every set-speed step while holding inc/dec
   EventNameSP.cruiseStepUp: {
     ET.WARNING: Alert(

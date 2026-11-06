@@ -42,6 +42,7 @@ from openpilot.selfdrive.modeld.fill_model_msg import fill_model_msg, fill_drivi
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan
 from openpilot.selfdrive.modeld.helpers import MODELS_DIR, chestnut_present, chestnut_compiled, reproject_expected, modeld_pkl_path, load_oob, wait_for_chestnut
 from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
+from openpilot.sunnypilot.modeld_v2.big_model_loader import BigModelLoader
 from openpilot.sunnypilot.modeld_v2.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.lib.relc import RoadEdgeLaneChangeController
 
@@ -227,6 +228,9 @@ class ModelState(ModelStateBase):
     eye = np.eye(3, dtype=np.float32)
     dims = {'desire_pulse': ModelConstants.DESIRE_LEN, 'traffic_convention': 2, 'action_t': 2}
     self.run(dummy_frames, dict.fromkeys(self.vision_input_names, eye), {k: np.zeros(v, dtype=np.float32) for k, v in dims.items()})
+    self.reset_history()
+
+  def reset_history(self) -> None:
     self.packed_input[:] = 0
     for key in self.state_pairs:
       self.input_queues[key].assign(0).realize()
@@ -273,10 +277,8 @@ def main(demo=False):
   st = time.monotonic()
   cloudlog.warning("loading model")
   model = None
-  if CHESTNUT:
-    # the chestnut is unpowered during the boot GPS hold (chestnut_gps_hold), so loading now would time out
-    while params.get_bool("ChestnutGpsHoldActive"):
-      time.sleep(0.1)
+  small_first = CHESTNUT and camera_server == "reproject"  # a 3X: the small model drives while the big one loads behind it
+  if CHESTNUT and not small_first:
     big_model = None
     def load_big():
       nonlocal big_model
@@ -303,7 +305,12 @@ def main(demo=False):
   if model is None:
     model = small_model
   assert model is not None
-  params.put_bool("ChestnutLoading", False)
+  big_loader = None
+  if small_first:
+    big_loader = BigModelLoader(lambda: ModelState(vipc_client_main.width, vipc_client_main.height, True), params)
+    big_loader.start(model)
+  else:
+    params.put_bool("ChestnutLoading", False)
   cloudlog.warning(f"models loaded in {time.monotonic() - st:.1f}s, modeld starting")
 
   config_realtime_process(7, 54)
@@ -312,7 +319,7 @@ def main(demo=False):
   pub_socks = ["modelV2", "drivingModelData", "cameraOdometry", "modelDataV2SP"] + (["chestnutGpuState"] if CHESTNUT else [])
   pm = PubMaster(pub_socks)
   sm = SubMaster(["deviceState", "carState", "narrowRoadCameraState", "extrinsicsCalibration", "driverMonitoringState",
-                  "carControl", "controlsState", "lateralDelay"])
+                  "carControl", "controlsState", "lateralDelay", "carControlSP"])
 
   publish_state = PublishState()
   params = Params()
@@ -379,6 +386,8 @@ def main(demo=False):
       meta_extra = meta_main
 
     sm.update(0)
+    if big_loader is not None and (big_model := big_loader.update(sm, chestnut_state)) is not None:
+      model, run_count = big_model, 0
     desire = DH.desire
     is_rhd = sm["driverMonitoringState"].isRHD
     frame_id = sm["narrowRoadCameraState"].frameId

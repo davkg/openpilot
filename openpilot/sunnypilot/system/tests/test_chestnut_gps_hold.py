@@ -6,6 +6,7 @@ from unittest import mock
 
 from openpilot.common.params import Params
 from openpilot.common.test import OpenpilotTestCase
+from openpilot.sunnypilot.modeld_v2.big_model_loader import IN_CONTROL_SERVICES
 from openpilot.sunnypilot.system import chestnut_gps_hold
 from openpilot.sunnypilot.system.chestnut_gps_hold import DRIVE_TIMEOUT, GpsHold
 
@@ -120,10 +121,46 @@ class TestUpstreamSeams(OpenpilotTestCase):
           mock.patch("openpilot.sunnypilot.models.helpers.cable_connected", return_value=True)):
       assert get_active_source() == "chestnut"
 
-  def test_modelds_wait_out_the_hold(self):
+  def test_big_model_loader_waits_out_the_hold(self):
+    src = (OPENPILOT / "sunnypilot/modeld_v2/big_model_loader.py").read_text()
+    assert 'get_bool("ChestnutGpsHoldActive")' in src and "wait_for_chestnut()" in src
+
+  def test_modelds_load_the_big_model_behind_the_small(self):
     for path in ("selfdrive/modeld/modeld.py", "sunnypilot/modeld_v2/modeld.py"):
       src = (OPENPILOT / path).read_text()
-      assert 'get_bool("ChestnutGpsHoldActive")' in src and "wait_for_chestnut()" in src, path
+      assert src.index("big_loader.start(") < src.index("config_realtime_process(7, 54)"), f"{path}: the loader thread would inherit SCHED_FIFO"
+      assert "big_loader.update(sm, chestnut_state)" in src, path
+      assert all(f'"{s}"' in src for s in IN_CONTROL_SERVICES), f"{path}: in_control reads a service modeld doesn't subscribe to"
+
+  def test_big_model_loader_matches_the_native_load(self):
+    # big_model_loader._load mirrors this block, which upstream owns. When it changes, carry the change over, then update it here
+    for path, build in (("selfdrive/modeld/modeld.py", "ModelState(vipc_client_main.width, vipc_client_main.height, True)"),
+                        ("sunnypilot/modeld_v2/modeld.py", "ModelState(cam_w=vipc_client_main.width, cam_h=vipc_client_main.height, chestnut=True)")):
+      src = (OPENPILOT / path).read_text()
+      assert f"wait_for_chestnut()\n        m = {build}\n        m.warmup()\n        big_model = m\n" in src, path
+
+  def test_every_held_boot_loads_behind_the_small_model(self):
+    # the native load no longer waits out the hold: a boot that holds must be small_first, which both modelds decide from reprojection
+    from openpilot.cereal import custom
+    from openpilot.selfdrive.modeld import helpers
+    from openpilot.sunnypilot.models import helpers as model_helpers
+    helpers.reproject_expected.cache_clear()
+    model_helpers._tizi_with_chestnut.cache_clear()
+    self.addCleanup(helpers.reproject_expected.cache_clear)
+    self.addCleanup(model_helpers._tizi_with_chestnut.cache_clear)
+    with (mock.patch.object(helpers.HARDWARE, "get_device_type", return_value="tizi"),
+          mock.patch.object(helpers, "cable_connected", return_value=True), mock.patch.object(helpers, "chestnut_present", return_value=False),
+          mock.patch.object(helpers, "chestnut_compiled", return_value=True),
+          mock.patch.object(model_helpers, "cable_connected", return_value=True), mock.patch.object(model_helpers, "chestnut_present", return_value=False)):
+      for runner in (custom.ModelManagerSP.Runner.stock, custom.ModelManagerSP.Runner.tinygrad):
+        with mock.patch.object(model_helpers, "get_active_model_runner", return_value=runner):
+          assert model_helpers.reproject_active()
+
+  def test_what_the_big_model_loader_leans_on(self):
+    from tinygrad.engine import worker
+    assert "PARALLEL == 0" in Path(worker.__file__).read_text()  # start() turns the compile pool off with this
+    # the swap restarts this count so the next send reads the metrics
+    assert "self.sends % 100 == 1" in (OPENPILOT / "selfdrive/modeld/modeld.py").read_text()
 
   def test_tinygrad_usb_scan_is_clearable(self):
     # wait_for_chestnut clears this cached scan, the one the AMD USB device opens from
