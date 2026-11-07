@@ -151,6 +151,10 @@ class TestUpstreamSeams(OpenpilotTestCase):
       assert src.index("small_model_child.hand_over(") < src.index("config_realtime_process(7, 54)") < src.index("PubMaster(pub_socks)"), path
       assert "CHESTNUT = not small_child and" in src, f"{path}: the child must never open the chestnut"
 
+  def test_the_swap_is_not_a_failed_big_model(self):
+    # hand_over sets ChestnutActive before the big model publishes (route 00000189--0044a5c98a)
+    assert "not self.sm.alive['modelV2'] and not small_first.no_entry" in (OPENPILOT / "selfdrive/selfdrived/selfdrived.py").read_text()
+
   def test_reproject_frames_cover_what_the_small_model_maps(self):
     # the small model's warp flushes and maps a whole camerad buffer from each frame: a shorter ring slot segfaults modeld
     assert "Tensor.from_blob(ptr, (yuv_size,)" in (OPENPILOT / "sunnypilot/modeld_v2/model_adapters.py").read_text()
