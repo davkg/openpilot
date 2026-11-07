@@ -3,14 +3,11 @@ Loads the big model behind a small model that is already driving, so a 3X has a 
 waiting out the chestnut GPS hold and a 28-45 s load. The swap happens only while nothing is in control: the models'
 plans disagree, and a swap costs a frame or two and starts the big model from an empty history.
 """
-import faulthandler
-import os
 import threading
 import time
 from collections.abc import Callable
 from typing import Any
 
-from openpilot.common.hardware import COMMA_HARDWARE
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.modeld.helpers import wait_for_chestnut
@@ -40,14 +37,6 @@ class BigModelLoader:
 
   def start(self, small) -> None:
     """Before modeld goes realtime: a thread started after inherits SCHED_FIFO on modeld's core and preempts the frame loop."""
-    # TEMP bring-up: where routes 167/168's -11 dies (first small frames, stuck ~10 s). Drop this commit once parked tests are clean.
-    if COMMA_HARDWARE:
-      fault_log = open("/data/modeld_fault.log", "a")
-      fault_log.write(f"--- modeld pid {os.getpid()}\n")
-      fault_log.flush()
-      faulthandler.enable(fault_log)
-      faulthandler.dump_traceback_later(8, file=fault_log)
-
     self.small = small
     small.warmup()  # its first run stalls ~1 s
     from tinygrad.helpers import PARALLEL
