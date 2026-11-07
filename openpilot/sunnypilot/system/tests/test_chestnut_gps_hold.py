@@ -157,6 +157,25 @@ class TestUpstreamSeams(OpenpilotTestCase):
     # small_first's hold ends as the small model comes up too, which isn't the big model being ready
     assert "if self.big_model_loading and not hold and not loading:" in src
 
+  def test_the_ui_does_not_read_the_swap_as_a_failed_big_model(self):
+    # FAILED is sticky until offroad, and the swap clears ChestnutLoading while small frames still arrive (route 0000018d--c7e2905d72)
+    from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState
+
+    def state(loading, active, big, prev=ChestnutState.LOADING):
+      sm = mock.MagicMock()
+      sm.recv_frame = {"modelV2": 10}
+      sm.alive = {"modelV2": True}
+      sm.__getitem__.side_effect = lambda k: {"deviceState": mock.Mock(chestnutPresent=True), "modelV2": mock.Mock(big=big)}[k]
+      ui = mock.Mock(sm=sm, started=True, started_frame=0, chestnut_present=True, chestnut_compiled=True,
+                     chestnut_loading=loading, chestnut_active=active, chestnut_state=prev)
+      UIState._update_chestnut_state(ui)
+      return ui.chestnut_state
+
+    assert state(loading=True, active=None, big=False) == ChestnutState.LOADING  # the small model drives the load
+    assert state(loading=False, active=True, big=False) == ChestnutState.LOADING  # the swap, before the big model publishes
+    assert state(loading=False, active=True, big=True) == ChestnutState.ACTIVE
+    assert state(loading=False, active=False, big=False) == ChestnutState.FAILED  # a real fallback to the small model
+
   def test_reproject_frames_cover_what_the_small_model_maps(self):
     # the small model's warp flushes and maps a whole camerad buffer from each frame: a shorter ring slot segfaults modeld
     assert "Tensor.from_blob(ptr, (yuv_size,)" in (OPENPILOT / "sunnypilot/modeld_v2/model_adapters.py").read_text()

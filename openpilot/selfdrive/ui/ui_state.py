@@ -231,7 +231,8 @@ class UIState(UIStateSP):
                              ChestnutState.UNCOMPILED if detected else ChestnutState.DISCONNECTED)
       return
 
-    model_seen = self.sm.recv_frame["modelV2"] > self.started_frame
+    # a small-first boot publishes small frames until the swap (modeld_v2/small_model_child.py): wait for a big one
+    model_seen = self.sm.recv_frame["modelV2"] > self.started_frame and (self.sm["modelV2"].big or self.chestnut_active is False)
     if not self.chestnut_present:
       self.chestnut_state = ChestnutState.DISCONNECTED
     elif not self.chestnut_compiled:
