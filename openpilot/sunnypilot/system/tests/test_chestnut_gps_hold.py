@@ -176,6 +176,12 @@ class TestUpstreamSeams(OpenpilotTestCase):
       assert process_config.qcomgps(False, self.params, None)
     assert "chestnut_gps_hold" in process_config.managed_processes
 
+  def test_reproject_frames_cover_what_the_small_model_maps(self):
+    # the small model's warp flushes and maps a whole camerad buffer from each frame: a shorter ring slot segfaults modeld
+    assert "Tensor.from_blob(ptr, (yuv_size,)" in (OPENPILOT / "sunnypilot/modeld_v2/model_adapters.py").read_text()
+    reprojectd = (OPENPILOT / "selfdrive/modeld/reprojectd.py").read_text()
+    assert "np.zeros((2, get_nv12_info(*C4_CAM)[3])" in reprojectd and "C4_CAM[1], stage.out.shape[1], stride" in reprojectd
+
   def test_selfdrived_ignores_the_exited_hold(self):
     # one-shot: once it exits, processNotRunning would block engagement
     assert "'chestnut_gps_hold'" in (OPENPILOT / "selfdrive/selfdrived/selfdrived.py").read_text()

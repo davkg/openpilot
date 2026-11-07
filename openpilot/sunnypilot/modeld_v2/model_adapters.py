@@ -189,8 +189,8 @@ class NativeTinygradAdapter(BaseModelAdapter):
     for i, key in enumerate(self._vision_input_names):
       if key in bufs:
         data = bufs[key].data if hasattr(bufs[key], 'data') else bufs[key]
-        # the prebuilt warps take a whole camerad buffer, but reprojectd serves only the NV12 body: copy what the frame
-        # has, the warp reads nothing past the body and the slot's tail stays zero
+        # the prebuilt warps take a whole camerad buffer: copy what the frame has, the warp reads nothing past the NV12
+        # body and the slot's tail stays zero
         src = np.frombuffer(data, dtype=np.uint8)
         if src.size < self.frame_copy_size:
           raise ValueError(f"frame of {src.size} bytes is smaller than the NV12 body of {self.frame_copy_size}")
