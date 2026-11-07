@@ -88,6 +88,14 @@ class TestHandOver(OpenpilotTestCase):
     with mock.patch(f"{MOD}.messaging.SubMaster", return_value=sm):
       self.child.hand_over(self.params, big_ready)
 
+  def test_selfdrived_can_read_the_swap_before_the_model_stops(self):
+    def killed():
+      assert self.params.get_bool("ChestnutActive")
+      assert not self.params.get_bool("ChestnutLoading")
+    self.child.proc.kill.side_effect = killed
+    self.hand_over(make_sm())
+    self.child.proc.kill.assert_called_once()
+
   def test_swaps_as_soon_as_nothing_is_in_control(self):
     self.hand_over(make_sm())
     self.child.proc.kill.assert_called_once()

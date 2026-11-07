@@ -52,6 +52,10 @@ class SmallModelChild:
     cycle would restart the stack mid-drive: modeld only takes over if the child dies."""
     if big_ready:
       self._wait_until_free(params)
+      # while the small model still runs: selfdrived reads the swap from these, and holds off the errors its gap in modelV2 raises.
+      # A write can take over a second on a drive (route 0000018a--7641dcb651), so neither can wait for after the kill
+      params.put_bool("ChestnutActive", True, block=True)
+      params.put_bool("ChestnutLoading", False, block=True)
       self.proc.kill()
     else:
       cloudlog.error("big model load gave up, staying on the small model")
@@ -59,8 +63,6 @@ class SmallModelChild:
       params.put_bool("ChestnutLoading", False)
 
     cloudlog.warning(f"small model child exited: {self.proc.wait()}")
-    if big_ready:
-      params.put_bool("ChestnutActive", True, block=True)  # before modeld clears ChestnutLoading: selfdrived reads the swap from both
 
   def _wait_until_free(self, params: Params) -> None:
     sm = messaging.SubMaster(list(IN_CONTROL_SERVICES))

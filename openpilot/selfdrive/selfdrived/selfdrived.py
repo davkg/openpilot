@@ -208,7 +208,7 @@ class SelfdriveD(CruiseHelper):
 
     big_active = self.params.get("ChestnutActive")
     chestnut_present = self.sm['deviceState'].chestnutPresent
-    # a small-first swap stops modelV2 for ~0.6 s after setting ChestnutActive
+    # a small-first swap stops modelV2 for ~1 s after setting ChestnutActive
     model_unavailable = big_active is True and self.sm.seen['modelV2'] and not self.sm.alive['modelV2'] and not small_first.no_entry
     big_failed = big_active is False or model_unavailable or (self.big_model_active and not chestnut_present)
     if big_failed and not self.big_model_failed:
