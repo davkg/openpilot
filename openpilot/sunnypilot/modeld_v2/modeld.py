@@ -20,6 +20,7 @@ from setproctitle import setproctitle
 import openpilot.cereal.messaging as messaging
 from openpilot.common.hardware import COMMA_HARDWARE
 from openpilot.selfdrive.modeld.helpers import chestnut_present, wait_for_chestnut
+from openpilot.sunnypilot.modeld_v2.small_model_child import SmallModelChild, is_small_child
 from openpilot.cereal import log
 from opendbc.car.structs import car
 from openpilot.cereal.services import SERVICE_LIST
@@ -264,19 +265,24 @@ def main(demo=False):
   cloudlog.bind(daemon=PROCESS_NAME)
   setproctitle(PROCESS_NAME)
 
-  CHESTNUT = _find_driving_pkl(get_active_bundle(chestnut=True)) is not None and (chestnut_present() or cable_connected())
+  small_child = is_small_child()
+  CHESTNUT = not small_child and _find_driving_pkl(get_active_bundle(chestnut=True)) is not None and (chestnut_present() or cable_connected())
   if CHESTNUT:
     from tinygrad.runtime.ops_amd import AMDDevice
     AMDDevice.wait_timeout_ms = 3000
 
   params = Params()
-  params.put_bool("ChestnutLoading", CHESTNUT)
-  params.remove("ChestnutActive")
+  if not small_child:
+    params.put_bool("ChestnutLoading", CHESTNUT)
+    params.remove("ChestnutActive")
 
   gc.disable()
 
   # visionipc clients: a 3X with a chestnut gets reprojectd's comma 4 frames, as stock modeld does
   camera_server = "reproject" if reproject_active(params) else "camerad"
+  small_model_child = None
+  if CHESTNUT and camera_server == "reproject":
+    small_model_child = SmallModelChild("openpilot.sunnypilot.modeld_v2.modeld")
   while True:
     available_streams = VisionIpcClient.available_streams(camera_server, block=False)
     if available_streams:
@@ -321,7 +327,13 @@ def main(demo=False):
     loader.start()
     loader.join(BIG_MODEL_TIMEOUT)
     model = big_model
-    if model is None and not params.get_bool("ChestnutRetry"):
+    if small_model_child is not None:
+      if model is None:  # once more, a crank can cut the chestnut power during the load
+        loader = threading.Thread(target=load_big, daemon=True)
+        loader.start()
+        loader.join(BIG_MODEL_TIMEOUT)
+        model = big_model
+    elif model is None and not params.get_bool("ChestnutRetry"):
       # a crank can cut the chestnut power during the load, retry once with an onroad cycle
       cloudlog.error("big model load failed, cycling onroad to retry")
       params.put_bool("ChestnutRetry", True)
@@ -332,8 +344,13 @@ def main(demo=False):
   small_model = ModelState(cam_w=vipc_client_main.width, cam_h=vipc_client_main.height, chestnut=False) if model is None or CHESTNUT else None
   if model is None:
     model = small_model
-  params.put_bool("ChestnutLoading", False)
   assert model is not None
+  if small_child:
+    model.warmup()  # its first run stalls ~1 s
+  else:
+    if small_model_child is not None:
+      small_model_child.hand_over(params, model.chestnut)
+    params.put_bool("ChestnutLoading", False)
   cloudlog.warning(f"models loaded in {time.monotonic() - st:.1f}s, modeld starting")
 
   config_realtime_process(7, 54)

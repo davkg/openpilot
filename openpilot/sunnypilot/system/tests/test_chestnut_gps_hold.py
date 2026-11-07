@@ -139,6 +139,18 @@ class TestUpstreamSeams(OpenpilotTestCase):
       assert process_config.qcomgps(False, self.params, None)
     assert "chestnut_gps_hold" in process_config.managed_processes
 
+  def test_modelds_run_the_small_model_in_a_child(self):
+    from openpilot.sunnypilot.modeld_v2.small_model_child import IN_CONTROL_SERVICES
+    from openpilot.cereal.services import SERVICE_LIST
+    assert all(s in SERVICE_LIST for s in IN_CONTROL_SERVICES)
+    for path, module in (("selfdrive/modeld/modeld.py", "openpilot.selfdrive.modeld.modeld"),
+                         ("sunnypilot/modeld_v2/modeld.py", "openpilot.sunnypilot.modeld_v2.modeld")):
+      src = (OPENPILOT / path).read_text()
+      assert f'SmallModelChild("{module}")' in src, path
+      # the child can't hold the swap up: modeld only publishes once it's gone
+      assert src.index("small_model_child.hand_over(") < src.index("config_realtime_process(7, 54)") < src.index("PubMaster(pub_socks)"), path
+      assert "CHESTNUT = not small_child and" in src, f"{path}: the child must never open the chestnut"
+
   def test_reproject_frames_cover_what_the_small_model_maps(self):
     # the small model's warp flushes and maps a whole camerad buffer from each frame: a shorter ring slot segfaults modeld
     assert "Tensor.from_blob(ptr, (yuv_size,)" in (OPENPILOT / "sunnypilot/modeld_v2/model_adapters.py").read_text()
