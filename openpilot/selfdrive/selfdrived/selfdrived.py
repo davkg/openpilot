@@ -32,7 +32,6 @@ from openpilot.sunnypilot.selfdrive.car.car_specific import CarSpecificEventsSP
 from openpilot.sunnypilot.selfdrive.car.cruise_helpers import CruiseHelper
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.controller import IntelligentCruiseButtonManagement
 from openpilot.sunnypilot.selfdrive.selfdrived.button_state_tracker import ButtonStateTracker
-from openpilot.sunnypilot.selfdrive.selfdrived.small_first import SmallFirstEvents
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 
 REPLAY = "REPLAY" in os.environ
@@ -87,7 +86,6 @@ class SelfdriveD(CruiseHelper):
     self.big_model_active = False
     self.big_model_failed = False
     self.big_model_ready_t = 0.
-    self.small_first = SmallFirstEvents()
 
     # Setup sockets
     self.pm = messaging.PubMaster(['selfdriveState', 'onroadEvents'] + ['selfdriveStateSP', 'onroadEventsSP'])
@@ -196,13 +194,10 @@ class SelfdriveD(CruiseHelper):
       self.startup_event = None
 
     loading = self.params.get_bool("ChestnutLoading")
-    small_first = self.small_first.update(self.sm, self.params, loading, self.enabled or self.mads.enabled, self.events, self.events_sp)
-    if small_first.switched:
-      self.big_model_ready_t = time.monotonic()
     if self.big_model_loading and not loading:
       self.big_model_ready_t = time.monotonic()
       self.events_sp.add(custom.OnroadEventSP.EventName.bigModelReady)
-    self.big_model_loading = small_first.hold
+    self.big_model_loading = loading
     if self.big_model_loading:
       self.events.add(EventName.bigModelLoading)
 

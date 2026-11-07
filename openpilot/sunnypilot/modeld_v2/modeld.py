@@ -40,7 +40,6 @@ from openpilot.selfdrive.modeld.modeld import ChestnutGpuState
 
 from openpilot.sunnypilot.modeld_v2.fill_model_msg import fill_model_msg, fill_pose_msg, PublishState, get_curvature_from_output
 from openpilot.sunnypilot.modeld_v2.parse_model_outputs import Parser
-from openpilot.sunnypilot.modeld_v2.big_model_loader import BigModelLoader
 from openpilot.sunnypilot.modeld_v2.blendful import Blendful
 from openpilot.sunnypilot.modeld_v2.constants import ModelConstants, Plan
 from openpilot.sunnypilot.modeld_v2.meta_helper import load_meta_constants
@@ -146,9 +145,6 @@ class ModelState(ModelStateBase):
   def warmup(self) -> None:
     dummy_frames, transforms, dummy_inputs = self.adapter.get_dummy_inputs()
     self.run(dummy_frames, transforms, dummy_inputs)
-    self.reset_history()
-
-  def reset_history(self) -> None:
     self.adapter.reset_warmup_buffers()
     self.prev_desire[:] = 0
 
@@ -307,8 +303,10 @@ def main(demo=False):
   st = time.monotonic()
 
   model = None
-  small_first = CHESTNUT and camera_server == "reproject"  # a 3X: the small model drives while the big one loads behind it
-  if CHESTNUT and not small_first:
+  if CHESTNUT:
+    # the chestnut is unpowered during the boot GPS hold (chestnut_gps_hold), so loading now would time out
+    while params.get_bool("ChestnutGpsHoldActive"):
+      time.sleep(0.1)
     big_model = None
     def load_big():
       nonlocal big_model
@@ -334,13 +332,8 @@ def main(demo=False):
   small_model = ModelState(cam_w=vipc_client_main.width, cam_h=vipc_client_main.height, chestnut=False) if model is None or CHESTNUT else None
   if model is None:
     model = small_model
+  params.put_bool("ChestnutLoading", False)
   assert model is not None
-  big_loader = None
-  if small_first:
-    big_loader = BigModelLoader(lambda: ModelState(cam_w=vipc_client_main.width, cam_h=vipc_client_main.height, chestnut=True), params)
-    big_loader.start(model)
-  else:
-    params.put_bool("ChestnutLoading", False)
   cloudlog.warning(f"models loaded in {time.monotonic() - st:.1f}s, modeld starting")
 
   config_realtime_process(7, 54)
@@ -349,7 +342,7 @@ def main(demo=False):
   pub_socks = ["modelV2", "drivingModelData", "cameraOdometry", "modelDataV2SP"] + (["chestnutGpuState"] if CHESTNUT else [])
   pm = PubMaster(pub_socks)
   sm = SubMaster(["deviceState", "carState", "narrowRoadCameraState", "extrinsicsCalibration", "driverMonitoringState",
-                  "carControl", "controlsState", "lateralDelay", "carControlSP"])
+                  "carControl", "controlsState", "lateralDelay"])
 
   publish_state = PublishState()
   chestnut_state = ChestnutGpuState(pm, model.chestnut) if CHESTNUT else None
@@ -376,6 +369,7 @@ def main(demo=False):
   cloudlog.info("modeld got CarParams: %s", CP.brand)
 
   # TODO Move smooth seconds to action function
+  long_delay = CP.longitudinalActuatorDelay + model.LONG_SMOOTH_SECONDS
   prev_action = log.ModelDataV2.Action()
 
   DH = DesireHelper()
@@ -418,8 +412,6 @@ def main(demo=False):
       meta_extra = meta_main
 
     sm.update(0)
-    if big_loader is not None and (big_model := big_loader.update(sm, chestnut_state)) is not None:
-      model, run_count = big_model, 0
     desire = DH.desire
     is_rhd = sm["driverMonitoringState"].isRHD
     frame_id = sm["narrowRoadCameraState"].frameId
@@ -430,7 +422,6 @@ def main(demo=False):
       camera_offset_helper.set_offset(params.get("CameraOffset", return_default=True))
       blendful_enabled = params.get_bool("Blendful")
     lat_delay = model.lat_delay + model.LAT_SMOOTH_SECONDS
-    long_delay = CP.longitudinalActuatorDelay + model.LONG_SMOOTH_SECONDS  # per frame: the swap changes the model
     if sm.updated["extrinsicsCalibration"] and sm.seen['narrowRoadCameraState'] and sm.seen['deviceState']:
       device_from_calib_euler = np.array(sm["extrinsicsCalibration"].rpyCalib, dtype=np.float32)
       dc = DEVICE_CAMERAS[("mici", "os04c10") if camera_server == "reproject" else (str(sm['deviceState'].deviceType), str(sm['narrowRoadCameraState'].sensor))]

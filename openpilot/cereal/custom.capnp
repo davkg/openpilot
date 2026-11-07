@@ -371,7 +371,6 @@ struct OnroadEventSP @0xda96579883444c35 {
     bigModelReady @25;
     cruiseStepUp @26;
     cruiseStepDown @27;
-    bigModelAvailable @28;
   }
 }
 
