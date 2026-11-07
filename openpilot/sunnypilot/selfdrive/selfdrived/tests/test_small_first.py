@@ -51,12 +51,14 @@ class TestSmallFirstEvents(OpenpilotTestCase):
     events = SmallFirstEvents()
     chimes = []
     held = False
-    for now, loading, small_up in [(0., True, False), (9., True, True), (40., False, False), (44., False, True), (45., False, True), (46., False, True)]:
+    end = 40. + SWAP_HOLD_S
+    ticks = [(0., True, False), (9., True, True), (40., False, False), (end - 1., False, True), (end, False, True), (end + 1., False, True)]
+    for now, loading, small_up in ticks:
       h = hold(events, now, loading=loading, big_active=None if loading else True, small_up=small_up)
       if held and not h and not loading:
         chimes.append(now)
       held = h
-    assert chimes == [45.]
+    assert chimes == [end]
 
   def test_failed_load_does_not_hold(self):
     events = SmallFirstEvents()

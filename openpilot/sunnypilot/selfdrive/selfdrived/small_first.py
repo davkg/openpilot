@@ -10,7 +10,9 @@ import time
 from openpilot.cereal import custom
 
 SETTLE_S = 5.  # bounds the wait for the services downstream of the first model frame
-SWAP_HOLD_S = 5.  # about what the big model's history takes to fill: 99 frames at 20 Hz
+# covers the swap's 0.3-1.2 s without a model. Kept short: a set press refused here still lets the panda allow controls, and
+# one accepted within its ~2 s to drop them ends in Controls Mismatch (route 00000190--68f82fd3ed)
+SWAP_HOLD_S = 2.
 
 
 class SmallFirstEvents:
