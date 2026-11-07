@@ -152,7 +152,10 @@ class TestUpstreamSeams(OpenpilotTestCase):
 
   def test_the_swap_is_not_a_failed_big_model(self):
     # hand_over sets ChestnutActive before the big model publishes (route 00000189--0044a5c98a)
-    assert "not self.sm.alive['modelV2'] and not small_first.no_entry" in (OPENPILOT / "selfdrive/selfdrived/selfdrived.py").read_text()
+    src = (OPENPILOT / "selfdrive/selfdrived/selfdrived.py").read_text()
+    assert "not self.sm.alive['modelV2'] and not self.big_model_loading" in src
+    # small_first's hold ends as the small model comes up too, which isn't the big model being ready
+    assert "if self.big_model_loading and not hold and not loading:" in src
 
   def test_reproject_frames_cover_what_the_small_model_maps(self):
     # the small model's warp flushes and maps a whole camerad buffer from each frame: a shorter ring slot segfaults modeld

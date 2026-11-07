@@ -196,20 +196,18 @@ class SelfdriveD(CruiseHelper):
       self.startup_event = None
 
     loading = self.params.get_bool("ChestnutLoading")
-    small_first = self.small_first.update(self.sm, self.params, loading, self.enabled or self.mads.enabled, self.events, self.events_sp)
-    if small_first.switched:
-      self.big_model_ready_t = time.monotonic()
-    if self.big_model_loading and not loading:
+    hold = self.small_first.update(self.sm, self.params, loading, self.enabled or self.mads.enabled, self.events_sp)
+    if self.big_model_loading and not hold and not loading:
       self.big_model_ready_t = time.monotonic()
       self.events_sp.add(custom.OnroadEventSP.EventName.bigModelReady)
-    self.big_model_loading = small_first.hold
+    self.big_model_loading = hold
     if self.big_model_loading:
       self.events.add(EventName.bigModelLoading)
 
     big_active = self.params.get("ChestnutActive")
     chestnut_present = self.sm['deviceState'].chestnutPresent
     # a small-first swap stops modelV2 for ~1 s after setting ChestnutActive
-    model_unavailable = big_active is True and self.sm.seen['modelV2'] and not self.sm.alive['modelV2'] and not small_first.no_entry
+    model_unavailable = big_active is True and self.sm.seen['modelV2'] and not self.sm.alive['modelV2'] and not self.big_model_loading
     big_failed = big_active is False or model_unavailable or (self.big_model_active and not chestnut_present)
     if big_failed and not self.big_model_failed:
       self.events.add(EventName.bigModelFailed)
