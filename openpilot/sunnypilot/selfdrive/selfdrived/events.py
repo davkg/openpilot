@@ -262,7 +262,7 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "Big Model Ready",
       "Disengage to switch",
       AlertStatus.normal, AlertSize.mid,
-      Priority.LOW, VisualAlert.none, AudibleAlert.none, 3.),
+      Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 2.),
   },
 
   # short directional click on every set-speed step while holding inc/dec
