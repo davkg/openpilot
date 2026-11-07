@@ -139,17 +139,16 @@ class TestUpstreamSeams(OpenpilotTestCase):
       assert process_config.qcomgps(False, self.params, None)
     assert "chestnut_gps_hold" in process_config.managed_processes
 
-  def test_modelds_run_the_small_model_in_a_child(self):
+  def test_modeld_runs_the_small_model_in_a_child(self):
     from openpilot.sunnypilot.modeld_v2.small_model_child import IN_CONTROL_SERVICES
     from openpilot.cereal.services import SERVICE_LIST
     assert all(s in SERVICE_LIST for s in IN_CONTROL_SERVICES)
-    for path, module in (("selfdrive/modeld/modeld.py", "openpilot.selfdrive.modeld.modeld"),
-                         ("sunnypilot/modeld_v2/modeld.py", "openpilot.sunnypilot.modeld_v2.modeld")):
-      src = (OPENPILOT / path).read_text()
-      assert f'SmallModelChild("{module}")' in src, path
-      # the child can't hold the swap up: modeld only publishes once it's gone
-      assert src.index("small_model_child.hand_over(") < src.index("config_realtime_process(7, 54)") < src.index("PubMaster(pub_socks)"), path
-      assert "CHESTNUT = not small_child and" in src, f"{path}: the child must never open the chestnut"
+    src = (OPENPILOT / "sunnypilot/modeld_v2/modeld.py").read_text()
+    assert 'SmallModelChild("openpilot.sunnypilot.modeld_v2.modeld")' in src
+    # the child can't hold the swap up: modeld only publishes once it's gone
+    assert src.index("small_model_child.hand_over(") < src.index("config_realtime_process(7, 54)") < src.index("PubMaster(pub_socks)")
+    assert "CHESTNUT = not small_child and" in src, "the child must never open the chestnut"
+    assert src.index("loader.join(BIG_MODEL_TIMEOUT)") < src.index("small_model_child.finish_load("), "a load past modeld's timeout must not read as failed"
 
   def test_the_swap_is_not_a_failed_big_model(self):
     # hand_over sets ChestnutActive before the big model publishes (route 00000189--0044a5c98a)

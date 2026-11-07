@@ -328,11 +328,8 @@ def main(demo=False):
     loader.join(BIG_MODEL_TIMEOUT)
     model = big_model
     if small_model_child is not None:
-      if model is None:  # once more, a crank can cut the chestnut power during the load
-        loader = threading.Thread(target=load_big, daemon=True)
-        loader.start()
-        loader.join(BIG_MODEL_TIMEOUT)
-        model = big_model
+      small_model_child.finish_load(loader, load_big, lambda: big_model is not None)
+      model = big_model
     elif model is None and not params.get_bool("ChestnutRetry"):
       # a crank can cut the chestnut power during the load, retry once with an onroad cycle
       cloudlog.error("big model load failed, cycling onroad to retry")

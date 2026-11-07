@@ -1,16 +1,18 @@
 """
-Runs the small model in a child process while modeld loads the big model, so a 3X has a model ~10 s after boot instead of
-waiting out the chestnut GPS hold and a 28-45 s load. The load can't share a process with the frame loop: it stalled frames
+Runs the small model in a child process while modeld loads the big model, so a 3X has a model ~18 s after boot instead of
+waiting out the chestnut GPS hold and a ~50 s load. The load can't share a process with the frame loop: it stalled frames
 ~2 s on Python's lock, and tinygrad's process-wide Context flags made the frame raise (route 00000187--c14022e911).
 
-modeld stops the child and takes over only while nothing is in control: the models' plans disagree, and the swap costs a few
-frames and starts the big model from an empty history.
+modeld stops the child and takes over only while nothing is in control: the models' plans disagree, and the swap costs ~1 s
+of frames and starts the big model from an empty history.
 """
 import ctypes
 import os
 import signal
 import subprocess
 import sys
+import threading
+from collections.abc import Callable
 
 from openpilot.cereal import messaging
 from openpilot.common.basedir import BASEDIR
@@ -20,6 +22,7 @@ from openpilot.common.swaglog import cloudlog
 PARENT_ENV = "MODELD_SMALL_CHILD_OF"
 PR_SET_PDEATHSIG = 1
 IN_CONTROL_SERVICES = ('carState', 'carControl', 'carControlSP')
+SLOW_LOAD_S = 120.  # the small model drives meanwhile, so a slow load only delays the swap
 
 
 def in_control(sm) -> bool:
@@ -46,6 +49,17 @@ class SmallModelChild:
     # DEV: never probe the eGPU, modeld owns it (its USB lock)
     env = os.environ | {PARENT_ENV: str(os.getpid()), "DEV": "QCOM"}
     self.proc = subprocess.Popen([sys.executable, "-m", module], cwd=BASEDIR, env=env)
+
+  def finish_load(self, loader: threading.Thread, load: Callable[[], None], loaded: Callable[[], bool]) -> None:
+    """Past modeld's load timeout, which is for a boot with no model to drive. Retries once, as a crank can cut the chestnut
+    power during the load, but never beside a load still running: two can't share a process."""
+    loader.join(SLOW_LOAD_S)
+    if loader.is_alive():
+      cloudlog.error("big model load timed out")
+    elif not loaded():
+      retry = threading.Thread(target=load, daemon=True)
+      retry.start()
+      retry.join(SLOW_LOAD_S)
 
   def hand_over(self, params: Params, big_ready: bool) -> None:
     """Blocks until modeld should run the frame loop itself. The small model drives on without a big model, as an onroad

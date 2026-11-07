@@ -67,6 +67,31 @@ class TestSpawn(OpenpilotTestCase):
     assert params.get_bool("ChestnutActive")
 
 
+class TestFinishLoad(OpenpilotTestCase):
+  def finish(self, loader_alive, loaded):
+    loader, retry, load = mock.Mock(), mock.Mock(), mock.Mock()
+    loader.is_alive.return_value = loader_alive
+    child = SmallModelChild.__new__(SmallModelChild)
+    with mock.patch(f"{MOD}.threading.Thread", return_value=retry) as thread:
+      child.finish_load(loader, load, lambda: loaded)
+    loader.join.assert_called_once()
+    return thread, retry, load
+
+  def test_a_finished_load_is_not_retried(self):
+    thread, _, _ = self.finish(False, True)
+    thread.assert_not_called()
+
+  def test_never_retries_beside_a_load_still_running(self):
+    thread, _, _ = self.finish(True, False)
+    thread.assert_not_called()
+
+  def test_retries_a_failed_load_once(self):
+    thread, retry, load = self.finish(False, False)
+    thread.assert_called_once_with(target=load, daemon=True)
+    retry.start.assert_called_once()
+    retry.join.assert_called_once()
+
+
 class TestHandOver(OpenpilotTestCase):
   def setUp(self):
     super().setUp()
