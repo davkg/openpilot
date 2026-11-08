@@ -19,6 +19,7 @@ import mmap
 import os
 import pickle
 import struct
+import time
 
 MAGIC = b"SPTGPLN1"
 ALIGNMENT = 256
@@ -117,14 +118,21 @@ def _extended(path: str, extend) -> tuple[dict, dict, str]:
   return parts | added, extras, _parts_digest(added) if added else ""
 
 
-def load_model(path: str, device_map: dict | None = None, verify: bool = True, cache: bool = True, extend=None) -> dict:
+def load_model(path: str, device_map: dict | None = None, verify: bool = True, cache: bool = True, extend=None, timings: dict | None = None) -> dict:
+  timings = {} if timings is None else timings  # seconds per phase, for the load log
+  st = time.monotonic()
   parts, extras, extra = _extended(path, extend)
+  timings["read"], st = time.monotonic() - st, time.monotonic()
   if cache and (cached := _read_cache(path, parts, device_map, extra)) is not None:
+    timings["cache_load"] = time.monotonic() - st
     return extras | cached
+  timings["cache_miss"], st = time.monotonic() - st, time.monotonic()
   shared: dict = {}
   jits = {key: PlainJit(header, blob, device_map, verify, shared) for key, (header, blob) in parts.items()}
+  timings["build"], st = time.monotonic() - st, time.monotonic()
   if cache:
     _write_cache(path, jits, device_map, extra)
+    timings["cache_write"] = time.monotonic() - st
   return extras | jits
 
 

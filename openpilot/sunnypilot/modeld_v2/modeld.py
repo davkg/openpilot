@@ -9,6 +9,7 @@ See the LICENSE.md file in the root directory for more details.
 from collections.abc import Callable
 from functools import partial
 import gc
+import json
 import os
 os.environ['GMMU'] = '0'
 from tinygrad.device import Device
@@ -89,7 +90,7 @@ class ModelState(ModelStateBase):
   inputs: dict[str, np.ndarray]
   prev_desire: np.ndarray
 
-  def __init__(self, cam_w: int, cam_h: int, chestnut: bool = False):
+  def __init__(self, cam_w: int, cam_h: int, chestnut: bool = False, timings: dict | None = None):
     ModelStateBase.__init__(self)
 
     env_pkl = os.environ.get('COMBINED_MODEL_PKL')
@@ -108,17 +109,19 @@ class ModelState(ModelStateBase):
 
     pkl_path = _find_driving_pkl(model_bundle)
     assert pkl_path is not None, f"No driving pkl found for {'chestnut' if chestnut else 'small model'} — all models must be compiled with compile_modeld.py"
-    self._init_combined(pkl_path, cam_w, cam_h, model_bundle)
+    self._init_combined(pkl_path, cam_w, cam_h, model_bundle, {} if timings is None else timings)
 
-  def _init_combined(self, pkl_path, cam_w, cam_h, bundle):
+  def _init_combined(self, pkl_path, cam_w, cam_h, bundle, timings: dict):
     cloudlog.warning(f"loading combined pkl: {pkl_path}")
-    jits = load_model(pkl_path, extend=fused_with_warp(cam_w, cam_h, self.chestnut))
+    jits = load_model(pkl_path, extend=fused_with_warp(cam_w, cam_h, self.chestnut), timings=timings)
 
     metadata = jits['metadata']
     self.WARP_DEV = metadata.get('warp_dev', 'QCOM') if COMMA_HARDWARE else 'CPU'
     self.DEV = ('AMD' if self.chestnut else 'QCOM') if COMMA_HARDWARE else 'CPU'
     self.QUEUE_DEV = self.DEV
+    st = time.monotonic()
     self.adapter = get_model_adapter(jits, cam_w, cam_h, self.DEV, self.QUEUE_DEV, self.WARP_DEV, self.chestnut)
+    timings["adapter"] = time.monotonic() - st
     self.vision_output_slices = self.adapter.vision_output_slices
     self.policy_output_slices = self.adapter.policy_output_slices
     self._policy_slices_list = self.adapter._policy_slices_list
@@ -310,13 +313,23 @@ def main(demo=False):
     big_model = None
     def load_big():
       nonlocal big_model
+      # seconds per load phase, logged to the rlog: of these only "read" could run while the hold keeps the chestnut unpowered
+      timings = {"hold": time.monotonic() - st}
       try:
+        t = time.monotonic()
         wait_for_chestnut()
-        m = ModelState(cam_w=vipc_client_main.width, cam_h=vipc_client_main.height, chestnut=True)
+        timings["enumerate"], t = time.monotonic() - t, time.monotonic()
+        Device["AMD"]  # opened first only to time it apart from the weight upload
+        timings["open"] = time.monotonic() - t
+        m = ModelState(cam_w=vipc_client_main.width, cam_h=vipc_client_main.height, chestnut=True, timings=timings)
+        t = time.monotonic()
         m.warmup()
+        timings["warmup"] = time.monotonic() - t
         big_model = m
       except Exception:
         cloudlog.exception("chestnut load failed")
+      finally:
+        cloudlog.warning(f"big model load phases (s): {json.dumps({k: round(v, 2) for k, v in timings.items()})}")
     loader = threading.Thread(target=load_big, daemon=True)
     loader.start()
     loader.join(BIG_MODEL_TIMEOUT)
