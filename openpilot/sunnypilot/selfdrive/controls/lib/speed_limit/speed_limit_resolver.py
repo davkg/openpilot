@@ -112,7 +112,8 @@ class SpeedLimitResolver:
 
   def _get_from_car_state(self, sm: messaging.SubMaster) -> None:
     self._reset_limit_sources(SpeedLimitSource.car)
-    self.limit_solutions[SpeedLimitSource.car] = sm['carStateSP'].speedLimit
+    # ignore 20 mph: the camera reads "20 mph city-wide unless posted" signs as a limit
+    self.limit_solutions[SpeedLimitSource.car] = sm['carStateSP'].speedLimit if round(sm['carStateSP'].speedLimit * CV.MS_TO_MPH) != 20 else 0.
     self.distance_solutions[SpeedLimitSource.car] = 0.
 
   def _get_from_map_data(self, sm: messaging.SubMaster) -> None:
