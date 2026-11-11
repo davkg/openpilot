@@ -93,7 +93,8 @@ def setup_interfaces(CI: CarInterfaceBase, params: Params | None = None) -> None
   nnlc_enabled = _initialize_neural_network_lateral_control(CI.CP, CI.CP_SP, params)
   _initialize_intelligent_cruise_button_management(CI.CP, CI.CP_SP, params)
   _initialize_torque_lateral_control(CI, CI.CP, enforce_torque, nnlc_enabled)
-  _cleanup_unsupported_params(CI.CP, CI.CP_SP)
+  if CI.CP.brand != "mock":
+    _cleanup_unsupported_params(CI.CP, CI.CP_SP)
 
   try:
     STATSLOGSP.raw('sunnypilot.car_params', CI.CP.to_dict())

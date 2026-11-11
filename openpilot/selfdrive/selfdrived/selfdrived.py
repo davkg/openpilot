@@ -121,7 +121,7 @@ class SelfdriveD(CruiseHelper):
     car_recognized = self.CP.brand != 'mock'
 
     # cleanup old params
-    if not self.CP.alphaLongitudinalAvailable:
+    if car_recognized and not self.CP.alphaLongitudinalAvailable:
       self.params.remove("AlphaLongitudinalEnabled")
 
     self.CS_prev = car.CarState.new_message()

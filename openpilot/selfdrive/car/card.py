@@ -165,7 +165,8 @@ class Car:
     cp_bytes = self.CP.to_bytes()
     self.params.put("CarParams", cp_bytes, block=True)
     self.params.put("CarParamsCache", cp_bytes)
-    self.params.put("CarParamsPersistent", cp_bytes)
+    if self.CP.brand != "mock":  # a failed fingerprint must not replace the last real car, settings are cleaned up against it
+      self.params.put("CarParamsPersistent", cp_bytes)
 
     # Write CarParamsSP for controls
     # convert to pycapnp representation for caching and logging
@@ -173,7 +174,8 @@ class Car:
     cp_sp_bytes = self.CP_SP_capnp.to_bytes()
     self.params.put("CarParamsSP", cp_sp_bytes, block=True)
     self.params.put("CarParamsSPCache", cp_sp_bytes)
-    self.params.put("CarParamsSPPersistent", cp_sp_bytes)
+    if self.CP.brand != "mock":
+      self.params.put("CarParamsSPPersistent", cp_sp_bytes)
 
     self.v_cruise_helper = VCruiseHelper(self.CP, self.CP_SP)
 
