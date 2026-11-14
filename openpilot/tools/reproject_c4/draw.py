@@ -18,10 +18,11 @@ DW, DH = RC.C4_CAM
 C4_CAMERA = DEVICE_CAMERAS['mici', 'os04c10']
 
 
-def blend_weights(T: dict) -> np.ndarray:
-  """The stage's narrow/wide blend weights (0 all wide - 255 all narrow) over the comma 4 narrow frame's px."""
+def blend_weights(pw: np.ndarray) -> np.ndarray:
+  """The stage's narrow/wide blend weights (0 all wide - 255 all narrow) over the comma 4 narrow frame's px, from its narrow
+  table."""
   stride = get_nv12_info(DW, DH)[0]
-  return ((T['narrow']['pw'][:stride * DH] >> ALPHA_SHIFT) & 0xff).reshape(DH, stride)[:, :DW].astype(np.uint8)
+  return ((pw[:stride * DH] >> ALPHA_SHIFT) & 0xff).reshape(DH, stride)[:, :DW].astype(np.uint8)
 
 
 def fit_transform(native_wh: tuple[int, int], size: tuple[int, int]) -> np.ndarray:
@@ -47,13 +48,17 @@ def init_worker(cfg: dict) -> None:
   _W.update(cfg, geometry=None, alpha=None)
 
 
-def _geometry(rotation: tuple, rpy: tuple) -> dict:
+def _geometry(rotation: tuple, rpy: tuple, slot: int) -> dict:
   """The outlines as one layer over the whole picture (at full strength), the legends, the inset and the input coverage:
   they move only with the rotation and calibration."""
   if _W['geometry'] is None or _W['geometry']['key'] != (rotation, rpy):
     if _W['alpha'] is None or _W['alpha'][0] != rotation:
-      T = RC.load_tables(_W['src_wh'], RC.C4_CAM, RC.table_cache_dir(), RC.calib_from_rotvec(rotation))  # built by the stage
-      _W['alpha'] = (rotation, blend_weights(T))
+      slots = _W['slots']
+      if tuple(slots.view(slot, 'blend_rotation').view(np.float64).tolist()) == rotation:  # the stage's, sent with the frame
+        alpha = slots.view(slot, 'blend').reshape(DH, DW).copy()
+      else:  # the slot has moved on to a later frame: numpy, as the drawing processes have no stage (~0.5 s)
+        alpha = blend_weights(RC.build_tables(_W['src_wh'], RC.C4_CAM, RC.calib_from_rotvec(rotation))['narrow']['pw'])
+      _W['alpha'] = (rotation, alpha)
     alpha = _W['alpha'][1]
     sets = debug_outlines(RC.calib_from_rotvec(rotation), np.asarray(rpy, np.float32))
     sizes = {'c4_narrow': ((DW, DH), (V.PW, V.PH)), 'c4_wide': ((DW, DH), (V.PW, V.PH)),
@@ -97,7 +102,7 @@ def frame(job: dict) -> None:
   slider's opacity."""
   slots, slot, s = _W['slots'], job['slot'], job['settings']
   r = {k: slots.view(slot, k) for k in ('narrow', 'wide', 'narrow_only', 'wide_only')}
-  g = _geometry(job['rotation'], tuple(np.round(job['rpy'], 3)))
+  g = _geometry(job['rotation'], tuple(np.round(job['rpy'], 3)), slot)
   panels, to_panel = _panels(r, {k: slots.view(slot, k) for k in ('device_narrow', 'device_wide')}, job['rpy'], job['wide_euler'])
   st = get_nv12_info(DW, DH)[0]
   n, n_only, w_only = (V.luma(r[k], DW, DH, st, (V.PW, V.PH)) for k in ('narrow', 'narrow_only', 'wide_only'))
@@ -117,6 +122,6 @@ def frame(job: dict) -> None:
   slots.view(slot, 'picture')[:] = np.asarray(picture).ravel()
 
 
-def outline_canvas(rotation: tuple, rpy: tuple) -> dict:
-  """The window's outline layer for a rotation and calibration."""
-  return {'key': (rotation, rpy), 'outlines': np.asarray(_geometry(rotation, rpy)['outlines'])}
+def outline_canvas(rotation: tuple, rpy: tuple, slot: int) -> dict:
+  """The window's outline layer for a rotation and calibration, as drawn for the frame in slot."""
+  return {'key': (rotation, rpy), 'outlines': np.asarray(_geometry(rotation, rpy, slot)['outlines'])}

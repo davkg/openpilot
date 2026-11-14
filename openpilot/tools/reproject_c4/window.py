@@ -191,7 +191,7 @@ class Player:
     upload(self.tex['path'], self.clip.slots.view(job['slot'], 'path'))
     key = (job['rotation'], tuple(np.round(job['rpy'], 3)))
     if key != self.outlines_key and (self.outlines_pending is None or self.outlines_pending[0] != key):
-      self.outlines_pending = (key, self.clip.outlines(key))
+      self.outlines_pending = (key, self.clip.outlines(key, job['slot']))
     self.shown_times.append(time.monotonic())
 
   def draw_picture(self) -> None:

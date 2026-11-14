@@ -3,7 +3,7 @@ the matched rays. numpy only: it runs on the device CPU during the calibration p
 
 import numpy as np
 
-from .geometry import C4_NARROW_K, calib_from_rotvec, matrix_to_rotvec, sample_coords, unproject_fisheye, unproject_pinhole
+from .geometry import C4_NARROW, calib_from_rotvec, matrix_to_rotvec, sample_coords, unproject_fisheye, unproject_pinhole_k1
 
 MIN_MATCHES = 15  # matched patches a frame's fit must keep after kabsch's trimming
 MAX_RMS_DEG = 0.25  # per-frame residual after trimming (good frames 0.10-0.17 on the 3X)
@@ -75,7 +75,7 @@ def match_rays(narrow_y, wide_y, calib, dst_wh=(1344, 760), patch=96, stride=64,
   if len(pa) < 4:
     return None
   pa, pb = np.array(pa, np.float32), np.array(pb, np.float32)
-  rays_n = unproject_pinhole(pa, C4_NARROW_K[0, 0], C4_NARROW_K[0, 2], C4_NARROW_K[1, 2])
+  rays_n = unproject_pinhole_k1(pa, C4_NARROW)
   xb, yb = np.round(pb[:, 0] - 0.5).astype(int).clip(0, dw - 1), np.round(pb[:, 1] - 0.5).astype(int).clip(0, dh - 1)
   rays_w = unproject_fisheye(mw[yb, xb], calib["wide"])
   return rays_n, rays_w

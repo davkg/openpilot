@@ -29,24 +29,24 @@ NARROW, WIDE = VisionStreamType.VISION_STREAM_NARROW_ROAD, VisionStreamType.VISI
 
 class Stage:
   def __init__(self, src_wh: tuple[int, int]):
-    self.src_wh, self.cache_dir = src_wh, RC.table_cache_dir()
+    self.src_wh = src_wh
     self.src_size = get_nv12_info(*src_wh)[3]
     self.rotation = RC.load_rotation()
     self.fitted = bool(RC.read_rotation())
     cloudlog.warning(f"reprojectd: rotation {np.degrees(self.rotation).round(3)} deg, "
                      + ('fitted' if self.fitted else 'seeded from CalibrationParams / the fleet median'))
-    self.calib = RC.calib_from_rotvec(self.rotation)
-    T = RC.load_tables(src_wh, C4_CAM, self.cache_dir, self.calib)
-    self.rp = Reprojector(T, C4_CAM, 'QCOM')
-    self.meter = RC.SeamMeter(T["meter"])
-    self.pending = None
+    self.rp = Reprojector(src_wh, 'QCOM')
+    self.rp.set_rotation(self.rotation)
+    self.meter = RC.SeamMeter(RC.SeamMeter.geometry(src_wh, C4_CAM, RC.calib_from_rotvec(self.rotation)))
+    self.pending: tuple | None = None
     self.loader: threading.Thread | None = None
     self.saver: threading.Thread | None = None
     self._src_tensors: dict[int, Tensor] = {}
-    # composite, wide: the kernel writes here, the server copies into its ring. A whole camerad buffer, not just the NV12 body:
+    # composite, wide: the stage writes here, the server copies into its ring. A whole camerad buffer, not just the NV12 body:
     # the small model's warp maps that much of every frame (Tensor.from_blob), and past the end of a shorter one modeld segfaults
     self.out = np.zeros((2, get_nv12_info(*C4_CAM)[3]), np.uint8)
     self.rp.bind(self.out[1, :self.rp.body], self.out[0, :self.rp.body])
+    self.match: np.ndarray | None = None
     self.time = 0.0
 
   def src_tensor(self, buf) -> Tensor:
@@ -55,24 +55,31 @@ class Stage:
       self._src_tensors[ptr] = Tensor.from_blob(ptr, (self.src_size,), dtype='uint8', device='QCOM')
     return self._src_tensors[ptr]
 
-  def run(self, wide, narrow, match: np.ndarray) -> None:
+  def run(self, wide, narrow) -> None:
+    """Reproject this frame pair with the seam match measured on the last one (measure). The match is filtered over frames,
+    so a frame's lag does not show."""
     t0 = time.perf_counter()
-    self.rp(self.src_tensor(wide), self.src_tensor(narrow), match)
+    self.rp(self.src_tensor(wide), self.src_tensor(narrow), self.match)
     Device['QCOM'].synchronize()
     self.time = time.perf_counter() - t0
 
+  def measure(self, wide, narrow, model_gain: float) -> None:
+    """The seam match for the next pair, measured on this one once it is served: off the frame's latency, in the time before
+    the next pair (a measurement takes longer than the stage on the GPU)."""
+    self.match = self.meter.update(np.frombuffer(wide.data, dtype=np.uint8), np.frombuffer(narrow.data, dtype=np.uint8), model_gain)
+
   def follow_fit(self, fit) -> None:
-    """A rotation reprojectcalibd has published as ready (its tables already built) is loaded in a thread and swapped in
-    between frames (one upload), then kept in ReprojectRotation: that is what tells reprojectcalibd it is applied, so it
-    is saved again while reprojectcalibd still says ready. calibrationd holds meanwhile, so the car cannot be engaged
-    around the swap."""
+    """A rotation reprojectcalibd has published as ready is swapped in between frames: the seam meter's ring is sampled for it
+    off the frame loop (~0.2 s of numpy), then its tables are built on the GPU (~40 ms, ahead of the next stage). It is then
+    kept in ReprojectRotation: that is what tells reprojectcalibd it is applied, so it is saved again while reprojectcalibd
+    still says ready. calibrationd holds meanwhile, so the car cannot be engaged around the swap."""
     if self.pending is not None:
-      T, calib, meter, rot = self.pending
-      self.pending = None
-      self.loader = None
+      rot, geometry = self.pending
+      self.pending = self.loader = None
       t0 = time.perf_counter()
-      self.rp.reload(T)
-      self.calib, self.meter, self.rotation, self.fitted = calib, meter, rot, True
+      self.rp.set_rotation(rot)
+      self.meter = RC.SeamMeter(geometry)
+      self.rotation, self.fitted = rot, True
       cloudlog.warning(f"reprojectd: fitted rotation {np.degrees(rot).round(3)} deg swapped in ({(time.perf_counter() - t0) * 1e3:.0f} ms)")
       return
     if self.loader is not None or fit is None or fit.status != custom.ReprojectCalibration.Status.ready or len(fit.target) != 3:
@@ -86,14 +93,11 @@ class Stage:
         self.saver = threading.Thread(target=save, daemon=True)
         self.saver.start()
       return
-    calib = RC.calib_from_rotvec(rot)
-    def load():  # one 19 MB read off the frame loop (a build, if the fitter's tables are gone)
+    def load():
       os.sched_setscheduler(0, os.SCHED_OTHER, os.sched_param(0))
-      T = RC.load_tables(self.src_wh, C4_CAM, self.cache_dir, calib)
-      self.pending = (T, calib, RC.SeamMeter(T["meter"]), rot)
+      self.pending = (rot, RC.SeamMeter.geometry(self.src_wh, C4_CAM, RC.calib_from_rotvec(rot)))
     self.loader = threading.Thread(target=load, daemon=True)
     self.loader.start()
-
 
 def main():
   sm = messaging.SubMaster(['narrowRoadCameraState', 'wideRoadCameraState', 'reprojectCalibration'])
@@ -107,18 +111,14 @@ def main():
   cloudlog.warning(f"reprojectd: cameras {src_wh[0]}x{src_wh[1]} -> comma 4 {C4_CAM[0]}x{C4_CAM[1]}")
   t0 = time.monotonic()
   stage = Stage(src_wh)
-  blank = [Tensor.zeros(stage.src_size, dtype='uint8', device='QCOM').contiguous().realize() for _ in range(2)]
-  for _ in range(3):  # jit capture before the first real frame
-    stage.rp(blank[0], blank[1])
-    Device['QCOM'].synchronize()
   stride, y_height, _, _ = get_nv12_info(*C4_CAM)
   server = VisionIpcServer("reproject")
   for tp in (NARROW, WIDE):
     server.create_buffers_with_sizes(tp, 4, C4_CAM[0], C4_CAM[1], stage.out.shape[1], stride, stride * y_height)
   server.start_listener()
   cloudlog.warning(f"reprojectd: serving after {time.monotonic() - t0:.1f} s")
-  # real-time only from here: the table load and the jit capture above are seconds of CPU, and a real-time task holding a
-  # core for a second trips the kernel's throttle, which this kernel turns into a panic (CONFIG_PANIC_ON_RT_THROTTLING)
+  # real-time only from here: a real-time task holding a core for a second trips the kernel's throttle, which this kernel
+  # turns into a panic (CONFIG_PANIC_ON_RT_THROTTLING)
   config_realtime_process(6, 53)
 
   n = 0
@@ -130,14 +130,13 @@ def main():
       continue
     buf_n, buf_w = pair
     sm.update(0)
-    # match the wide surround to the narrow inset: measured in the seam ring of these frames, the sensors' exposure
-    # settings as the fallback when the ring is unusable
+    # the sensors' exposure settings: the seam match falls back to them when its ring is unusable
     ncs, wcs = sm['narrowRoadCameraState'], sm['wideRoadCameraState']
     g = RC.exposure_gain(ncs.gain * ncs.integLines, wcs.gain * wcs.integLines) if sm.seen['narrowRoadCameraState'] and sm.seen['wideRoadCameraState'] else 1.0
-    match = stage.meter.update(np.frombuffer(buf_w.data, dtype=np.uint8), np.frombuffer(buf_n.data, dtype=np.uint8), g)
-    stage.run(buf_w, buf_n, match)
+    stage.run(buf_w, buf_n)
     server.send(NARROW, stage.out[0], narrow.frame_id, narrow.timestamp_sof, narrow.timestamp_eof)
     server.send(WIDE, stage.out[1], wide.frame_id, wide.timestamp_sof, wide.timestamp_eof)
+    stage.measure(buf_w, buf_n, g)
     n += 1
     stage_ms.append(stage.time * 1e3)
     if time.monotonic() - summary_t >= 60.0:

@@ -3,10 +3,10 @@
   openpilot/tools/reproject_c4/debug_clip.py <dongle/route> -s start -e end [-d data_dir] [-o out.mp4 [-f MB]]
       [--path-opacity 1.0] [--overlay-opacity 0.5]
 The window plays the clip in real time with play/pause, a scrub bar and sliders for the two opacities, and records nothing.
-Top row: the comma 4 narrow and wide frames the big model saw, rebuilt on this PC's GPU from the route's fcamera and ecamera
-at a narrow->wide rotation (rotations.py: the one the route logged, else one fitted here), and the seam check. Bottom row:
-the 3X frames, the model's two 512x256 inputs and the logged timings. Any 3X route with its full-resolution cameras
-(fcamera, ecamera) uploaded.
+Top row: the comma 4 narrow and wide frames the big model saw, rebuilt on this PC (reprojectd's compiled stage, CPU
+build) from the route's fcamera and ecamera at a narrow->wide rotation (rotations.py: the one the route logged, else one
+fitted here), and the seam check. Bottom row: the 3X frames, the model's two 512x256 inputs and the logged timings. Any
+3X route with its full-resolution cameras (fcamera, ecamera) uploaded.
 
 route_data.py reads the route, stage.py runs the reprojection, clip.py puts each frame through them and hands it to the
 drawing processes (draw.py), which lay out the picture (view.py) with the model's path (model_path.py), the outlines

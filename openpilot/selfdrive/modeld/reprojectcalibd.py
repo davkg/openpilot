@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Fits this unit's narrow->wide camera rotation for the 3X->comma 4 reprojection stage: a one-off, the median of twelve
 frame pairs taken under calibrationd's own conditions (straight road, above 15 mph), about one frame a second.
-The tables are built here and the result is published as ready; reprojectd swaps it in and keeps it in ReprojectRotation,
-and only then is it published as fitted (calibrationd holds until then, so the car cannot be engaged around the swap);
-afterwards this process idles. The rotation
-is board geometry: it is fitted once and only a calibration reset, which clears it, fits it again. Numpy only, low
+The result is published as ready; reprojectd swaps it in and keeps it in ReprojectRotation, and only then is it
+published as fitted (calibrationd holds until then, so the car cannot be engaged around the swap); afterwards this
+process idles. The rotation is board geometry: it is fitted once and only a calibration reset, which clears it, fits it again. Numpy only, low
 priority, one frame pair every few seconds."""
 import os
 import time
@@ -20,7 +19,6 @@ from openpilot.selfdrive.locationd.calibrationd import MIN_SPEED_FILTER, MAX_YAW
 from openpilot.selfdrive.modeld import reproject_c4 as RC
 from openpilot.selfdrive.modeld.reproject_c4 import N_FRAMES, Fit
 
-C4_CAM = RC.C4_CAM
 NARROW, WIDE = VisionStreamType.VISION_STREAM_NARROW_ROAD, VisionStreamType.VISION_STREAM_WIDE_ROAD
 
 
@@ -37,7 +35,7 @@ class FitState:
     self.t = 0.0
 
   def publish(self, status: str, fit: Fit, why: str | None = None, target: tuple = ()) -> None:
-    pct = 100 if status in ('building', 'ready', 'fitted') else 100 * fit.n // N_FRAMES
+    pct = 100 if status in ('ready', 'fitted') else 100 * fit.n // N_FRAMES
     mean = [float(v) for v in (fit.applied if status == 'fitted' else fit.mean)]
     key = (status, why, pct, tuple(mean), fit.last_id, fit.last_ok, fit.applied, target)
     if key == self.last and time.monotonic() - self.t < 0.5:
@@ -66,8 +64,8 @@ def main():
   fit = Fit(RC.load_rotation())  # the rotation reprojectd applies: the same param, else the same seed
   fitted = bool(RC.read_rotation())
   if fitted and params.get("CalibrationParams") is None:
-    # a calibration reset from outside the ui (which clears the rotation too) cleared the calibration only: fit again first
-    cloudlog.warning("reprojectcalibd: calibration was reset: refitting the rotation")
+    # Reset Calibration (or the fit itself, see below) cleared the calibration: fit again first
+    cloudlog.warning("reprojectcalibd: no calibration: refitting the rotation")
     fitted = False
   cloudlog.warning(f"reprojectcalibd: applied rotation {np.degrees(fit.applied).round(3)} deg, {'fitted' if fitted else 'not fitted yet'}")
 
@@ -137,11 +135,6 @@ def main():
     if fit.n < N_FRAMES:
       continue
     final = tuple(float(v) for v in fit.mean)
-    # build the tables here (~6 s of numpy at low priority) so reprojectd's swap is just a load; then publish the fit
-    t0 = time.monotonic()
-    state.publish('building', fit, target=final)
-    RC.load_tables((bn.width, bn.height), C4_CAM, RC.table_cache_dir(), RC.calib_from_rotvec(final))
-    cloudlog.warning(f"reprojectcalibd: tables built in {time.monotonic() - t0:.0f} s")
     # calibrationd held at uncalibrated through the fit and calibrates afresh after the swap, but first writes that ~25 s
     # in: the calibration on disk is from other frames (stock, or another rotation) and must not outlive a reboot before then
     params.remove("CalibrationParams")

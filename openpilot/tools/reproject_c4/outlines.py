@@ -4,8 +4,8 @@ import numpy as np
 
 from openpilot.common.transformations.camera import DEVICE_CAMERAS
 from openpilot.common.transformations.model import get_warp_matrix
-from openpilot.selfdrive.modeld.reproject_c4.geometry import (C4_WIDE, FEATHER_PX, project_fisheye, project_pinhole_k1, rotvec_to_matrix,
-                                                                sample_coords, unproject_fisheye, unproject_pinhole)
+from openpilot.selfdrive.modeld.reproject_c4.geometry import (C4_NARROW, C4_WIDE, FEATHER_PX, project_fisheye, project_pinhole_k1,
+                                                                rotvec_to_matrix, sample_coords, unproject_fisheye, unproject_pinhole_k1)
 
 
 def _edge_points(corners, n=12):
@@ -69,7 +69,7 @@ def debug_outlines(calib, device_from_calib_euler, dst_wh=(1344, 760), src_wh=(1
   R = rotvec_to_matrix(calib["R"])
 
   def rays_n4(px):  # comma 4 narrow px -> device rays
-    return unproject_pinhole(np.asarray(px, float), Kn[0, 0], Kn[0, 2], Kn[1, 2])
+    return unproject_pinhole_k1(np.asarray(px, float), C4_NARROW)
 
   def to_x3_narrow(px):
     return project_pinhole_k1(rays_n4(px), calib["narrow"])

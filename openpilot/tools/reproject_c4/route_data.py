@@ -106,7 +106,7 @@ class CameradFrame:
 def read_segment(path: str) -> dict:
   """What the clip needs from one segment's log, as plain values (segments are parsed in worker processes)."""
   out: dict = {k: [] for k in ('cams', 'wide_exposure', 'e2e', 'model', 'dm', 'ui', 'models', 'fit', 'calib', 'selfdrive', 'stage',
-                               'v_ego', 'throttle', 'lead', 'long_control', 'yaw_rate')}
+                               'v_ego', 'throttle', 'lead', 'long_control', 'yaw_rate', 'swap')}
   out['device'] = out['sensor'] = None
   for m in LogReader(path):
     try:
@@ -140,6 +140,8 @@ def read_segment(path: str) -> dict:
         out['selfdrive'].append((t, ((m.selfdriveState.alertText1 or '').strip(), m.selfdriveState.deprecated.experimentalMode)))
       elif w == 'logMessage' and 'reprojectd.stage' in m.logMessage:
         out['stage'].append((t, json.loads(m.logMessage)['msg']))
+      elif w == 'logMessage' and 'reprojectd: fitted rotation' in m.logMessage:
+        out['swap'].append((t, t))
       elif w == 'cameraOdometry':
         out['yaw_rate'].append((t, m.cameraOdometry.rot[2]))
       elif w == 'carState':
@@ -206,7 +208,7 @@ class RouteLog:
     def rows(k):
       return [r for p in parsed.values() for r in p[k]]
     for k in ('wide_exposure', 'e2e', 'model', 'dm', 'ui', 'fit', 'calib', 'selfdrive', 'stage', 'v_ego', 'throttle', 'lead',
-              'long_control', 'yaw_rate'):
+              'long_control', 'yaw_rate', 'swap'):
       setattr(self, k, Timeline(rows(k)))
     self.models = {eof: m for _, eof, m in rows('models')}
     self.model_at = Timeline([(t, m) for t, _, m in rows('models')])

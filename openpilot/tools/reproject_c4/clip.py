@@ -83,7 +83,7 @@ class Clip:
     st, y_height, uv_height, _ = get_nv12_info(DW, DH)
     body, frame = st * (y_height + uv_height), self.src_wh[0] * self.src_wh[1] * 3 // 2
     sizes = {'narrow': body, 'wide': body, 'narrow_only': body, 'wide_only': body, 'device_narrow': frame, 'device_wide': frame,
-             'picture': V.W * V.H * 3}
+             'picture': V.W * V.H * 3, 'blend': DW * DH, 'blend_rotation': 24}
     if window:
       sizes['path'] = V.W * V.H * 4
     self.slots = Slots(self.n_slots, sizes)
@@ -116,7 +116,7 @@ class Clip:
     self.decoders = (Frames(self.route.camera_paths(), self.next, self.last, self.src_wh),
                      Frames(self.route.ecamera_paths(), self.next, self.last, self.src_wh))
     self.model_path = ModelPath()
-    self.stage.meter = RC.SeamMeter(self.stage.meter_table)
+    self.stage.meter, self.stage.match = RC.SeamMeter(self.stage.meter_geometry), None
 
   def submit(self, settings: Settings) -> bool:
     """Run the stage on the next frame and start drawing it; False at the end of the clip (in the window: back to its start)."""
@@ -130,14 +130,13 @@ class Clip:
     t, eof, narrow_exposure = log.frame(seg, local)
     narrow_bytes, wide_bytes = self.decoders[0].get(), self.decoders[1].get()
 
-    applied, target, status = self.rotation.at(t)
-    if target:
-      self.stage.build_ahead(target)
+    applied, _, status = self.rotation.at(t)
     self.stage.follow(applied)
     r = self.stage.run(self.wide_src.load(wide_bytes), self.narrow_src.load(narrow_bytes),
                        RC.exposure_gain(narrow_exposure, log.wide_exposure.at(t, 0)))
     slot = self.count % self.n_slots
-    for k, buf in (*r.items(), ('device_narrow', np.frombuffer(narrow_bytes, np.uint8)), ('device_wide', np.frombuffer(wide_bytes, np.uint8))):
+    for k, buf in (*r.items(), ('device_narrow', np.frombuffer(narrow_bytes, np.uint8)), ('device_wide', np.frombuffer(wide_bytes, np.uint8)),
+                   ('blend', self.stage.blend.ravel()), ('blend_rotation', np.array(self.stage.rotation, np.float64).view(np.uint8))):
       self.slots.view(slot, k)[:] = buf
 
     rpy, height, wide_euler = log.calib.at(t, ((0.0, 0.0, 0.0), 1.22, ()))
@@ -166,9 +165,9 @@ class Clip:
     result.get()
     return job, self.slots.view(job['slot'], 'picture')
 
-  def outlines(self, key: tuple):
-    """Start drawing the window's outline layer for a (rotation, rounded calibration)."""
-    return self.pool.apply_async(draw.outline_canvas, key)
+  def outlines(self, key: tuple, slot: int):
+    """Start drawing the window's outline layer for a (rotation, rounded calibration), as for the frame in slot."""
+    return self.pool.apply_async(draw.outline_canvas, (*key, slot))
 
   def discard(self) -> None:
     while self.pending:

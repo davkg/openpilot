@@ -2,6 +2,7 @@
 as it changed, or for a route that logged none (stock, or from before the fit) one fitted here before the clip, as
 reprojectcalibd fits: the median of twelve frame pairs taken under calibrationd's conditions (straight road, above 15 mph),
 about one a second, from the rotation it would seed from."""
+import bisect
 import logging
 
 import numpy as np
@@ -54,13 +55,21 @@ class Logged:
     self.log = log
     self.first: tuple = next(v for v in log.fit.v if len(v[0]) == 3)
     self.initial = self.first[0]  # what the stage starts from
+    self.settled = [t for t, v in zip(log.fit.t, log.fit.v, strict=True) if v[2] != 'ready']
 
   def at(self, t: float) -> tuple[tuple, tuple, str]:
-    """(applied, target, status line) at log time t."""
+    """(applied, target, status line) at log time t. reprojectd swaps a ready target in about a second before the log says
+    fitted: from its swap on, the target is what it applies."""
     applied, target, status = self.log.fit.at(t, self.first)
     if len(applied) != 3:
       applied, target, status = self.first
-    return applied, target if status in ('building', 'ready') else (), f"the device's fit: {status}"
+    if status != 'ready':
+      return applied, (), f"the device's fit: {status}"
+    swap = self.log.swap.at(t)
+    i = bisect.bisect_right(self.settled, t) - 1
+    if len(target) == 3 and swap is not None and (i < 0 or swap > self.settled[i]):
+      return target, (), "the device's fit: ready, swapped in"
+    return applied, target, f"the device's fit: {status}"
 
 
 class Fitted:
