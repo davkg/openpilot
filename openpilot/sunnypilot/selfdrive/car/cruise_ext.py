@@ -51,6 +51,8 @@ class VCruiseHelperSP:
     self.v_cruise_min = 0
     self.enabled_prev = False
     self.set_speed_step = 0  # one-shot per update_v_cruise; mirrored into CarStateSP for the step chime
+    self.speed_nudge_enabled = self.params.get_bool("SpeedNudge")
+    self.speed_nudge = 0.  # m/s, running sum of short-tap nudges, mirrored into CarStateSP for plannerd
 
     self.custom_acc_enabled = self.params.get_bool("CustomAccIncrementsEnabled")
     self.short_increment = self.params.get("CustomAccShortPressIncrement", return_default=True)
@@ -72,6 +74,17 @@ class VCruiseHelperSP:
     self.custom_acc_enabled = self.params.get_bool("CustomAccIncrementsEnabled")
     self.short_increment = self.params.get("CustomAccShortPressIncrement", return_default=True)
     self.long_increment = self.params.get("CustomAccLongPressIncrement", return_default=True)
+    self.speed_nudge_enabled = self.params.get_bool("SpeedNudge")
+
+  def update_speed_nudge(self, button_type, gas_pressed: bool, is_metric: bool) -> bool:
+    # A short RES+/SET- tap nudges the driving speed 1 mph/kph instead of stepping the set speed; plannerd pulls
+    # the e2e candidate there. SET while overriding the gas keeps its stock meaning (set speed = current speed).
+    # Returns True when the tap was taken as a nudge.
+    if not self.speed_nudge_enabled or gas_pressed or button_type not in (ButtonType.accelCruise, ButtonType.decelCruise):
+      return False
+    step = CV.KPH_TO_MS if is_metric else CV.MPH_TO_MS
+    self.speed_nudge += step if button_type == ButtonType.accelCruise else -step
+    return True
 
   def update_v_cruise_delta(self, long_press: bool, v_cruise_delta: float) -> tuple[bool, float]:
     if not self.custom_acc_enabled:

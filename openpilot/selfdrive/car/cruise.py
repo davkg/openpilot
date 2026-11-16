@@ -114,6 +114,9 @@ class VCruiseHelper(VCruiseHelperSP):
     if self.update_speed_limit_assist_pre_active_confirmed(button_type):
       return
 
+    if not long_press and VCruiseHelperSP.update_speed_nudge(self, button_type, CS.gasPressed, is_metric):
+      return
+
     step_chime = long_press  # update_v_cruise_delta repurposes long_press, so capture the real hold first
     long_press, v_cruise_delta = VCruiseHelperSP.update_v_cruise_delta(self, long_press, v_cruise_delta)
 

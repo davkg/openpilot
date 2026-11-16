@@ -219,6 +219,7 @@ class Car:
     CS.vCruise = float(self.v_cruise_helper.v_cruise_kph)
     CS.vCruiseCluster = float(self.v_cruise_helper.v_cruise_cluster_kph)
     CS_SP.setSpeedStep = self.v_cruise_helper.set_speed_step
+    CS_SP.speedNudge = self.v_cruise_helper.speed_nudge
 
     return CS, CS_SP, RD
 

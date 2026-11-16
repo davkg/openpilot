@@ -254,6 +254,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"ToyotaTSS2Smooth", {PERSISTENT | BACKUP, BOOL, "0"}},
 
     {"LongFollowTime", {PERSISTENT | BACKUP, FLOAT, "1.2"}},  // s, stepped by the distance/LKAS buttons
+    {"SpeedNudge", {PERSISTENT | BACKUP, BOOL, "1"}},  // RES+/SET- short tap nudges the driving speed instead of the set speed
     {"BlindSpot", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"AdjacentVehicleMarkers", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"AdjacentVehicleMarkersDebug", {PERSISTENT, BOOL, "0"}},

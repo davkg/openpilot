@@ -17,6 +17,7 @@ from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import (
 from openpilot.sunnypilot.selfdrive.controls.lib.follow_time import get_follow_time
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_alerts_helper import E2EAlertsHelper
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.smart_cruise_control import SmartCruiseControl
+from openpilot.sunnypilot.selfdrive.controls.lib.speed_nudge import SpeedNudge
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_assist import SpeedLimitAssist
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_resolver import SpeedLimitResolver
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
@@ -37,6 +38,7 @@ class LongitudinalPlannerSP:
     self.source = LongitudinalPlanSource.cruise
     self.e2e_alerts_helper = E2EAlertsHelper()
     self.accel_boost_sp = AccelBoostSP()
+    self.speed_nudge = SpeedNudge()
     self.openpilot_longitudinal = CP.openpilotLongitudinalControl
 
     self.output_v_target = 0.
@@ -106,6 +108,7 @@ class LongitudinalPlannerSP:
     longitudinalPlanSP.mpcAccel = float(mpc_accel)
     longitudinalPlanSP.cruiseAccel = float(cruise_accel)
     longitudinalPlanSP.e2eAccel = float(e2e_accel)
+    self.speed_nudge.fill(longitudinalPlanSP.speedNudge)
 
     # Smart Cruise Control
     smartCruiseControl = longitudinalPlanSP.smartCruiseControl

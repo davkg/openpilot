@@ -108,10 +108,18 @@ class HudRendererSP(HudRenderer):
         elif ui_state.status == UIStatus.OVERRIDE:
           max_color = COLORS.OVERRIDE
 
-    max_str_size = 60 if self.show_icbm_status else 40
-    max_str_y = 15 if self.show_icbm_status else 27
+    # a RES+/SET- speed nudge in flight replaces "MAX" with the speed still to go, e.g. "+2"
+    nudge = long_plan_sp.speedNudge
+    nudge_text = ""
+    if nudge.active and ui_state.sm['carControl'].longActive:
+      to_go = (nudge.vTarget - ui_state.sm['carState'].vEgo) * self.speed_conv
+      nudge_text = f"{'+' if to_go > 0 else '-'}{max(1, round(abs(to_go)))}"
+    big_label = self.show_icbm_status or bool(nudge_text)
 
-    max_text = str(round(self.speed_cluster)) if self.show_icbm_status else tr("MAX")
+    max_str_size = 60 if big_label else 40
+    max_str_y = 15 if big_label else 27
+
+    max_text = nudge_text or (str(round(self.speed_cluster)) if self.show_icbm_status else tr("MAX"))
     max_text_width = measure_text_cached(self._font_semi_bold, max_text, max_str_size).x
     rl.draw_text_ex(
       self._font_semi_bold,

@@ -215,6 +215,7 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
   mpcAccel @9 :Float32;  # m/s^2, lead MPC's candidate for the planner's min() arbitration
   cruiseAccel @10 :Float32;  # m/s^2, cruise candidate
   e2eAccel @11 :Float32;  # m/s^2, model candidate (only arbitrated in experimental mode)
+  speedNudge @12 :SpeedNudge;
 
   deprecated :group {
     dec @0 :DynamicExperimentalControlDEPRECATED;
@@ -320,6 +321,16 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
   struct E2eAlerts {
     greenLightAlert @0 :Bool;
     leadDepartAlert @1 :Bool;
+  }
+
+  # RES+/SET- short tap: pulls the e2e candidate toward a speed 1 mph/kph per tap above/below the speed at the tap
+  struct SpeedNudge {
+    active @0 :Bool;     # a nudge is in flight
+    vTarget @1 :Float32;  # m/s, speed the nudge is heading for (0 when idle)
+    floor @2 :Float32;    # m/s^2, jerk-limited arrival accel toward vTarget (negative when slowing)
+    gain @3 :Float32;     # 0-1, the model's own decision: accel and planned slowdown
+    fade @4 :Float32;     # 0-1, road bending now or ahead
+    lift @5 :Float32;     # m/s^2, added to the e2e candidate
   }
 }
 
@@ -473,6 +484,8 @@ struct CarStateSP @0xb86e6369214c01c8 {
   cameraLeadDistance @2 :Float32;       # m, single-lead distance from CAMERA_LEAD (0 = no lead / out of range)
   cameraLeadValid @3 :Bool;             # camera reports a visible lead
   hudObjects @4 :List(HudObject);       # up to 10 slots; consumers filter by .valid
+  # m/s, running sum of RES+/SET- short-tap speed nudges (±1 mph/kph each); plannerd acts on its change
+  speedNudge @5 :Float32;
 
   struct HudObject {
     slot @0 :UInt8;          # 0..9 (camera's internal slot index)
