@@ -154,6 +154,7 @@ class Plant:
           'selfdriveState': ss.selfdriveState,
           'selfdriveStateSP': ss_sp.selfdriveStateSP,
           'modelV2': model.modelV2,
+          'vehicleParameters': messaging.new_message('vehicleParameters').vehicleParameters,
           'carStateSP': car_state_sp.carStateSP,
           'liveMapDataSP': live_map_data_sp.liveMapDataSP,
           'gpsLocation': gps_data.gpsLocation}
