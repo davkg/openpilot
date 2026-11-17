@@ -1,6 +1,5 @@
 """The GPU stage as the build compiled it (compile_tables.py, compile_stage.py; built next to modeld's warps)."""
 
-import ctypes
 import pickle
 
 import numpy as np
@@ -74,7 +73,7 @@ class Reprojector:
       # tinygrad cleaned this memory from the CPU cache only when it mapped it: without a clean the GPU reads stale matches
       from tinygrad.runtime.ops_qcom import dcache_flush
       start = self.params_np.ctypes.data & ~63
-      dcache_flush().fxn(ctypes.c_uint64(start), (self.params_np.ctypes.data + self.params_np.nbytes - start + 63) // 64)
+      dcache_flush()(start, (self.params_np.ctypes.data + self.params_np.nbytes - start + 63) // 64)
     else:
       self.gains.assign(Tensor(self.params_np, device=self.device)).realize()
     self._stage(output_buffers=self.out, wide=wide, narrow=narrow, gains=self.gains, **self.tables)
