@@ -216,6 +216,7 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
   cruiseAccel @10 :Float32;  # m/s^2, cruise candidate
   e2eAccel @11 :Float32;  # m/s^2, model candidate (only arbitrated in experimental mode)
   speedNudge @12 :SpeedNudge;
+  launchGain @13 :Float32;  # multiplier on the model's positive accel (1 = stock), see launch_gain.py
 
   deprecated :group {
     dec @0 :DynamicExperimentalControlDEPRECATED;
