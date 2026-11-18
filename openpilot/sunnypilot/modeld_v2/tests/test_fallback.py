@@ -55,3 +55,51 @@ class TestFallback(OpenpilotTestCase):
       assert modeld_module.ModelState(CAM_W, CAM_H, chestnut=True).chestnut is True
     except Exception as e:
       assert "AMD" in str(e) or "device" in str(e).lower()
+
+
+class TestZeroNonfinite(OpenpilotTestCase):
+  def test_zeroes_in_place(self):
+    import numpy as np
+    from tinygrad.tensor import Tensor
+    from openpilot.sunnypilot.modeld_v2.model_adapters import input_view, zero_nonfinite
+
+    feat = np.arange(12, dtype=np.float32).reshape(3, 4)
+    feat[2, 1], feat[0, 3] = np.nan, np.inf
+    queues = {
+      'feat_q': Tensor(feat, device='CPU').contiguous().realize(),
+      'clean_q': Tensor(np.ones((2, 2), dtype=np.float32), device='CPU').contiguous().realize(),
+      'img_q': Tensor(np.full(4, 255, dtype=np.uint8), device='CPU').contiguous().realize(),
+    }
+    # the jit reads the state through views of the same buffer, so the fix must land in that buffer
+    alias = input_view(queues['feat_q']._buffer(), (3, 4), queues['feat_q'].dtype, 0)
+
+    assert zero_nonfinite(queues) == ['feat_q']
+    expected = feat.copy()
+    expected[[0, 2]] = 0  # whole slots: an overflowed slot's finite values are suspect too
+    np.testing.assert_array_equal(alias.numpy(), expected)
+    np.testing.assert_array_equal(queues['feat_q'].numpy(), expected)
+    assert zero_nonfinite(queues) == []
+
+
+class TestSkipBadFrame(OpenpilotTestCase):
+  def _run(self, events):
+    from collections import deque
+    times: deque[float] = deque(maxlen=modeld_module.MAX_NONFINITE_FRAMES)
+    return [modeld_module.skip_bad_frame(times, t, nonfinite) for t, nonfinite in events]
+
+  def test_single_glitch_skips(self):
+    assert self._run([(1.0, True)]) == [True]
+
+  def test_three_in_a_row_falls_back(self):
+    assert self._run([(1.0, True), (1.05, True), (1.1, True)]) == [True, True, False]
+
+  def test_intermittent_falls_back(self):
+    # bad, good, bad, good, bad: a reset-on-good counter would never fall back
+    assert self._run([(1.0, True), (1.1, True), (1.2, True)]) == [True, True, False]
+
+  def test_isolated_glitches_keep_big_model(self):
+    w = modeld_module.NONFINITE_WINDOW
+    assert all(self._run([(i * w / 1.5, True) for i in range(6)]))
+
+  def test_other_errors_fall_back_at_once(self):
+    assert self._run([(1.0, False)]) == [False]

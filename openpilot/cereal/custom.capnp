@@ -383,6 +383,7 @@ struct OnroadEventSP @0xda96579883444c35 {
     bigModelReady @25;
     cruiseStepUp @26;
     cruiseStepDown @27;
+    bigModelFrameSkipped @28;
   }
 }
 
@@ -518,6 +519,7 @@ struct ModelDataV2SP @0xa1680744031fdb2d {
   blendfulLeftProb @7 :Float32;
   blendfulRightProb @8 :Float32;
   blendfulLaneWidth @9 :Float32;
+  nonfiniteFrames @10 :UInt32;  # big model frames skipped this drive for a non-finite output
 
   enum TurnDirection {
     none @0;

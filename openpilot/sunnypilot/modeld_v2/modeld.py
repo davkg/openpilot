@@ -6,6 +6,7 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 
+from collections import deque
 from collections.abc import Callable
 from functools import partial
 import gc
@@ -55,6 +56,20 @@ from openpilot.sunnypilot.selfdrive.controls.lib.relc import RoadEdgeLaneChangeC
 
 PROCESS_NAME = "openpilot.selfdrive.modeld.modeld_tinygrad"
 BIG_MODEL_TIMEOUT = 60
+# a healthy chestnut occasionally returns one non-finite frame: skip it, fall back on the 3rd within the window.
+# 3 keeps modelV2 above SubMaster's 0.8x frequency floor (fails past 5 missed frames); the window catches an intermittent fault
+MAX_NONFINITE_FRAMES = 3
+NONFINITE_WINDOW = 10.  # s
+
+
+class NonFiniteOutput(RuntimeError):
+  pass
+
+
+def skip_bad_frame(bad_times: deque[float], now: float, nonfinite: bool) -> bool:
+  # True: drop this frame and keep the big model. False: fall back to the small one
+  bad_times.append(now)
+  return nonfinite and not (len(bad_times) == MAX_NONFINITE_FRAMES and now - bad_times[0] < NONFINITE_WINDOW)
 
 
 def _pkl_exists(path):
@@ -196,7 +211,7 @@ class ModelState(ModelStateBase):
     if self._combined_model_type == 'supercombo':
       model_output = raw_outputs.numpy().flatten()
       if self.chestnut and not np.all(np.isfinite(model_output)):
-        raise RuntimeError("model output not finite")
+        raise NonFiniteOutput(f"model output not finite, zeroed state: {self.adapter.scrub_state()}")
       sliced = {k: model_output[np.newaxis, v] for k, v in self.vision_output_slices.items()}
       outputs = self.parser.parse_outputs(sliced)
       if 'prev_feat' in self.numpy_inputs and 'hidden_state' in self.vision_output_slices:
@@ -345,6 +360,8 @@ def main(demo=False):
   small_model = ModelState(cam_w=vipc_client_main.width, cam_h=vipc_client_main.height, chestnut=False) if model is None or CHESTNUT else None
   if model is None:
     model = small_model
+  elif small_model is not None:
+    small_model.warmup()  # the big model's fallback: a cold first run stalls ~1 s
   params.put_bool("ChestnutLoading", False)
   assert model is not None
   cloudlog.warning(f"models loaded in {time.monotonic() - st:.1f}s, modeld starting")
@@ -365,6 +382,8 @@ def main(demo=False):
   frame_id = 0
   last_vipc_frame_id = 0
   run_count = 0
+  nonfinite_times: deque[float] = deque(maxlen=MAX_NONFINITE_FRAMES)
+  nonfinite_frames = 0
 
   model_transform_main = np.zeros((3, 3), dtype=np.float32)
   model_transform_extra = np.zeros((3, 3), dtype=np.float32)
@@ -485,17 +504,21 @@ def main(demo=False):
       send_chestnut = (chestnut_state is not None and
                        run_count % round(model.constants.MODEL_FREQ / SERVICE_LIST['chestnutGpuState'].frequency) == 0)
       model_output = model.run(bufs, transforms, inputs, chestnut_state.send if send_chestnut else None)
-    except Exception:
+    except Exception as e:
       if not model.chestnut:
         raise
-      cloudlog.exception("big model failed, fall back to small")
-      params.put_bool("ChestnutActive", False)
-      assert small_model is not None
-      model = small_model
-      if chestnut_state is not None:
-        chestnut_state.big = False
-      run_count = 0
       model_output = None
+      if skip_bad_frame(nonfinite_times, time.monotonic(), isinstance(e, NonFiniteOutput)):
+        nonfinite_frames += 1
+        cloudlog.exception("big model frame skipped (non-finite)")
+      else:
+        cloudlog.exception("big model failed, fall back to small")
+        params.put_bool("ChestnutActive", False)
+        assert small_model is not None
+        model = small_model
+        if chestnut_state is not None:
+          chestnut_state.big = False
+        run_count = 0
     mt2 = time.perf_counter()
     model_execution_time = mt2 - mt1
 
@@ -533,6 +556,7 @@ def main(demo=False):
       mdv2sp_send.modelDataV2SP.blendfulLeftProb = blendful.l_prob
       mdv2sp_send.modelDataV2SP.blendfulRightProb = blendful.r_prob
       mdv2sp_send.modelDataV2SP.blendfulLaneWidth = float(blendful.lane_width.x)
+      mdv2sp_send.modelDataV2SP.nonfiniteFrames = nonfinite_frames
       drivingdata_send.drivingModelData.meta.laneChangeState = DH.lane_change_state
       drivingdata_send.drivingModelData.meta.laneChangeDirection = DH.lane_change_direction
 

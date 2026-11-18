@@ -85,6 +85,7 @@ class SelfdriveD(CruiseHelper):
     self.big_model_loading = False
     self.big_model_active = False
     self.big_model_failed = False
+    self.nonfinite_frames = 0
     self.big_model_ready_t = 0.
 
     # Setup sockets
@@ -209,6 +210,11 @@ class SelfdriveD(CruiseHelper):
       self.events.add(EventName.bigModelFailed)
       self.big_model_ready_t = time.monotonic()
     self.big_model_failed = big_failed
+    # modeld skipped a non-finite big model frame without falling back: tell the driver
+    nonfinite_frames = self.sm['modelDataV2SP'].nonfiniteFrames
+    if nonfinite_frames != self.nonfinite_frames and nonfinite_frames > 0:  # != : a modeld restart resets its count
+      self.events_sp.add(custom.OnroadEventSP.EventName.bigModelFrameSkipped)
+    self.nonfinite_frames = nonfinite_frames
 
     # soft disable if the big model fails
     if big_active:

@@ -18,7 +18,7 @@ from openpilot.sunnypilot.modeld_v2.compile_modeld import (POLICY_INPUTS, derive
 from openpilot.sunnypilot.modeld_v2.stock_dependencies import make_input_queues as stock_make_input_queues, nv12_copy_size
 from openpilot.system.camerad.cameras.nv12_info import get_nv12_info
 from tinygrad.device import Buffer
-from tinygrad.dtype import DType
+from tinygrad.dtype import DType, dtypes
 from tinygrad.tensor import Tensor
 from tinygrad.uop.ops import UOp
 
@@ -26,6 +26,24 @@ from tinygrad.uop.ops import UOp
 def input_view(buffer: Buffer, shape: tuple[int, ...], dtype: DType, offset: int) -> Tensor:
   view = buffer.view(math.prod(shape) * dtype.itemsize, offset).ensure_allocated()
   return Tensor(UOp.from_buffer(view, dtype)).reshape(shape)
+
+
+def zero_nonfinite(queues: dict[str, Tensor]) -> list[str]:
+  # zero every history slot (axis 0) holding a non-finite value: an overflowed slot's finite values are suspect too.
+  # written in place (a buffer copy, no kernel), so the jit keeps reading the same buffers
+  scrubbed = []
+  for name, t in queues.items():
+    if not dtypes.is_float(t.dtype):
+      continue
+    arr = t.numpy()
+    bad = ~np.isfinite(arr.reshape(arr.shape[0], -1)).all(axis=1) if arr.ndim else ~np.isfinite(arr.reshape(1))
+    if not bad.any():
+      continue
+    clean = np.ascontiguousarray(arr).reshape(bad.shape[0], -1)
+    clean[bad] = 0
+    t._buffer().copy_from(Buffer("NPY", clean.nbytes, opaque=memoryview(clean.reshape(-1).view(np.uint8))))
+    scrubbed.append(name)
+  return scrubbed
 
 
 class BaseModelAdapter:
@@ -52,6 +70,10 @@ class BaseModelAdapter:
     self._road_key = next((key for key in getattr(self, '_vision_input_names', []) if 'big' not in key), 'img')
     self._wide_key = next((key for key in getattr(self, '_vision_input_names', []) if 'big' in key), 'big_img')
     self.frame_buf_params = dict.fromkeys(getattr(self, '_vision_input_names', ['img', 'big_img']), self.nv12_info)
+
+  def scrub_state(self) -> list[str]:
+    # the graph shifts its history queues in place, so a non-finite frame can leave NaN in them for the next run
+    return zero_nonfinite(getattr(self, 'input_queues', {}))
 
   def get_dummy_inputs(self):
     dummy_size = getattr(self, 'warp_frame_size', self.frame_copy_size if self.is_native else self.frame_buf_params[self._road_key][3])

@@ -257,6 +257,14 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
       Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 2.),
   },
 
+  EventNameSP.bigModelFrameSkipped: {
+    ET.WARNING: Alert(
+      "Big Model Skipped a Bad Frame",
+      "",
+      AlertStatus.normal, AlertSize.small,
+      Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 3.),
+  },
+
   # short directional click on every set-speed step while holding inc/dec
   EventNameSP.cruiseStepUp: {
     ET.WARNING: Alert(
