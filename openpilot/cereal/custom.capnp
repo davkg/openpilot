@@ -528,7 +528,19 @@ struct ModelDataV2SP @0xa1680744031fdb2d {
   }
 }
 
-struct ReprojectCalibration @0xcb9fd56c7057593a {
+struct GpsLocationSP @0xcb9fd56c7057593a {
+  latitude @0 :Float64;
+  longitude @1 :Float64;
+  speed @2 :Float32;
+  bearingDeg @3 :Float32;
+  horizontalAccuracy @4 :Float32;  # m
+  bearingAccuracyDeg @5 :Float32;
+  hasFix @6 :Bool;
+  gpsOK @7 :Bool;  # a raw fix arrived in the last 2 s
+  fused @8 :Bool;  # false while passing the raw fix through
+}
+
+struct ReprojectCalibration @0xc2243c65e0340384 {
   # reprojectcalibd: the 3X->comma 4 reprojection's narrow->wide rotation, 2 Hz and on every change. Rotations are rotvecs
   # in radians (x=pitch, y=yaw, z=roll)
   enum Status {
@@ -555,9 +567,6 @@ struct ReprojectCalibration @0xcb9fd56c7057593a {
   lastAccepted @5 :Bool;
   applied @6 :List(Float64); # the rotation reprojectd runs
   target @7 :List(Float64);  # building / ready: the fitted rotation, exact (its tables are cached by it)
-}
-
-struct CustomReserved11 @0xc2243c65e0340384 {
 }
 
 struct CustomReserved12 @0x9ccdc8676701b412 {
