@@ -12,7 +12,7 @@ from openpilot.sunnypilot import PARAMS_UPDATE_PERIOD
 from openpilot.sunnypilot.selfdrive.controls.lib.follow_time import follow_time_bars, get_follow_time
 
 ACCEL_BOOST_MIN_SPEED = 1.0
-ACCEL_BOOST_MAX = (0.4, 0.25, 0.1)  # 1 bar, 2 bars, 3-4 bars, m/s^2
+ACCEL_BOOST_MAX = (0.25, 0.25, 0.1)  # 1 bar, 2 bars, 3-4 bars, m/s^2
 ACCEL_BOOST_BUILD, ACCEL_BOOST_RELEASE = 0.2, 1.0  # m/s^3
 BRAKE_PROB = (0.1, 0.3)  # the model's brake press in 4 s: it wants to slow
 GAS_PROB = (0.6, 0.8)  # predicts a human gas press at this hypothesis at about 23%
