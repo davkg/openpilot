@@ -18,6 +18,8 @@ from openpilot.sunnypilot.models.helpers import get_selected_bundle
 
 LAUNCH_GAIN = {
   'LSMV2': 1.25,  # Light Speed Model v2: 1.2-1.3 in every band, 1 engaged + 13 open-loop launches (2026-11)
+  'FTM': 1.25,  # Fairy Tale Model: at the 2.0 cap over 1-4 m/s, 1.2-1.5 below and above it, 5 engaged launches (2026-11)
+  'FTMV1.1': 1.25,  # Fairy Tale Model v1.1: not measured, same as FTM
 }
 FADE_BP = [10., 16.]  # m/s
 GAIN_RATE = 0.5  # 1/s, a big/small model handover eases between gains instead of stepping
